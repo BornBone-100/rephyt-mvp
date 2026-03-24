@@ -1160,7 +1160,7 @@ export default function Home() {
                   >
                     NRS
                   </button>
-                </div>
+        </div>
 
                 <div className="mt-4">
                   <input
@@ -1744,7 +1744,7 @@ export default function Home() {
                       <a
                         key={url}
                         href={url}
-                        target="_blank"
+            target="_blank"
                         rel="noreferrer"
                         className="block truncate text-xs text-blue-700 underline"
                       >

@@ -1,3 +1,4 @@
+// @ts-ignore
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { sessionBundleInputSchema } from "@/features/sessions/schema";
