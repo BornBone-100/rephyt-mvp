@@ -45,6 +45,7 @@ export async function POST(req: Request) {
         { role: "system", content: system },
         { role: "user", content: user },
       ],
+      // @ts-ignore
       response_format: { type: "json_object" },
     });
 
