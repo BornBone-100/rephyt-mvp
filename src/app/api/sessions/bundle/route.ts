@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    const { data, error } = await supabase.rpc("upsert_session_bundle", {
+    const { data, error } = await (supabase.rpc as any)("upsert_session_bundle", {
       p_patient_id: input.patientId,
 
       p_started_at: input.session?.startedAt,
