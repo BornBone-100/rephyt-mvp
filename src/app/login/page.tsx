@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
-export default function LoginPage() {
+// 기존의 LoginPage 전체를 LoginForm 이라는 이름으로 살짝 바꿉니다.
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
@@ -72,7 +73,6 @@ export default function LoginPage() {
       return;
     }
 
-    // Supabase에서 이메일 확인이 켜져 있으면 session이 즉시 생성되지 않음
     if (!data.session) {
       setNeedsEmailConfirm(true);
       setCooldownSec(60);
@@ -196,3 +196,11 @@ export default function LoginPage() {
   );
 }
 
+// 여기서 Suspense 보호막으로 폼 전체를 감싸서 내보냅니다.
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-zinc-50">로딩 중...</div>}>
+      <LoginForm />
+    </Suspense>
+  );
+}
