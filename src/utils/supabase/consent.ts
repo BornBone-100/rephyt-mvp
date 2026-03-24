@@ -55,14 +55,14 @@ export async function savePatientConsent(input: SaveConsentInput): Promise<SaveC
   const agreedAt = new Date().toISOString();
 
   const { data, error: insertError } = await supabase
-    .from("patient_consents" as never)
+    .from("patient_consents" as any)
     .insert({
       patient_id: input.patientId ?? null,
       therapist_id: user.id,
       signature_image_url: storagePath,
       agreed_at: agreedAt,
     })
-    .select("id, signature_image_url, agreed_at" as never)
+    .select("id, signature_image_url, agreed_at" as any)
     .single();
 
   if (insertError || !data) {
