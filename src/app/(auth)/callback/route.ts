@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     if (error) {
       return NextResponse.redirect(new URL("/", origin));
     }
-    return NextResponse.redirect(new URL("/dashboard/patients", origin));
+    return NextResponse.redirect(new URL("/", origin));
   }
 
   // 2) 이메일 인증(회원가입 확인) 콜백: 일반적으로 `?type=...&token_hash=...` 로 옴
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
         token_hash,
       });
       if (!error) {
-        return NextResponse.redirect(new URL("/dashboard/patients", origin));
+        return NextResponse.redirect(new URL("/", origin));
       }
     }
 
