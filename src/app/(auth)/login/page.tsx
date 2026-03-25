@@ -16,7 +16,10 @@ function LoginForm() {
   const [needsEmailConfirm, setNeedsEmailConfirm] = useState(false);
   const [cooldownSec, setCooldownSec] = useState(0);
 
-  const nextPath = searchParams.get("next") || "/";
+  // `RootPage`는 항상 `/login`으로 리다이렉트하므로,
+  // 로그인 성공 후 기본값을 `/`로 두면 무한 루프처럼 보일 수 있습니다.
+  // `next`가 없을 때의 기본 목적지를 대시보드로 둡니다.
+  const nextPath = searchParams.get("next") || "/dashboard/patients";
 
   useEffect(() => {
     if (cooldownSec <= 0) return;
