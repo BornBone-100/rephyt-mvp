@@ -16,9 +16,8 @@ function LoginForm() {
   const [needsEmailConfirm, setNeedsEmailConfirm] = useState(false);
   const [cooldownSec, setCooldownSec] = useState(0);
 
-  // 인증이 되면 루트(`/`)에서 대시보드를 보여주므로,
-  // `next`가 없을 때의 기본 목적지도 `/`로 둡니다.
-  const nextPath = searchParams.get("next") || "/";
+  // 로그인 성공 후 첫 화면으로 이동
+  const nextPath = "/";
 
   useEffect(() => {
     if (cooldownSec <= 0) return;
