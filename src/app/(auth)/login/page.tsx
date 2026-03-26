@@ -26,6 +26,14 @@ function LoginForm() {
     return () => window.clearTimeout(id);
   }, [cooldownSec]);
 
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEmail(e.target.value);
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+  };
+
   const signIn = async () => {
     if (loading !== null) return;
     setStatus(null);
@@ -130,7 +138,7 @@ function LoginForm() {
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={handleEmailChange}
                 placeholder="you@example.com"
                 className="mt-2 h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-blue-900/40 focus:ring-2 focus:ring-blue-900/10"
               />
@@ -142,7 +150,7 @@ function LoginForm() {
                 type="password"
                 autoComplete="current-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={handlePasswordChange}
                 placeholder="••••••••"
                 className="mt-2 h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-blue-900/40 focus:ring-2 focus:ring-blue-900/10"
               />
@@ -160,7 +168,7 @@ function LoginForm() {
             <button
               type="button"
               onClick={signUp}
-              disabled={!email || !password || loading !== null || cooldownSec > 0}
+              disabled={loading !== null || cooldownSec > 0}
               className="h-11 rounded-xl border border-zinc-300 bg-white text-sm font-medium text-zinc-800 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading === "signup"
@@ -181,7 +189,7 @@ function LoginForm() {
             <button
               type="button"
               onClick={resendConfirmation}
-              disabled={!email || loading !== null || cooldownSec > 0}
+              disabled={loading !== null || cooldownSec > 0}
               className="mt-3 h-10 rounded-xl border border-amber-300 bg-amber-50 px-4 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading === "signup"
