@@ -153,7 +153,6 @@ function LoginForm() {
             <button
               type="button"
               onClick={signIn}
-              disabled={!email || !password || loading !== null}
               className="h-11 rounded-xl bg-blue-900 text-sm font-medium text-white transition hover:bg-blue-950 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading === "signin" ? "로그인 중..." : "로그인"}
