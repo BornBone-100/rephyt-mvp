@@ -1,64 +1,41 @@
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
-import { getClientEnv } from "@/lib/env";
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
-  const type = searchParams.get("type");
-  const token_hash = searchParams.get("token_hash") ?? searchParams.get("token");
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  // 인증 후 이동할 목적지 (기본값은 대시보드)
+  const next = searchParams.get('next') ?? '/dashboard'
 
-  const cookieStore = await cookies();
-  const clientEnv = getClientEnv();
-  const supabase = createServerClient(
-    clientEnv.NEXT_PUBLIC_SUPABASE_URL,
-    clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options),
-          );
-        },
-      },
-    },
-  );
-
-  // 1) OAuth/PKCE 로그인 콜백: `?code=...` 가 오면 exchangeCodeForSession 수행
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) {
-      return NextResponse.redirect(new URL("/", origin));
-    }
-    return NextResponse.redirect(new URL("/", origin));
-  }
-
-  // 2) 이메일 인증(회원가입 확인) 콜백: 일반적으로 `?type=...&token_hash=...` 로 옴
-  if (type && token_hash) {
-    const tryTypes = [type];
-    // Supabase에서 이메일 확인 링크의 `type`이 환경/템플릿에 따라 달라질 수 있어
-    // 하나 더 안전장치를 추가합니다. (예: email <-> signup)
-    if (type === "email") tryTypes.push("signup");
-    if (type === "signup") tryTypes.push("email");
-
-    for (const otpType of tryTypes) {
-      const { error } = await supabase.auth.verifyOtp({
-        type: otpType as any,
-        token_hash,
-      });
-      if (!error) {
-        return NextResponse.redirect(new URL("/", origin));
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(name: string, value: string, options: CookieOptions) {
+            cookieStore.set({ name, value, ...options })
+          },
+          remove(name: string, options: CookieOptions) {
+            cookieStore.set({ name, value: '', ...options })
+          },
+        },
       }
-    }
+    )
 
-    return NextResponse.redirect(new URL("/", origin));
+    // 받은 코드를 세션(로그인 도장)으로 교환합니다.
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    
+    if (!error) {
+      return NextResponse.redirect(`${origin}${next}`)
+    }
   }
 
-  // 알 수 없는 콜백 파라미터
-  return NextResponse.redirect(new URL("/", origin));
+  // 인증 실패 시 로그인 페이지로 돌아가게 합니다.
+  return NextResponse.redirect(`${origin}/login?error=auth-code-error`)
 }
-
