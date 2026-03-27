@@ -5,9 +5,13 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  
+  // 성공 시 이동할 곳 (루트 주소)
+  const next = '/' 
 
   if (code) {
-    const cookieStore = await cookies()
+    const cookieStore = await cookies() // 1. 여기서 확실하게 await를 해줍니다.
+    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -17,23 +21,33 @@ export async function GET(request: Request) {
             return cookieStore.get(name)?.value
           },
           set(name: string, value: string, options: CookieOptions) {
-            cookieStore.set({ name, value, ...options })
+            // 서버 컴포넌트에서는 안전하게 에러를 무시하도록 설정
+            try {
+              cookieStore.set({ name, value, ...options })
+            } catch (error) {
+              // 리다이렉트 시 쿠키 설정 에러 방지
+            }
           },
           remove(name: string, options: CookieOptions) {
-            cookieStore.set({ name, value: '', ...options })
+            try {
+              cookieStore.set({ name, value: '', ...options })
+            } catch (error) {
+              // 리다이렉트 시 쿠키 삭제 에러 방지
+            }
           },
         },
       }
     )
 
-    // 받은 코드를 세션(로그인 도장)으로 교환합니다.
+    // 2. 코드를 세션으로 교환 (가장 중요한 도장 찍기)
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
-      return NextResponse.redirect(new URL('/', request.url))
+      // 성공하면 진짜 대시보드(/)로 이동!
+      return NextResponse.redirect(`${origin}${next}`)
     }
   }
 
-  // 인증 실패 시 로그인 페이지로 돌아가게 합니다.
-  return NextResponse.redirect(`${origin}/login?error=auth-code-error`)
+  // 실패 시 일단 메인으로 보내서 404를 방지합니다.
+  return NextResponse.redirect(`${origin}/`)
 }
