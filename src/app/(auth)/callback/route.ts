@@ -40,11 +40,11 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
-      // 성공하면 메인('/')으로 이동
-      return NextResponse.redirect(`${origin}/`)
+      // 🚨 수정됨: 성공하면 빈 공터(/)가 아니라, 진짜 환자 목록 화면으로 이동!
+      return NextResponse.redirect(`${origin}/dashboard/patients`)
     }
   }
 
-  // 실패하더라도 404 페이지를 보여주는 대신 메인('/')으로 보냅니다.
-  return NextResponse.redirect(`${origin}/`)
+  // 🚨 수정됨: 실패하더라도 404를 띄우지 않고 환자 목록 화면으로 보냅니다.
+  return NextResponse.redirect(`${origin}/dashboard/patients`)
 }
