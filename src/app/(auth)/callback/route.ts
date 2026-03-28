@@ -6,9 +6,6 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
 
-  // 성공 시: (dashboard) 폴더 내의 page.tsx(루트)로 보냅니다.
-  const next = '/'
-
   if (code) {
     const cookieStore = await cookies() // 1. 여기서 확실하게 await를 해줍니다.
     
@@ -43,11 +40,11 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
-      // 성공하면 진짜 대시보드(/)로 이동!
-      return NextResponse.redirect(`${origin}${next}`)
+      // 성공하면 메인('/')으로 이동
+      return NextResponse.redirect(`${origin}/`)
     }
   }
 
-  // 마지막 줄: 에러가 나더라도 404 방지를 위해 루트('/')로 보냅니다.
-  return NextResponse.redirect(`${origin}${next}`)
+  // 실패하더라도 404 페이지를 보여주는 대신 메인('/')으로 보냅니다.
+  return NextResponse.redirect(`${origin}/`)
 }
