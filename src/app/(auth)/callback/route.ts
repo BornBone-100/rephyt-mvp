@@ -5,9 +5,9 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  
-  // 성공 시 이동할 곳 (루트 주소)
-  const next = '/' 
+
+  // 성공 시: (dashboard) 폴더 내의 page.tsx(루트)로 보냅니다.
+  const next = '/'
 
   if (code) {
     const cookieStore = await cookies() // 1. 여기서 확실하게 await를 해줍니다.
@@ -48,6 +48,6 @@ export async function GET(request: Request) {
     }
   }
 
-  // 실패 시 일단 메인으로 보내서 404를 방지합니다.
-  return NextResponse.redirect(`${origin}/`)
+  // 마지막 줄: 에러가 나더라도 404 방지를 위해 루트('/')로 보냅니다.
+  return NextResponse.redirect(`${origin}${next}`)
 }
