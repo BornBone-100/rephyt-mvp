@@ -17,7 +17,7 @@ function LoginForm() {
   const [cooldownSec, setCooldownSec] = useState(0);
 
   // 로그인 성공 후 첫 화면으로 이동
-  const nextPath = "/";
+  const nextPath = "/dashboard/patients";
 
   useEffect(() => {
     if (cooldownSec <= 0) return;
