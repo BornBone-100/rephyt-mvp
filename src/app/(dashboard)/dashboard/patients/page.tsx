@@ -1,18 +1,38 @@
-// src/app/(dashboard)/dashboard/patients/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+// 🚨 [핵심] DB에서 데이터를 불러오기 위한 연결선
+import { createClient } from "@/utils/supabase/client";
 
-// 🏥 실제 연결 전까지 사용할 빈 환자 목록 (ux/ui 확인용)
-// 나중에 성준님이 Supabase DB 연동하면 이 자리에 데이터가 채워집니다.
-const PatientsPage = () => {
-  const [patients, setPatients] = useState<any[]>([]); // 초기값은 빈 배열
+export default function PatientsPage() {
+  const [patients, setPatients] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const supabase = createClient();
+
+  // 🚨 [핵심] 화면이 켜지면 진짜 Supabase DB에서 환자 목록을 가져옵니다.
+  useEffect(() => {
+    const fetchPatients = async () => {
+      const { data, error } = await supabase
+        .from('patients')
+        .select('*')
+        .order('created_at', { ascending: false }); // 최신 등록순 정렬
+
+      if (error) {
+        console.error("데이터를 불러오지 못했습니다:", error.message);
+      } else if (data) {
+        setPatients(data);
+      }
+      setIsLoading(false);
+    };
+
+    fetchPatients();
+  }, []);
 
   return (
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10">
       
-      {/* 🔹 헤더 섹션: Re:PhyT 브랜드 아이덴티티 적용 */}
+      {/* 🔹 헤더 섹션 */}
       <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-zinc-200 pb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-blue-950">Re:PhyT 환자 관리</h1>
@@ -21,7 +41,6 @@ const PatientsPage = () => {
           </p>
         </div>
         
-        {/* 🔹 [ux/ui 포인트] 포인트 오렌지 신규 환자 등록 버튼 (클릭 시 이동) */}
         <Link href="/dashboard/patients/new">
           <button className="flex h-12 w-full md:w-auto items-center justify-center gap-2 rounded-xl bg-orange-500 px-7 text-sm font-semibold text-white shadow-md transition hover:bg-orange-600">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
@@ -33,8 +52,10 @@ const PatientsPage = () => {
       </div>
 
       {/* 🔹 환자 목록 섹션 */}
-      {patients.length === 0 ? (
-        // 🚨 [ux/ui 핵심] 환자가 없을 때 보여주는 '빈 상태(Empty State)' 디자인
+      {isLoading ? (
+        <div className="flex justify-center py-20 text-blue-900 font-bold">환자 데이터를 불러오는 중입니다...</div>
+      ) : patients.length === 0 ? (
+        // 환자가 없을 때 '빈 상태' 디자인
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-zinc-200 bg-white py-20 px-6 text-center shadow-sm">
           <div className="rounded-full bg-blue-50 p-4 text-blue-900 mb-6">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12">
@@ -48,13 +69,41 @@ const PatientsPage = () => {
           </p>
         </div>
       ) : (
-        // 환자가 있을 때 테이블 디자인 (나중에 연동 시 사용)
-        <div className="overflow-hidden rounded-2xl border border-zinc-100 bg-white shadow-sm">
-            {/* 테이블 코드는 아까와 동일하므로 생략 */}
+        // 환자가 있을 때 테이블 디자인 (DB 연동 완료!)
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-zinc-200 bg-zinc-50/80 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                <tr>
+                  <th className="px-6 py-4">환자 이름</th>
+                  <th className="px-6 py-4">성별/나이</th>
+                  <th className="px-6 py-4">주진단명</th>
+                  <th className="px-6 py-4">연락처</th>
+                  <th className="px-6 py-4 text-right">관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 text-zinc-800">
+                {patients.map((patient) => (
+                  <tr key={patient.id} className="transition-colors hover:bg-blue-50/30">
+                    <td className="px-6 py-4 font-bold text-zinc-900">{patient.name}</td>
+                    <td className="px-6 py-4">{patient.gender === 'M' ? '남' : '여'} / {patient.age}세</td>
+                    <td className="px-6 py-4 font-medium text-blue-900">{patient.diagnosis}</td>
+                    <td className="px-6 py-4 text-zinc-500">{patient.phone || '-'}</td>
+                    <td className="px-6 py-4 flex justify-end gap-2">
+                      <Link href={`/dashboard/patients/${patient.id}`} className="flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-4 text-xs font-medium text-zinc-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-800">
+                        차트 보기
+                      </Link>
+                      <Link href="/dashboard/soap/new" className="flex h-9 items-center rounded-lg bg-zinc-900 px-4 text-xs font-medium text-white transition hover:bg-zinc-700">
+                        SOAP 작성
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
   );
-};
-
-export default PatientsPage;
+}
