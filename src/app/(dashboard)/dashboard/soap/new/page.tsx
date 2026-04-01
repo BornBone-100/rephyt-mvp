@@ -30,6 +30,9 @@ export default function AdvancedSoapPage() {
   const [selectedJoint, setSelectedJoint] = useState<keyof typeof ebpDatabase | "">("");
   const [painScale, setPainScale] = useState<string>("5");
   
+  // 🚨 [핵심 추가] 병력 청취(History Taking) 상태 관리
+  const [historyTaking, setHistoryTaking] = useState("");
+  
   const [romData, setRomData] = useState({ flexion: "", extension: "", abd: "", extRot: "", intRot: "" });
   const [mmtData, setMmtData] = useState({ mainMuscle: "Normal (5/5)" });
   const [specialTests, setSpecialTests] = useState<Record<string, string>>({});
@@ -45,12 +48,23 @@ export default function AdvancedSoapPage() {
     setRomData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  // 🪄 [핵심] 입력된 디테일한 수치들을 실제 SOAP 문장으로 자동 변환하는 로직
+  // 🪄 [핵심] History Taking을 포함한 자동 변환 로직
   const generateSoapNotes = () => {
     setIsGenerating(true);
     
     setTimeout(() => {
-      // 1. Objective (객관적 데이터 정리)
+      // 1. Subjective (주관적 정보 - History Taking 반영)
+      let subjText = `[주호소 및 병력 청취 (History Taking)]\n`;
+      if (historyTaking.trim() !== "") {
+        subjText += `환자 진술: "${historyTaking}"\n`;
+      } else {
+        subjText += `환자 진술: "해당 관절 부위의 통증 및 불편감 호소"\n`;
+      }
+      subjText += `\n[통증 양상]\n`;
+      subjText += `- 통증 척도: VAS ${painScale} / 10\n`;
+      subjText += `- 진단 부위: ${selectedJoint ? selectedJoint.toUpperCase() : "미지정"}`;
+
+      // 2. Objective (객관적 데이터 정리)
       let objText = `[ROM - 관절가동범위]\n`;
       if(romData.flexion) objText += `- Flexion: ${romData.flexion}°\n`;
       if(romData.extension) objText += `- Extension: ${romData.extension}°\n`;
@@ -75,38 +89,38 @@ export default function AdvancedSoapPage() {
         });
       }
 
-      // 2. Assessment (임상적 추론 - 논문 근거 활용)
-      let assetText = `환자는 현재 ${selectedJoint.toUpperCase()} 부위에 VAS ${painScale}/10 의 통증을 호소 중임.\n`;
+      // 3. Assessment (임상적 추론)
+      let assetText = `병력 청취 및 주관적 통증(VAS ${painScale}/10)을 종합할 때, ${selectedJoint.toUpperCase()} 부위의 기능적 제한이 확인됨.\n`;
       if (positiveTests.length > 0) {
-        assetText += `이학적 검사 결과, ${positiveTests.join(', ')} 에서 양성 반응(+)이 뚜렷하게 관찰됨. `;
-        assetText += `이는 최신 임상 근거에 비추어 볼 때, [${relatedPurposes.filter((v, i, a) => a.indexOf(v) === i).join(', ')}] 의 병변 및 기능 부전을 강력히 시사함. `;
-        assetText += `제한된 ROM과 MMT(${mmtData.mainMuscle}) 저하가 동반되어, 통증 조절 및 단계적인 가동성/근력 회복 재활이 필수적으로 판단됨.`;
+        assetText += `이학적 검사 결과, ${positiveTests.join(', ')} 에서 양성 반응(+)이 관찰됨. `;
+        assetText += `이는 [${relatedPurposes.filter((v, i, a) => a.indexOf(v) === i).join(', ')}] 의 병변을 강력히 시사함. `;
+        assetText += `현재 ROM 제한 및 MMT(${mmtData.mainMuscle}) 소견을 바탕으로 즉각적인 통증 제어 및 가동성 회복 재활이 요구됨.`;
       } else {
-        assetText += `특수 검사상 뚜렷한 양성 징후는 관찰되지 않으나, 주관적 통증 및 ROM/MMT 제한을 고려하여 연부조직의 미세 손상 또는 과긴장 상태가 의심됨. 지속적인 경과 관찰 및 보존적 물리치료가 요망됨.`;
+        assetText += `특수 검사상 특이 양성 징후는 관찰되지 않으나, 환자가 호소하는 병력과 임상적 증상을 고려하여 연부조직의 과긴장 또는 미세 손상이 의심됨.`;
       }
 
-      // 3. Plan (치료 계획)
-      let planText = `- 1단계 (통증 제어): Cryotherapy 및 TENS 적용을 통한 국소 염증 및 통증(VAS ${painScale}) 완화\n`;
-      planText += `- 2단계 (가동성 회복): Joint Mobilization을 적용하여 제한된 ROM 회복 도모\n`;
-      planText += `- 3단계 (기능 회복): 근력 등급 증진을 위한 점진적 저항 운동(PRE) 교육 및 적용\n`;
-      planText += `- 환자 교육: 일상생활 자세 지도 및 Home Exercise Program (HEP) 안내`;
+      // 4. Plan (치료 계획)
+      let planText = `- 1단계 (통증 제어): 통증(VAS ${painScale}) 완화를 위한 물리적 인자 치료 적용\n`;
+      planText += `- 2단계 (가동성 회복): Joint Mobilization 및 연부조직 이완술(MFR) 적용\n`;
+      planText += `- 3단계 (기능 증진): 근력(${mmtData.mainMuscle}) 강화를 위한 능동-보조 및 저항 운동 교육\n`;
+      planText += `- 환자 교육: 일상생활 자세 교정 및 자가 운동 프로그램(HEP) 처방`;
 
       setSoapData({
-        subjective: `환자 호소: "최근 무리한 활동 후 ${selectedJoint.toUpperCase()} 부위가 아프고 움직이기 힘듭니다."\n통증 척도: VAS ${painScale}/10\n특이사항: 관절 움직임 시 통증 악화 및 뻣뻣함 동반`,
+        subjective: subjText,
         objective: objText,
         assessment: assetText,
         plan: planText
       });
 
       setIsGenerating(false);
-    }, 1000); // 1초 뒤에 생성
+    }, 1000); 
   };
 
   return (
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-24">
       <div className="mb-8 border-b border-zinc-200 pb-6">
         <h1 className="text-3xl font-bold tracking-tight text-blue-950">전문가용 EBP 임상 평가 & SOAP 자동화</h1>
-        <p className="mt-1 text-sm text-zinc-600">입력된 정밀 데이터를 바탕으로 전문적인 차트가 즉시 완성됩니다.</p>
+        <p className="mt-1 text-sm text-zinc-600">데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</p>
       </div>
 
       <div className="grid lg:grid-cols-12 gap-8">
@@ -114,8 +128,19 @@ export default function AdvancedSoapPage() {
         {/* 🟡 왼쪽: 하이엔드 임상 평가 입력 패널 */}
         <div className="lg:col-span-5 space-y-6">
           <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-blue-950 mb-4 border-b pb-3">STEP 1. 기초 평가 & ROM/MMT</h2>
+            <h2 className="text-lg font-bold text-blue-950 mb-4 border-b pb-3">STEP 1. 기초 평가 & 문진</h2>
             
+            {/* 🚨 새로 추가된 병력 청취 (History Taking) 입력칸 */}
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-zinc-800 mb-2">병력 청취 (History Taking)</label>
+              <textarea 
+                value={historyTaking}
+                onChange={(e) => setHistoryTaking(e.target.value)}
+                placeholder="예) 3일 전 무거운 물건을 들다가 '뚝' 소리와 함께 통증 발생함. 밤에 잘 때 쑤시고 팔을 올리기 힘듦."
+                className="w-full h-24 rounded-xl border border-zinc-200 p-3 text-sm focus:ring-blue-100 resize-none bg-zinc-50"
+              />
+            </div>
+
             <div className="mb-6">
               <label className="block text-sm font-semibold text-zinc-800 mb-2">통증 척도 (VAS): {painScale}</label>
               <input type="range" min="0" max="10" value={painScale} onChange={(e) => setPainScale(e.target.value)} className="w-full accent-orange-500" />
@@ -172,13 +197,12 @@ export default function AdvancedSoapPage() {
             </div>
           )}
 
-          {/* 🪄 오렌지색 마법의 버튼 복귀! */}
           <button onClick={generateSoapNotes} disabled={!selectedJoint || isGenerating} className={`w-full flex h-14 items-center justify-center gap-2 rounded-xl text-base font-bold text-white shadow-lg transition ${!selectedJoint ? 'bg-zinc-300' : 'bg-orange-500 hover:bg-orange-600'}`}>
-            {isGenerating ? "전문 임상 추론 분석 중..." : "EBP 데이터 기반 SOAP 자동 작성"}
+            {isGenerating ? "문진 및 임상 추론 분석 중..." : "EBP 데이터 기반 SOAP 자동 작성"}
           </button>
         </div>
 
-        {/* 🔵 오른쪽: 완성된 SOAP 차트 결과 (성준님이 원하시던 4개의 칸!) */}
+        {/* 🔵 오른쪽: 완성된 SOAP 차트 결과 */}
         <div className="lg:col-span-7 space-y-4">
           <h2 className="text-lg font-bold text-zinc-900 mb-2 flex items-center gap-2">
             <span className="bg-blue-100 text-blue-800 p-1.5 rounded-lg">📝</span> 
@@ -186,9 +210,9 @@ export default function AdvancedSoapPage() {
           </h2>
           
           {[
-            { key: "subjective", label: "Subjective (주관적 정보)", h: "h-24" },
+            { key: "subjective", label: "Subjective (주관적 정보)", h: "h-32" },
             { key: "objective", label: "Objective (객관적 검사 결과)", h: "h-40" },
-            { key: "assessment", label: "Assessment (임상적 판단)", h: "h-36" },
+            { key: "assessment", label: "Assessment (임상적 판단)", h: "h-40" },
             { key: "plan", label: "Plan (치료 계획)", h: "h-36" }
           ].map((section) => (
             <div key={section.key} className="bg-white rounded-2xl border border-zinc-200 p-5 shadow-sm">
@@ -196,7 +220,7 @@ export default function AdvancedSoapPage() {
               <textarea 
                 value={soapData[section.key as keyof typeof soapData]} 
                 onChange={(e) => setSoapData({...soapData, [section.key]: e.target.value})}
-                placeholder="왼쪽에서 평가 수치를 입력하고 오렌지색 '자동 작성' 버튼을 누르시면 전문 차트가 완성됩니다." 
+                placeholder="왼쪽에서 문진(History Taking)과 평가 수치를 입력하고 오렌지색 '자동 작성' 버튼을 누르시면 전문 차트가 완성됩니다." 
                 className={`w-full rounded-xl border-none bg-zinc-50 p-4 text-sm text-zinc-800 resize-none focus:ring-2 focus:ring-blue-100 ${section.h}`} 
               />
             </div>
