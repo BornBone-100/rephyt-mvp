@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
-// 📚 전문가용 EBP(근거중심) 특수검사 데이터베이스
 const ebpDatabase = {
   cervical: [
     { id: "spurling", name: "Spurling's Test", paper: "Spurling & Scoville (1944)", purpose: "경추 신경근병증" },
@@ -26,19 +25,71 @@ const ebpDatabase = {
   ]
 };
 
-export default function AdvancedSoapPage() {
+export default function AdvancedSoapVoicePage() {
   const [selectedJoint, setSelectedJoint] = useState<keyof typeof ebpDatabase | "">("");
   const [painScale, setPainScale] = useState<string>("5");
-  
-  // 🚨 [핵심 추가] 병력 청취(History Taking) 상태 관리
   const [historyTaking, setHistoryTaking] = useState("");
   
+  // 🎙️ [핵심 추가] 음성 인식 상태 관리
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
   const [romData, setRomData] = useState({ flexion: "", extension: "", abd: "", extRot: "", intRot: "" });
   const [mmtData, setMmtData] = useState({ mainMuscle: "Normal (5/5)" });
   const [specialTests, setSpecialTests] = useState<Record<string, string>>({});
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
+
+  // 🎙️ 음성 인식 초기 세팅 (화면이 켜질 때 브라우저 기능 불러오기)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true; // 계속 듣기
+        recognition.interimResults = true; // 말하는 도중에도 글씨 보여주기
+        recognition.lang = "ko-KR"; // 한국어 설정
+
+        recognition.onresult = (event: any) => {
+          let currentTranscript = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            currentTranscript += event.results[i][0].transcript;
+          }
+          // 말하는 내용을 실시간으로 입력창에 텍스트로 반영
+          setHistoryTaking(prev => prev + currentTranscript);
+        };
+
+        recognition.onerror = (event: any) => {
+          console.error("음성 인식 오류:", event.error);
+          setIsListening(false);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+      }
+    }
+  }, []);
+
+  // 🎙️ 마이크 켜고 끄기 버튼 핸들러
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      if (recognitionRef.current) {
+        // 기존 텍스트에 이어서 작성하도록 띄어쓰기 추가
+        setHistoryTaking(prev => prev ? prev + " " : ""); 
+        recognitionRef.current.start();
+        setIsListening(true);
+      } else {
+        alert("현재 사용 중인 브라우저에서는 음성 인식을 지원하지 않습니다. 크롬(Chrome)이나 사파리(Safari) 최신 버전을 이용해 주세요.");
+      }
+    }
+  };
 
   const handleTestToggle = (testId: string, result: string) => {
     setSpecialTests(prev => ({ ...prev, [testId]: prev[testId] === result ? "" : result }));
@@ -48,23 +99,14 @@ export default function AdvancedSoapPage() {
     setRomData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  // 🪄 [핵심] History Taking을 포함한 자동 변환 로직
   const generateSoapNotes = () => {
     setIsGenerating(true);
     
     setTimeout(() => {
-      // 1. Subjective (주관적 정보 - History Taking 반영)
-      let subjText = `[주호소 및 병력 청취 (History Taking)]\n`;
-      if (historyTaking.trim() !== "") {
-        subjText += `환자 진술: "${historyTaking}"\n`;
-      } else {
-        subjText += `환자 진술: "해당 관절 부위의 통증 및 불편감 호소"\n`;
-      }
-      subjText += `\n[통증 양상]\n`;
-      subjText += `- 통증 척도: VAS ${painScale} / 10\n`;
-      subjText += `- 진단 부위: ${selectedJoint ? selectedJoint.toUpperCase() : "미지정"}`;
+      let subjText = `[주호소 및 문진 - 환자 진술]\n`;
+      subjText += historyTaking.trim() !== "" ? `"${historyTaking}"\n` : `"특별한 진술 없음"\n`;
+      subjText += `\n[통증 양상]\n- 통증 척도: VAS ${painScale} / 10\n- 진단 부위: ${selectedJoint ? selectedJoint.toUpperCase() : "미지정"}`;
 
-      // 2. Objective (객관적 데이터 정리)
       let objText = `[ROM - 관절가동범위]\n`;
       if(romData.flexion) objText += `- Flexion: ${romData.flexion}°\n`;
       if(romData.extension) objText += `- Extension: ${romData.extension}°\n`;
@@ -89,29 +131,21 @@ export default function AdvancedSoapPage() {
         });
       }
 
-      // 3. Assessment (임상적 추론)
       let assetText = `병력 청취 및 주관적 통증(VAS ${painScale}/10)을 종합할 때, ${selectedJoint.toUpperCase()} 부위의 기능적 제한이 확인됨.\n`;
       if (positiveTests.length > 0) {
         assetText += `이학적 검사 결과, ${positiveTests.join(', ')} 에서 양성 반응(+)이 관찰됨. `;
-        assetText += `이는 [${relatedPurposes.filter((v, i, a) => a.indexOf(v) === i).join(', ')}] 의 병변을 강력히 시사함. `;
-        assetText += `현재 ROM 제한 및 MMT(${mmtData.mainMuscle}) 소견을 바탕으로 즉각적인 통증 제어 및 가동성 회복 재활이 요구됨.`;
+        assetText += `이는 [${relatedPurposes.filter((v, i, a) => a.indexOf(v) === i).join(', ')}] 의 병변을 시사함. `;
+        assetText += `현재 ROM 제한 및 MMT(${mmtData.mainMuscle}) 소견을 바탕으로 보존적 물리치료 및 가동성 회복 재활이 요구됨.`;
       } else {
-        assetText += `특수 검사상 특이 양성 징후는 관찰되지 않으나, 환자가 호소하는 병력과 임상적 증상을 고려하여 연부조직의 과긴장 또는 미세 손상이 의심됨.`;
+        assetText += `환자가 호소하는 병력과 임상적 증상을 고려하여 연부조직의 과긴장 또는 미세 손상이 의심됨.`;
       }
 
-      // 4. Plan (치료 계획)
-      let planText = `- 1단계 (통증 제어): 통증(VAS ${painScale}) 완화를 위한 물리적 인자 치료 적용\n`;
-      planText += `- 2단계 (가동성 회복): Joint Mobilization 및 연부조직 이완술(MFR) 적용\n`;
-      planText += `- 3단계 (기능 증진): 근력(${mmtData.mainMuscle}) 강화를 위한 능동-보조 및 저항 운동 교육\n`;
-      planText += `- 환자 교육: 일상생활 자세 교정 및 자가 운동 프로그램(HEP) 처방`;
+      let planText = `- 1단계: 통증(VAS ${painScale}) 완화를 위한 한랭치료 및 전기치료 적용\n`;
+      planText += `- 2단계: Joint Mobilization 적용으로 ROM 증진 도모\n`;
+      planText += `- 3단계: 근력 강화를 위한 저항 운동(PRE) 지도\n`;
+      planText += `- 환자 교육: 일상생활 주의사항 및 HEP 안내`;
 
-      setSoapData({
-        subjective: subjText,
-        objective: objText,
-        assessment: assetText,
-        plan: planText
-      });
-
+      setSoapData({ subjective: subjText, objective: objText, assessment: assetText, plan: planText });
       setIsGenerating(false);
     }, 1000); 
   };
@@ -120,24 +154,42 @@ export default function AdvancedSoapPage() {
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-24">
       <div className="mb-8 border-b border-zinc-200 pb-6">
         <h1 className="text-3xl font-bold tracking-tight text-blue-950">전문가용 EBP 임상 평가 & SOAP 자동화</h1>
-        <p className="mt-1 text-sm text-zinc-600">데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</p>
+        <p className="mt-1 text-sm text-zinc-600">음성 인식으로 문진을 기록하고, 전문 데이터를 결합해 차트를 완성합니다.</p>
       </div>
 
       <div className="grid lg:grid-cols-12 gap-8">
         
-        {/* 🟡 왼쪽: 하이엔드 임상 평가 입력 패널 */}
         <div className="lg:col-span-5 space-y-6">
           <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-blue-950 mb-4 border-b pb-3">STEP 1. 기초 평가 & 문진</h2>
+            <h2 className="text-lg font-bold text-blue-950 mb-4 border-b pb-3 flex items-center gap-2">
+              STEP 1. 기초 평가 & 음성 문진
+            </h2>
             
-            {/* 🚨 새로 추가된 병력 청취 (History Taking) 입력칸 */}
+            {/* 🎙️ 마이크 버튼이 포함된 병력 청취 (History Taking) 영역 */}
             <div className="mb-6">
-              <label className="block text-sm font-semibold text-zinc-800 mb-2">병력 청취 (History Taking)</label>
+              <div className="flex justify-between items-end mb-2">
+                <label className="block text-sm font-semibold text-zinc-800">병력 청취 (History Taking)</label>
+                <button 
+                  onClick={toggleListening}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors shadow-sm ${isListening ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}
+                >
+                  {isListening ? (
+                    <>
+                      <div className="w-2 h-2 rounded-full bg-red-600"></div> 녹음 중... (한 번 더 누르면 종료)
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" /><path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.854v2.896h2.25a.75.75 0 0 1 0 1.5H12a.75.75 0 0 1-.75-.75v-1.5a6.751 6.751 0 0 1-6-6.854v-1.5A.75.75 0 0 1 6 10.5Z" /></svg>
+                      마이크 켜기
+                    </>
+                  )}
+                </button>
+              </div>
               <textarea 
                 value={historyTaking}
                 onChange={(e) => setHistoryTaking(e.target.value)}
-                placeholder="예) 3일 전 무거운 물건을 들다가 '뚝' 소리와 함께 통증 발생함. 밤에 잘 때 쑤시고 팔을 올리기 힘듦."
-                className="w-full h-24 rounded-xl border border-zinc-200 p-3 text-sm focus:ring-blue-100 resize-none bg-zinc-50"
+                placeholder="마이크 버튼을 누르고 환자와 대화하듯 말씀하시면 자동으로 텍스트가 입력됩니다."
+                className={`w-full h-28 rounded-xl border p-3 text-sm focus:outline-none resize-none transition-colors ${isListening ? 'border-red-300 bg-red-50/30 ring-2 ring-red-100' : 'border-zinc-200 bg-zinc-50 focus:border-blue-300'}`}
               />
             </div>
 
@@ -172,10 +224,10 @@ export default function AdvancedSoapPage() {
               <label className="block text-sm font-semibold text-zinc-800 pt-3">MMT (도수근력검사)</label>
               <select className="w-full h-10 rounded-lg border border-zinc-200 px-4 text-sm bg-zinc-50" value={mmtData.mainMuscle} onChange={(e) => setMmtData({mainMuscle: e.target.value})}>
                 <option>Normal (5/5)</option>
-                <option>Good (4/5) - 저항에 다소 밀림</option>
-                <option>Fair (3/5) - 중력 이겨냄</option>
-                <option>Poor (2/5) - 중력 제거 시 움직임</option>
-                <option>Trace (1/5) - 근수축만 촉지</option>
+                <option>Good (4/5)</option>
+                <option>Fair (3/5)</option>
+                <option>Poor (2/5)</option>
+                <option>Trace (1/5)</option>
               </select>
             </div>
           </div>
@@ -198,11 +250,10 @@ export default function AdvancedSoapPage() {
           )}
 
           <button onClick={generateSoapNotes} disabled={!selectedJoint || isGenerating} className={`w-full flex h-14 items-center justify-center gap-2 rounded-xl text-base font-bold text-white shadow-lg transition ${!selectedJoint ? 'bg-zinc-300' : 'bg-orange-500 hover:bg-orange-600'}`}>
-            {isGenerating ? "문진 및 임상 추론 분석 중..." : "EBP 데이터 기반 SOAP 자동 작성"}
+            {isGenerating ? "문진 및 임상 데이터 분석 중..." : "음성+EBP 데이터 기반 차트 자동 작성"}
           </button>
         </div>
 
-        {/* 🔵 오른쪽: 완성된 SOAP 차트 결과 */}
         <div className="lg:col-span-7 space-y-4">
           <h2 className="text-lg font-bold text-zinc-900 mb-2 flex items-center gap-2">
             <span className="bg-blue-100 text-blue-800 p-1.5 rounded-lg">📝</span> 
@@ -220,7 +271,7 @@ export default function AdvancedSoapPage() {
               <textarea 
                 value={soapData[section.key as keyof typeof soapData]} 
                 onChange={(e) => setSoapData({...soapData, [section.key]: e.target.value})}
-                placeholder="왼쪽에서 문진(History Taking)과 평가 수치를 입력하고 오렌지색 '자동 작성' 버튼을 누르시면 전문 차트가 완성됩니다." 
+                placeholder="왼쪽에서 평가 수치를 입력하고 오렌지색 '자동 작성' 버튼을 누르시면 전문 차트가 완성됩니다." 
                 className={`w-full rounded-xl border-none bg-zinc-50 p-4 text-sm text-zinc-800 resize-none focus:ring-2 focus:ring-blue-100 ${section.h}`} 
               />
             </div>
