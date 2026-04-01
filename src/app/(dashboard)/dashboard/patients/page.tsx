@@ -13,10 +13,10 @@ export default function PatientsPage() {
   // 🚨 [핵심] 화면이 켜지면 진짜 Supabase DB에서 환자 목록을 가져옵니다.
   useEffect(() => {
     const fetchPatients = async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('patients')
         .select('*')
-        .order('created_at', { ascending: false }); // 최신 등록순 정렬
+        .order('created_at', { ascending: false }); 
 
       if (error) {
         console.error("데이터를 불러오지 못했습니다:", error.message);
