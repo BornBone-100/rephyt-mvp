@@ -112,7 +112,7 @@ export default function PatientsPage() {
                       <Link href={`/dashboard/patients/${patient.id}`} className="flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-800">
                         차트 보기
                       </Link>
-                      <Link href="/dashboard/soap/new" className="flex h-9 items-center rounded-lg bg-zinc-900 px-3 text-xs font-medium text-white transition hover:bg-zinc-700">
+                      <Link href={`/dashboard/soap/new?patientId=${patient.id}`} className="flex h-9 items-center rounded-lg bg-zinc-900 px-3 text-xs font-medium text-white transition hover:bg-zinc-700">
                         SOAP 작성
                       </Link>
                       {/* 🚨 [새로 추가된 삭제 버튼] */}
