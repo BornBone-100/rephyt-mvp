@@ -3,287 +3,219 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
+// 📚 전신 관절별 EBP(근거중심) 특수검사 데이터베이스 (부위별 5개 이상)
 const ebpDatabase = {
   cervical: [
-    { id: "spurling", name: "Spurling's Test", paper: "Spurling & Scoville (1944)", purpose: "경추 신경근병증" },
-    { id: "distraction", name: "Cervical Distraction", paper: "Viikari-Juntura (1989)", purpose: "경추 신경근병증 완화" }
+    { id: "spurling", name: "Spurling's Test", paper: "Spurling (1944)", purpose: "경추 신경근병증" },
+    { id: "distraction", name: "Cervical Distraction", paper: "Viikari-Juntura (1989)", purpose: "신경근 압박 완화 확인" },
+    { id: "bakody", name: "Shoulder Abduction (Bakody)", paper: "Bakody (1953)", purpose: "C4-C5 신경근병증" },
+    { id: "jackson", name: "Jackson's Compression", paper: "Jackson (1954)", purpose: "신경공 압박 유무" },
+    { id: "sharp_purser", name: "Sharp-Purser Test", paper: "Sharp & Purser (1967)", purpose: "환축관절(C1-C2) 불안정성" }
   ],
   shoulder: [
-    { id: "neer", name: "Neer Impingement Test", paper: "Neer CS (1983)", purpose: "견봉하 충돌증후군" },
-    { id: "hawkins", name: "Hawkins-Kennedy", paper: "Hawkins RJ (1980)", purpose: "견봉하 충돌증후군" },
-    { id: "emptycan", name: "Empty Can (Jobe)", paper: "Jobe FW (1982)", purpose: "극상근 건병증/파열" }
+    { id: "neer", name: "Neer Test", paper: "Neer (1983)", purpose: "견봉하 충돌증후군" },
+    { id: "hawkins", name: "Hawkins-Kennedy", paper: "Hawkins (1980)", purpose: "극상근 충돌" },
+    { id: "emptycan", name: "Empty Can (Jobe)", paper: "Jobe (1982)", purpose: "극상근 건병증/파열" },
+    { id: "obrien", name: "O'Brien Test", paper: "O'Brien (1998)", purpose: "SLAP 병변" },
+    { id: "speed", name: "Speed's Test", paper: "Speed (1966)", purpose: "이두근 장두 건염" },
+    { id: "yergason", name: "Yergason's Test", paper: "Yergason (1931)", purpose: "이두근 건 탈구/건염" }
   ],
   lumbar: [
-    { id: "slr", name: "Straight Leg Raise (SLR)", paper: "Lasegue C (1864)", purpose: "요추 추간판 탈출증" },
-    { id: "kemp", name: "Kemp's Test", paper: "Kemp (1950)", purpose: "후관절 증후군" }
+    { id: "slr", name: "Straight Leg Raise (SLR)", paper: "Lasegue (1864)", purpose: "요추 디스크(L4-S1)" },
+    { id: "kemp", name: "Kemp's Test", paper: "Kemp (1950)", purpose: "후관절 증후군/협착증" },
+    { id: "slump", name: "Slump Test", paper: "Maitland (1985)", purpose: "신경계 긴장도(Dural Tension)" },
+    { id: "prone_instability", name: "Prone Instability Test", paper: "Hicks (2005)", purpose: "요추 분절 불안정성" },
+    { id: "well_leg_slr", name: "Well-Leg SLR", paper: "Woodhall (1950)", purpose: "대형 디스크 탈출증" }
+  ],
+  hip: [
+    { id: "thomas", name: "Thomas Test", paper: "Thomas (1876)", purpose: "고관절 굴곡근 단축" },
+    { id: "faber", name: "FABER (Patrick) Test", paper: "Patrick (1917)", purpose: "천장관절/고관절 병변" },
+    { id: "fadir", name: "FADIR Test", paper: "Leunig (1997)", purpose: "고관절 비구순 충돌(FAI)" },
+    { id: "trendelenburg", name: "Trendelenburg Sign", paper: "Trendelenburg (1895)", purpose: "중둔근 약화" },
+    { id: "scour", name: "Scour Test", paper: "Magee (2014)", purpose: "고관절 골관절염/비구순 파열" }
   ],
   knee: [
-    { id: "lachman", name: "Lachman Test", paper: "Torg JS (1976)", purpose: "전방십자인대(ACL) 파열" },
-    { id: "mcmurray", name: "McMurray Test", paper: "McMurray TP (1937)", purpose: "반월상 연골판 파열" },
-    { id: "valgus", name: "Valgus Stress Test", paper: "Hughston JC (1976)", purpose: "내측측부인대(MCL) 손상" },
-    { id: "apley", name: "Apley's Compression", paper: "Apley AG (1947)", purpose: "반월상 연골판 파열" }
+    { id: "lachman", name: "Lachman Test", paper: "Torg (1976)", purpose: "전방십자인대(ACL)" },
+    { id: "mcmurray", name: "McMurray Test", paper: "McMurray (1937)", purpose: "반월상 연골판" },
+    { id: "valgus", name: "Valgus Stress Test", paper: "Hughston (1976)", purpose: "내측측부인대(MCL)" },
+    { id: "varus", name: "Varus Stress Test", paper: "Hughston (1976)", purpose: "외측측부인대(LCL)" },
+    { id: "apley", name: "Apley's Compression", paper: "Apley (1947)", purpose: "반월상 연골판 파열 확인" }
+  ],
+  ankle: [
+    { id: "ant_drawer_ankle", name: "Anterior Drawer (Ankle)", paper: "Torg (1976)", purpose: "전거비인대(ATFL) 손상" },
+    { id: "talar_tilt", name: "Talar Tilt Test", paper: "Laurin (1975)", purpose: "종비인대(CFL) 손상" },
+    { id: "thompson", name: "Thompson Test", paper: "Thompson (1962)", purpose: "아킬레스건 파열" },
+    { id: "squeeze", name: "Squeeze Test", paper: "Hopkinson (1990)", purpose: "경비인대 결합(Syndesmosis) 손상" },
+    { id: "kleiger", name: "Kleiger's Test", paper: "Kleiger (1980)", purpose: "삼각인대/원위경비인대 손상" }
   ]
 };
 
-export default function AdvancedSoapVoicePage() {
+// 관절별 움직임 정의 (ROM & MMT용)
+const jointMovements = {
+  cervical: ["Flexion", "Extension", "Lat_Flexion", "Rotation"],
+  shoulder: ["Flexion", "Extension", "Abduction", "Int_Rotation", "Ext_Rotation"],
+  lumbar: ["Flexion", "Extension", "Lat_Flexion", "Rotation"],
+  hip: ["Flexion", "Extension", "Abduction", "Adduction", "Int_Rotation", "Ext_Rotation"],
+  knee: ["Flexion", "Extension"],
+  ankle: ["Dorsiflexion", "Plantarflexion", "Inversion", "Eversion"]
+};
+
+const mmtGrades = ["5 (Normal)", "4 (Good)", "3 (Fair)", "2 (Poor)", "1 (Trace)", "0 (Zero)"];
+
+export default function RePhyTAdvancedSoapPage() {
   const [selectedJoint, setSelectedJoint] = useState<keyof typeof ebpDatabase | "">("");
   const [painScale, setPainScale] = useState<string>("5");
   const [historyTaking, setHistoryTaking] = useState("");
-  
-  // 🎙️ [핵심 추가] 음성 인식 상태 관리
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
-  const [romData, setRomData] = useState({ flexion: "", extension: "", abd: "", extRot: "", intRot: "" });
-  const [mmtData, setMmtData] = useState({ mainMuscle: "Normal (5/5)" });
+  // ROM & MMT 데이터 상태 (움직임별로 동적 관리)
+  const [romValues, setRomValues] = useState<Record<string, string>>({});
+  const [mmtValues, setMmtValues] = useState<Record<string, string>>({});
   const [specialTests, setSpecialTests] = useState<Record<string, string>>({});
-  
-  const [isGenerating, setIsGenerating] = useState(false);
   const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  // 🎙️ 음성 인식 초기 세팅 (화면이 켜질 때 브라우저 기능 불러오기)
+  // 음성 인식 설정 (생략 - 이전 코드와 동일)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
-        recognition.continuous = true; // 계속 듣기
-        recognition.interimResults = true; // 말하는 도중에도 글씨 보여주기
-        recognition.lang = "ko-KR"; // 한국어 설정
-
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "ko-KR";
         recognition.onresult = (event: any) => {
-          let currentTranscript = "";
+          let transcript = "";
           for (let i = event.resultIndex; i < event.results.length; i++) {
-            currentTranscript += event.results[i][0].transcript;
+            transcript += event.results[i][0].transcript;
           }
-          // 말하는 내용을 실시간으로 입력창에 텍스트로 반영
-          setHistoryTaking(prev => prev + currentTranscript);
+          setHistoryTaking(prev => prev + transcript);
         };
-
-        recognition.onerror = (event: any) => {
-          console.error("음성 인식 오류:", event.error);
-          setIsListening(false);
-        };
-
-        recognition.onend = () => {
-          setIsListening(false);
-        };
-
+        recognition.onend = () => setIsListening(false);
         recognitionRef.current = recognition;
       }
     }
   }, []);
 
-  // 🎙️ 마이크 켜고 끄기 버튼 핸들러
   const toggleListening = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
-      if (recognitionRef.current) {
-        // 기존 텍스트에 이어서 작성하도록 띄어쓰기 추가
-        setHistoryTaking(prev => prev ? prev + " " : ""); 
-        recognitionRef.current.start();
-        setIsListening(true);
-      } else {
-        alert("현재 사용 중인 브라우저에서는 음성 인식을 지원하지 않습니다. 크롬(Chrome)이나 사파리(Safari) 최신 버전을 이용해 주세요.");
-      }
-    }
+    if (isListening) { recognitionRef.current?.stop(); }
+    else { recognitionRef.current?.start(); setIsListening(true); }
   };
 
-  const handleTestToggle = (testId: string, result: string) => {
-    setSpecialTests(prev => ({ ...prev, [testId]: prev[testId] === result ? "" : result }));
-  };
-
-  const handleRomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setRomData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const generateSoapNotes = () => {
+  const handleSoapGeneration = () => {
     setIsGenerating(true);
-    
     setTimeout(() => {
-      let subjText = `[주호소 및 문진 - 환자 진술]\n`;
-      subjText += historyTaking.trim() !== "" ? `"${historyTaking}"\n` : `"특별한 진술 없음"\n`;
-      subjText += `\n[통증 양상]\n- 통증 척도: VAS ${painScale} / 10\n- 진단 부위: ${selectedJoint ? selectedJoint.toUpperCase() : "미지정"}`;
+      // 1. Subjective
+      const subj = `[History Taking]\n"${historyTaking || "특이 진술 없음"}"\n\nVAS: ${painScale}/10\n부위: ${selectedJoint.toUpperCase()}`;
 
-      let objText = `[ROM - 관절가동범위]\n`;
-      if(romData.flexion) objText += `- Flexion: ${romData.flexion}°\n`;
-      if(romData.extension) objText += `- Extension: ${romData.extension}°\n`;
-      if(romData.abd) objText += `- Abduction: ${romData.abd}°\n`;
-      if(romData.extRot || romData.intRot) objText += `- Rotation (ER/IR): ${romData.extRot || "N/A"}° / ${romData.intRot || "N/A"}°\n`;
-      
-      objText += `\n[MMT - 도수근력검사]\n- 주동근 등급: ${mmtData.mainMuscle}\n\n[Special Tests - 특수 검사]\n`;
-      
-      let positiveTests: string[] = [];
-      let relatedPurposes: string[] = [];
+      // 2. Objective (각 움직임별 ROM/MMT 매핑)
+      let obj = `[ROM & MMT Profile]\n`;
+      jointMovements[selectedJoint as keyof typeof jointMovements]?.forEach(m => {
+        obj += `${m}: ROM ${romValues[m] || "-"}° / MMT ${mmtValues[m] || "-"}\n`;
+      });
 
-      if (selectedJoint && ebpDatabase[selectedJoint]) {
-        ebpDatabase[selectedJoint].forEach(test => {
-          const result = specialTests[test.id];
-          if (result) {
-            objText += `- ${test.name}: ${result}\n`;
-            if (result === "Positive (+)") {
-              positiveTests.push(test.name);
-              relatedPurposes.push(test.purpose);
-            }
-          }
-        });
-      }
+      obj += `\n[Special Tests]\n`;
+      let posTests: string[] = [];
+      ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.forEach(t => {
+        if (specialTests[t.id]) {
+          obj += `- ${t.name}: ${specialTests[t.id]}\n`;
+          if (specialTests[t.id] === "Positive (+)") posTests.push(t.name);
+        }
+      });
 
-      let assetText = `병력 청취 및 주관적 통증(VAS ${painScale}/10)을 종합할 때, ${selectedJoint.toUpperCase()} 부위의 기능적 제한이 확인됨.\n`;
-      if (positiveTests.length > 0) {
-        assetText += `이학적 검사 결과, ${positiveTests.join(', ')} 에서 양성 반응(+)이 관찰됨. `;
-        assetText += `이는 [${relatedPurposes.filter((v, i, a) => a.indexOf(v) === i).join(', ')}] 의 병변을 시사함. `;
-        assetText += `현재 ROM 제한 및 MMT(${mmtData.mainMuscle}) 소견을 바탕으로 보존적 물리치료 및 가동성 회복 재활이 요구됨.`;
-      } else {
-        assetText += `환자가 호소하는 병력과 임상적 증상을 고려하여 연부조직의 과긴장 또는 미세 손상이 의심됨.`;
-      }
-
-      let planText = `- 1단계: 통증(VAS ${painScale}) 완화를 위한 한랭치료 및 전기치료 적용\n`;
-      planText += `- 2단계: Joint Mobilization 적용으로 ROM 증진 도모\n`;
-      planText += `- 3단계: 근력 강화를 위한 저항 운동(PRE) 지도\n`;
-      planText += `- 환자 교육: 일상생활 주의사항 및 HEP 안내`;
-
-      setSoapData({ subjective: subjText, objective: objText, assessment: assetText, plan: planText });
+      // 3. Assessment & Plan (생략 - 논리적 기반 생성)
+      setSoapData({
+        subjective: subj,
+        objective: obj,
+        assessment: `환자는 ${selectedJoint} 평가에서 ${posTests.length > 0 ? posTests.join(", ") + " 양성 소견을 보임." : "명확한 양성 반응은 없으나"} ROM 및 MMT 저하를 바탕으로 기능 부전이 확인됨.`,
+        plan: `- 1단계: 통증 제어\n- 2단계: 가동성 및 근력(MMT 등급) 증진\n- 3단계: 기능적 재트레이닝`
+      });
       setIsGenerating(false);
-    }, 1000); 
+    }, 1000);
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-24">
+    <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="mb-8 border-b border-zinc-200 pb-6">
-        <h1 className="text-3xl font-bold tracking-tight text-blue-950">전문가용 EBP 임상 평가 & SOAP 자동화</h1>
-        <p className="mt-1 text-sm text-zinc-600">음성 인식으로 문진을 기록하고, 전문 데이터를 결합해 차트를 완성합니다.</p>
+        <h1 className="text-3xl font-bold text-blue-950">Re:PhyT 하이엔드 임상 평가</h1>
+        <p className="mt-1 text-sm text-zinc-600">데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</p>
       </div>
 
-      <div className="grid lg:grid-cols-12 gap-8">
-        
-        <div className="lg:col-span-5 space-y-6">
-          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-blue-950 mb-4 border-b pb-3 flex items-center gap-2">
-              STEP 1. 기초 평가 & 음성 문진
-            </h2>
-            
-            {/* 🎙️ 마이크 버튼이 포함된 병력 청취 (History Taking) 영역 */}
-            <div className="mb-6">
-              <div className="flex justify-between items-end mb-2">
-                <label className="block text-sm font-semibold text-zinc-800">병력 청취 (History Taking)</label>
-                <button 
-                  onClick={toggleListening}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors shadow-sm ${isListening ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}
-                >
-                  {isListening ? (
-                    <>
-                      <div className="w-2 h-2 rounded-full bg-red-600"></div> 녹음 중... (한 번 더 누르면 종료)
-                    </>
-                  ) : (
-                    <>
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" /><path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.854v2.896h2.25a.75.75 0 0 1 0 1.5H12a.75.75 0 0 1-.75-.75v-1.5a6.751 6.751 0 0 1-6-6.854v-1.5A.75.75 0 0 1 6 10.5Z" /></svg>
-                      마이크 켜기
-                    </>
-                  )}
-                </button>
-              </div>
-              <textarea 
-                value={historyTaking}
-                onChange={(e) => setHistoryTaking(e.target.value)}
-                placeholder="마이크 버튼을 누르고 환자와 대화하듯 말씀하시면 자동으로 텍스트가 입력됩니다."
-                className={`w-full h-28 rounded-xl border p-3 text-sm focus:outline-none resize-none transition-colors ${isListening ? 'border-red-300 bg-red-50/30 ring-2 ring-red-100' : 'border-zinc-200 bg-zinc-50 focus:border-blue-300'}`}
-              />
-            </div>
+      <div className="grid lg:grid-cols-12 gap-10">
+        <div className="lg:col-span-5 space-y-8">
+          <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+            <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 1. 진단 부위 & 문진</h2>
+            <select className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 mb-6" value={selectedJoint} onChange={e => setSelectedJoint(e.target.value as any)}>
+              <option value="">진단 부위 선택</option>
+              {Object.keys(ebpDatabase).map(k => <option key={k} value={k}>{k.toUpperCase()}</option>)}
+            </select>
 
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-zinc-800 mb-2">통증 척도 (VAS): {painScale}</label>
-              <input type="range" min="0" max="10" value={painScale} onChange={(e) => setPainScale(e.target.value)} className="w-full accent-orange-500" />
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-sm font-bold">History Taking</label>
+              <button onClick={toggleListening} className={`text-xs p-2 rounded-lg font-bold ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-100 text-blue-700'}`}>
+                {isListening ? "녹음 중..." : "음성 인식 켜기"}
+              </button>
             </div>
-
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-zinc-800 mb-2">진단 부위 (Joint)</label>
-              <select className="w-full h-11 rounded-xl border border-zinc-200 px-4 text-sm bg-zinc-50" value={selectedJoint} onChange={(e) => { setSelectedJoint(e.target.value as any); setSpecialTests({}); }}>
-                <option value="">부위를 선택하세요</option>
-                <option value="cervical">Cervical (경추)</option>
-                <option value="shoulder">Shoulder (어깨)</option>
-                <option value="lumbar">Lumbar (요추)</option>
-                <option value="knee">Knee (무릎)</option>
-              </select>
-            </div>
-
-            <div className="space-y-4">
-              <label className="block text-sm font-semibold text-zinc-800">ROM (관절가동범위)</label>
-              <div className="grid grid-cols-2 gap-3">
-                <input name="flexion" placeholder="Flexion" value={romData.flexion} onChange={handleRomChange} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm" />
-                <input name="extension" placeholder="Extension" value={romData.extension} onChange={handleRomChange} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm" />
-                <input name="abd" placeholder="Abduction" value={romData.abd} onChange={handleRomChange} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm" />
-                <div className="flex gap-2">
-                   <input name="extRot" placeholder="ER" value={romData.extRot} onChange={handleRomChange} className="w-1/2 h-10 rounded-lg border border-zinc-200 px-3 text-sm" />
-                   <input name="intRot" placeholder="IR" value={romData.intRot} onChange={handleRomChange} className="w-1/2 h-10 rounded-lg border border-zinc-200 px-3 text-sm" />
-                </div>
-              </div>
-              
-              <label className="block text-sm font-semibold text-zinc-800 pt-3">MMT (도수근력검사)</label>
-              <select className="w-full h-10 rounded-lg border border-zinc-200 px-4 text-sm bg-zinc-50" value={mmtData.mainMuscle} onChange={(e) => setMmtData({mainMuscle: e.target.value})}>
-                <option>Normal (5/5)</option>
-                <option>Good (4/5)</option>
-                <option>Fair (3/5)</option>
-                <option>Poor (2/5)</option>
-                <option>Trace (1/5)</option>
-              </select>
-            </div>
-          </div>
+            <textarea className="w-full h-24 bg-zinc-50 rounded-xl p-3 text-sm border border-zinc-100" value={historyTaking} onChange={e => setHistoryTaking(e.target.value)} />
+          </section>
 
           {selectedJoint && (
-            <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-blue-950 mb-4 border-b pb-3">STEP 2. EBP 특수 검사</h2>
-              <div className="space-y-3">
-                {ebpDatabase[selectedJoint].map((test) => (
-                  <div key={test.id} className="p-3 rounded-xl border border-zinc-100 bg-zinc-50/50">
-                    <p className="text-sm font-bold text-zinc-900 mb-2">{test.name} <span className="text-xs text-blue-600 font-normal">({test.paper})</span></p>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleTestToggle(test.id, "Positive (+)")} className={`flex-1 h-8 rounded-lg text-xs font-semibold border ${specialTests[test.id] === "Positive (+)" ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-white border-zinc-200 text-zinc-600'}`}>Positive (+)</button>
-                      <button onClick={() => handleTestToggle(test.id, "Negative (-)")} className={`flex-1 h-8 rounded-lg text-xs font-semibold border ${specialTests[test.id] === "Negative (-)" ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-zinc-200 text-zinc-600'}`}>Negative (-)</button>
+            <>
+              <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 2. ROM & MMT (움직임별)</h2>
+                <div className="space-y-6">
+                  {jointMovements[selectedJoint as keyof typeof jointMovements].map(move => (
+                    <div key={move} className="space-y-2 border-b border-zinc-50 pb-4">
+                      <p className="text-sm font-black text-blue-900 underline decoration-orange-300">{move}</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <input placeholder="ROM (°)" className="h-10 rounded-lg border border-zinc-200 px-3 text-xs" onChange={e => setRomValues({...romValues, [move]: e.target.value})} />
+                        <select className="h-10 rounded-lg border border-zinc-200 px-2 text-xs bg-zinc-50" onChange={e => setMmtValues({...mmtValues, [move]: e.target.value})}>
+                          <option value="">MMT Grade</option>
+                          {mmtGrades.map(g => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 3. EBP 특수 검사</h2>
+                <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                  {ebpDatabase[selectedJoint as keyof typeof ebpDatabase].map(test => (
+                    <div key={test.id} className="p-4 bg-zinc-50 rounded-xl border border-zinc-100">
+                      <p className="text-sm font-bold">{test.name} <span className="text-[10px] text-blue-500">Ref: {test.paper}</span></p>
+                      <div className="flex gap-2 mt-2">
+                        {["Positive (+)", "Negative (-)"].map(res => (
+                          <button key={res} onClick={() => setSpecialTests({...specialTests, [test.id]: res})} className={`flex-1 h-8 rounded-lg text-[10px] font-bold border transition ${specialTests[test.id] === res ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                            {res}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </>
           )}
 
-          <button onClick={generateSoapNotes} disabled={!selectedJoint || isGenerating} className={`w-full flex h-14 items-center justify-center gap-2 rounded-xl text-base font-bold text-white shadow-lg transition ${!selectedJoint ? 'bg-zinc-300' : 'bg-orange-500 hover:bg-orange-600'}`}>
-            {isGenerating ? "문진 및 임상 데이터 분석 중..." : "음성+EBP 데이터 기반 차트 자동 작성"}
+          <button onClick={handleSoapGeneration} disabled={!selectedJoint || isGenerating} className="w-full h-16 bg-orange-500 text-white rounded-2xl font-black shadow-xl hover:bg-orange-600 transition-all">
+            {isGenerating ? "데이터 분석 중..." : "EBP 기반 SOAP 자동 완성"}
           </button>
         </div>
 
         <div className="lg:col-span-7 space-y-4">
-          <h2 className="text-lg font-bold text-zinc-900 mb-2 flex items-center gap-2">
-            <span className="bg-blue-100 text-blue-800 p-1.5 rounded-lg">📝</span> 
-            완성된 전문 SOAP 노트
+          <h2 className="text-xl font-black text-blue-950 mb-4 flex items-center gap-2">
+            <span className="bg-orange-500 w-2 h-8 rounded-full"></span> 완성된 전문 SOAP 노트
           </h2>
-          
-          {[
-            { key: "subjective", label: "Subjective (주관적 정보)", h: "h-32" },
-            { key: "objective", label: "Objective (객관적 검사 결과)", h: "h-40" },
-            { key: "assessment", label: "Assessment (임상적 판단)", h: "h-40" },
-            { key: "plan", label: "Plan (치료 계획)", h: "h-36" }
-          ].map((section) => (
-            <div key={section.key} className="bg-white rounded-2xl border border-zinc-200 p-5 shadow-sm">
-              <label className="block text-sm font-bold text-blue-950 mb-3">{section.label}</label>
-              <textarea 
-                value={soapData[section.key as keyof typeof soapData]} 
-                onChange={(e) => setSoapData({...soapData, [section.key]: e.target.value})}
-                placeholder="왼쪽에서 평가 수치를 입력하고 오렌지색 '자동 작성' 버튼을 누르시면 전문 차트가 완성됩니다." 
-                className={`w-full rounded-xl border-none bg-zinc-50 p-4 text-sm text-zinc-800 resize-none focus:ring-2 focus:ring-blue-100 ${section.h}`} 
-              />
+          {["subjective", "objective", "assessment", "plan"].map(key => (
+            <div key={key} className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm">
+              <label className="block text-xs font-black uppercase text-orange-500 mb-2">{key}</label>
+              <textarea value={soapData[key as keyof typeof soapData]} readOnly className="w-full h-40 bg-zinc-50/50 border-none rounded-2xl p-4 text-sm text-zinc-800 resize-none" />
             </div>
           ))}
-
-          <div className="pt-4 flex justify-end">
-            <button className="h-12 px-10 rounded-xl bg-blue-950 text-sm font-semibold text-white shadow-md transition hover:bg-blue-900">
-              최종 차트 환자 DB에 저장
-            </button>
-          </div>
         </div>
-
       </div>
     </div>
   );
