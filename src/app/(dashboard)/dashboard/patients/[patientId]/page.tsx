@@ -13,26 +13,33 @@ export default function PatientDetailPage() {
   const supabase = createClient();
 
   useEffect(() => {
-    const fetchPatientData = async () => {
-      if (!patientId) return;
+    const fetchPatient = async () => {
+      // 🚨 [핵심 1] 현재 로그인한 원장님(사용자)이 누군지 확인합니다.
+      const { data: { user } } = await supabase.auth.getUser();
 
-      // DB에서 해당 환자의 고유 ID로 정보를 찾아옵니다
+      if (!user) {
+        setIsLoading(false);
+        return;
+      }
+
+      // 🚨 [핵심 2] 현재 URL의 patientId에 해당하고, 내 계정이 만든 환자 1건만 불러옵니다.
       const { data, error } = await (supabase as any)
         .from('patients')
         .select('*')
+        .eq('created_by', user.id) // 👉 이 한 줄이 개인 캐비닛 자물쇠 역할입니다!
         .eq('id', patientId)
-        .single(); // 한 명의 데이터만 콕 집어서 가져옴
+        .maybeSingle();
 
       if (error) {
-        console.error("환자 정보를 불러오지 못했습니다:", error);
-      } else if (data) {
-        setPatient(data);
+        console.error("데이터를 불러오지 못했습니다:", error.message);
+      } else {
+        setPatient(data ?? null);
       }
       setIsLoading(false);
     };
 
-    fetchPatientData();
-  }, [patientId]);
+    fetchPatient();
+  }, [patientId, supabase]);
 
   if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center bg-zinc-50 text-blue-900 font-bold animate-pulse">차트 데이터를 불러오는 중입니다...</div>;

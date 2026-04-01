@@ -25,10 +25,12 @@ const NewPatientPage = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // 🚨 [수정된 부분] (supabase as any) 를 써서 깐깐한 Vercel을 강제 통과시킵니다!
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    // 🚨 [핵심 1] 등록하기 전에 현재 로그인한 내 정보를 가져옵니다.
+    const { data: { user } } = await supabase.auth.getUser();
+
     const { error } = await (supabase as any)
       .from('patients')
       .insert([
@@ -38,7 +40,9 @@ const NewPatientPage = () => {
           gender: formData.gender,
           phone: formData.phone,
           diagnosis: formData.diagnosis,
-          memo: formData.memo
+          memo: formData.memo,
+          // 🚨 [핵심 2] DB에 저장할 때 내 아이디(user.id)를 서명으로 남깁니다!
+          created_by: user?.id 
         }
       ]);
 
@@ -47,7 +51,7 @@ const NewPatientPage = () => {
       return;
     }
 
-    alert(`${formData.name} 환자님이 실제 DB에 성공적으로 등록되었습니다!`);
+    alert(`${formData.name} 환자님이 성공적으로 등록되었습니다!`);
     router.push("/dashboard/patients"); 
   };
 
