@@ -80,7 +80,6 @@ function SoapContent() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // 🪄 OpenAI 통신 로직
   const handleSoapGeneration = async () => {
     setIsGenerating(true);
     
@@ -126,7 +125,6 @@ function SoapContent() {
     }
   };
 
-  // 💾 DB 저장 로직
   const handleSaveSoap = async () => {
     if (!patientId) {
       alert("환자가 선택되지 않았습니다. 목록에서 환자를 선택 후 작성해 주세요.");
@@ -140,9 +138,18 @@ function SoapContent() {
     setIsSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { error } = await (supabase as any)
-      .from('soap_notes')
-      .insert([{
+    // supabase-generated 타입과 실제 DB 스키마가 불일치할 수 있어,
+    // 여기서는 "from()/insert()"만 최소 인터페이스로 안전하게 타입캐스팅합니다.
+    const supabaseForInsert = supabase as unknown as {
+      from: (table: string) => {
+        insert: (rows: unknown[]) => Promise<{ error: { message: string } | null }>;
+      };
+    };
+
+    const { error } = await supabaseForInsert
+      .from("soap_notes")
+      .insert([
+        {
           patient_id: patientId,
           created_by: user?.id,
           joint: selectedJoint,
@@ -151,7 +158,8 @@ function SoapContent() {
           objective: soapData.objective,
           assessment: soapData.assessment,
           plan: soapData.plan
-      }]);
+        },
+      ]);
 
     if (error) {
       alert("저장 실패: " + error.message);
@@ -171,10 +179,16 @@ function SoapContent() {
 
       <div className="grid lg:grid-cols-12 gap-10">
         <div className="lg:col-span-5 space-y-8">
-          {/* STEP 1 */}
           <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
             <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 1. 진단 부위 & 문진</h2>
-            <select className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 mb-6" value={selectedJoint} onChange={e => {setSelectedJoint(e.target.value as any); setSpecialTests({});}}>
+            <select
+              className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 mb-6"
+              value={selectedJoint}
+              onChange={(e) => {
+                setSelectedJoint(e.target.value as keyof typeof ebpDatabase | "");
+                setSpecialTests({});
+              }}
+            >
               <option value="">진단 부위 선택</option>
               {Object.keys(ebpDatabase).map(k => <option key={k} value={k}>{k.toUpperCase()}</option>)}
             </select>
@@ -186,13 +200,13 @@ function SoapContent() {
             <input type="range" min="0" max="10" value={painScale} onChange={(e) => setPainScale(e.target.value)} className="w-full accent-orange-500" />
           </section>
 
-          {/* STEP 2 & 3 */}
           {selectedJoint && (
             <>
               <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
                 <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 2. ROM & MMT (움직임별)</h2>
                 <div className="space-y-6">
-                  {jointMovements[selectedJoint as keyof typeof jointMovements].map(move => (
+                  {/* 🚨 Vercel 배포 에러의 주범이었던 곳! ?(안전장치)를 완벽하게 추가했습니다 */}
+                  {jointMovements[selectedJoint as keyof typeof jointMovements]?.map(move => (
                     <div key={move} className="space-y-2 border-b border-zinc-50 pb-4">
                       <p className="text-sm font-black text-blue-900 underline decoration-orange-300">{move}</p>
                       <div className="grid grid-cols-2 gap-4">
@@ -210,7 +224,8 @@ function SoapContent() {
               <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
                 <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 3. EBP 특수 검사</h2>
                 <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                  {ebpDatabase[selectedJoint as keyof typeof ebpDatabase].map(test => (
+                  {/* 🚨 여기도 ? 추가 완료! */}
+                  {ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.map(test => (
                     <div key={test.id} className="p-4 bg-zinc-50 rounded-xl border border-zinc-100">
                       <p className="text-sm font-bold">{test.name} <span className="text-[10px] text-blue-500">Ref: {test.paper}</span></p>
                       <div className="flex gap-2 mt-2">
@@ -227,7 +242,6 @@ function SoapContent() {
             </>
           )}
 
-          {/* AI 연동 버튼 */}
           <button onClick={handleSoapGeneration} disabled={!selectedJoint || isGenerating} className="w-full h-16 bg-orange-500 text-white rounded-2xl font-black shadow-xl hover:bg-orange-600 transition-all flex justify-center items-center gap-2">
             {isGenerating ? (
               <span className="animate-pulse">OpenAI가 전문 임상 추론 중...</span>
@@ -237,7 +251,6 @@ function SoapContent() {
           </button>
         </div>
 
-        {/* 오른쪽 결과창 및 저장버튼 */}
         <div className="lg:col-span-7 space-y-4">
           <h2 className="text-xl font-black text-blue-950 mb-4 flex items-center gap-2">
             <span className="bg-orange-500 w-2 h-8 rounded-full"></span> 완성된 전문 SOAP 노트
