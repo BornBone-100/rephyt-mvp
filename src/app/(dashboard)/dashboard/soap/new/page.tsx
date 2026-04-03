@@ -51,7 +51,6 @@ const ebpDatabase = {
   ]
 };
 
-// 관절별 움직임 및 MMT 등급
 const jointMovements = {
   cervical: ["Flexion", "Extension", "Lat_Flexion", "Rotation"],
   shoulder: ["Flexion", "Extension", "Abduction", "Int_Rotation", "Ext_Rotation"],
@@ -66,54 +65,51 @@ const mmtGrades = ["5 (Normal)", "4 (Good)", "3 (Fair)", "2 (Poor)", "1 (Trace)"
 function SoapContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const patientId = searchParams.get("patientId");
+  const patientId = searchParams.get("patientId"); 
   const supabase = createClient();
 
   const [selectedJoint, setSelectedJoint] = useState<keyof typeof ebpDatabase | "">("");
   const [painScale, setPainScale] = useState<string>("5");
   const [historyTaking, setHistoryTaking] = useState("");
-
+  
   const [romValues, setRomValues] = useState<Record<string, string>>({});
   const [mmtValues, setMmtValues] = useState<Record<string, string>>({});
   const [specialTests, setSpecialTests] = useState<Record<string, string>>({});
-
+  
   const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // 🪄 [진짜 OpenAI 통신 버전] 성준님이 지켜낸 핵심 로직!
+  // 🪄 OpenAI 통신 로직
   const handleSoapGeneration = async () => {
     setIsGenerating(true);
-
+    
     try {
-      // 1. 디테일한 평가 UI에서 입력받은 데이터를 예쁘게 포장합니다.
       let rawData = `[환자 평가 데이터]\n`;
       rawData += `■ 주호소 관절: ${selectedJoint.toUpperCase()}\n`;
       rawData += `■ History: ${historyTaking || "특이 진술 없음"}\n`;
       rawData += `■ VAS: ${painScale}/10\n\n`;
-
+      
       rawData += `■ ROM 및 MMT 데이터:\n`;
-      jointMovements[selectedJoint as keyof typeof jointMovements]?.forEach((m) => {
+      jointMovements[selectedJoint as keyof typeof jointMovements]?.forEach(m => {
         rawData += `- ${m}: ROM ${romValues[m] || "측정안됨"}° / MMT ${mmtValues[m] || "측정안됨"}\n`;
       });
 
       rawData += `\n■ 특수 검사 결과:\n`;
-      ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.forEach((test) => {
+      ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.forEach(test => {
         if (specialTests[test.id]) {
           rawData += `- ${test.name}: ${specialTests[test.id]}\n`;
         }
       });
 
-      // 2. 백엔드 비밀 통로(/api/ai-soap)로 POST 요청을 보냅니다.
-      const response = await fetch("/api/ai-soap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ promptData: rawData })
+      const response = await fetch('/api/ai-soap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptData: rawData }),
       });
 
       if (!response.ok) throw new Error("AI 서버 에러");
 
-      // 3. AI가 예쁘게 써준 S, O, A, P 결과를 화면에 꽂아 넣습니다!
       const aiResult = await response.json();
       setSoapData({
         subjective: aiResult.subjective,
@@ -121,15 +117,16 @@ function SoapContent() {
         assessment: aiResult.assessment,
         plan: aiResult.plan
       });
+
     } catch (error) {
-      alert("AI 차트 생성에 실패했습니다. 관리자에게 문의하세요.");
+      alert("AI 차트 생성에 실패했습니다. (API 키 세팅을 확인해주세요)");
       console.error(error);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // 💾 [DB 저장 로직] 생성된 차트를 Supabase에 영구 보존합니다.
+  // 💾 DB 저장 로직
   const handleSaveSoap = async () => {
     if (!patientId) {
       alert("환자가 선택되지 않았습니다. 목록에서 환자를 선택 후 작성해 주세요.");
@@ -141,28 +138,26 @@ function SoapContent() {
     }
 
     setIsSaving(true);
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    const { error } = await (supabase as any).from("soap_notes").insert([
-      {
-        patient_id: patientId,
-        created_by: user?.id,
-        joint: selectedJoint,
-        pain_scale: parseInt(painScale),
-        subjective: soapData.subjective,
-        objective: soapData.objective,
-        assessment: soapData.assessment,
-        plan: soapData.plan
-      }
-    ]);
+    const { error } = await (supabase as any)
+      .from('soap_notes')
+      .insert([{
+          patient_id: patientId,
+          created_by: user?.id,
+          joint: selectedJoint,
+          pain_scale: parseInt(painScale),
+          subjective: soapData.subjective,
+          objective: soapData.objective,
+          assessment: soapData.assessment,
+          plan: soapData.plan
+      }]);
 
     if (error) {
       alert("저장 실패: " + error.message);
     } else {
       alert("진료 기록이 안전하게 저장되었습니다.");
-      router.push(`/dashboard/patients/${patientId}`);
+      router.push(`/dashboard/patients/${patientId}`); 
     }
     setIsSaving(false);
   };
@@ -171,7 +166,7 @@ function SoapContent() {
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="mb-8 border-b border-zinc-200 pb-6">
         <h1 className="text-3xl font-bold text-blue-950">Re:PhyT 하이엔드 임상 평가</h1>
-        <p className="mt-1 text-sm text-zinc-600">데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</p>
+        <p className="mt-1 text-sm text-zinc-600">데이터는 정직하고 케어는 전문 물리치료사와 동명대 스포츠재활과 함께 정교하게 실행합니다.</p>
       </div>
 
       <div className="grid lg:grid-cols-12 gap-10">
@@ -179,65 +174,32 @@ function SoapContent() {
           {/* STEP 1 */}
           <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
             <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 1. 진단 부위 & 문진</h2>
-            <select
-              className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 mb-6"
-              value={selectedJoint}
-              onChange={(e) => {
-                setSelectedJoint(e.target.value as keyof typeof ebpDatabase | "");
-                setSpecialTests({});
-              }}
-            >
+            <select className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 mb-6" value={selectedJoint} onChange={e => {setSelectedJoint(e.target.value as any); setSpecialTests({});}}>
               <option value="">진단 부위 선택</option>
-              {Object.keys(ebpDatabase).map((k) => (
-                <option key={k} value={k}>
-                  {k.toUpperCase()}
-                </option>
-              ))}
+              {Object.keys(ebpDatabase).map(k => <option key={k} value={k}>{k.toUpperCase()}</option>)}
             </select>
 
             <label className="block text-sm font-bold mb-2">병력 청취 (History Taking)</label>
-            <textarea
-              className="w-full h-24 bg-zinc-50 rounded-xl p-3 text-sm border border-zinc-100"
-              value={historyTaking}
-              onChange={(e) => setHistoryTaking(e.target.value)}
-            />
-
+            <textarea className="w-full h-24 bg-zinc-50 rounded-xl p-3 text-sm border border-zinc-100" value={historyTaking} onChange={e => setHistoryTaking(e.target.value)} />
+            
             <label className="block text-sm font-bold mt-4 mb-2">통증 척도 (VAS): {painScale}</label>
-            <input
-              type="range"
-              min="0"
-              max="10"
-              value={painScale}
-              onChange={(e) => setPainScale(e.target.value)}
-              className="w-full accent-orange-500"
-            />
+            <input type="range" min="0" max="10" value={painScale} onChange={(e) => setPainScale(e.target.value)} className="w-full accent-orange-500" />
           </section>
 
-          {/* STEP 2 & 3 (관절 선택 시 나타남) */}
+          {/* STEP 2 & 3 */}
           {selectedJoint && (
             <>
               <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
                 <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 2. ROM & MMT (움직임별)</h2>
                 <div className="space-y-6">
-                  {jointMovements[selectedJoint as keyof typeof jointMovements].map((move) => (
+                  {jointMovements[selectedJoint as keyof typeof jointMovements].map(move => (
                     <div key={move} className="space-y-2 border-b border-zinc-50 pb-4">
                       <p className="text-sm font-black text-blue-900 underline decoration-orange-300">{move}</p>
                       <div className="grid grid-cols-2 gap-4">
-                        <input
-                          placeholder="ROM (°)"
-                          className="h-10 rounded-lg border border-zinc-200 px-3 text-xs"
-                          onChange={(e) => setRomValues({ ...romValues, [move]: e.target.value })}
-                        />
-                        <select
-                          className="h-10 rounded-lg border border-zinc-200 px-2 text-xs bg-zinc-50"
-                          onChange={(e) => setMmtValues({ ...mmtValues, [move]: e.target.value })}
-                        >
+                        <input placeholder="ROM (°)" className="h-10 rounded-lg border border-zinc-200 px-3 text-xs" onChange={e => setRomValues({...romValues, [move]: e.target.value})} />
+                        <select className="h-10 rounded-lg border border-zinc-200 px-2 text-xs bg-zinc-50" onChange={e => setMmtValues({...mmtValues, [move]: e.target.value})}>
                           <option value="">MMT Grade</option>
-                          {mmtGrades.map((g) => (
-                            <option key={g} value={g}>
-                              {g}
-                            </option>
-                          ))}
+                          {mmtGrades.map(g => <option key={g} value={g}>{g}</option>)}
                         </select>
                       </div>
                     </div>
@@ -248,19 +210,12 @@ function SoapContent() {
               <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
                 <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 3. EBP 특수 검사</h2>
                 <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                  {ebpDatabase[selectedJoint as keyof typeof ebpDatabase].map((test) => (
+                  {ebpDatabase[selectedJoint as keyof typeof ebpDatabase].map(test => (
                     <div key={test.id} className="p-4 bg-zinc-50 rounded-xl border border-zinc-100">
-                      <p className="text-sm font-bold">
-                        {test.name} <span className="text-[10px] text-blue-500">Ref: {test.paper}</span>
-                      </p>
+                      <p className="text-sm font-bold">{test.name} <span className="text-[10px] text-blue-500">Ref: {test.paper}</span></p>
                       <div className="flex gap-2 mt-2">
-                        {["Positive (+)", "Negative (-)"].map((res) => (
-                          <button
-                            key={res}
-                            type="button"
-                            onClick={() => setSpecialTests({ ...specialTests, [test.id]: res })}
-                            className={`flex-1 h-8 rounded-lg text-[10px] font-bold border transition ${specialTests[test.id] === res ? "bg-orange-500 text-white border-orange-500" : "bg-white border-zinc-200 text-zinc-600"}`}
-                          >
+                        {["Positive (+)", "Negative (-)"].map(res => (
+                          <button key={res} onClick={() => setSpecialTests({...specialTests, [test.id]: res})} className={`flex-1 h-8 rounded-lg text-[10px] font-bold border transition ${specialTests[test.id] === res ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-zinc-200 text-zinc-600'}`}>
                             {res}
                           </button>
                         ))}
@@ -273,12 +228,7 @@ function SoapContent() {
           )}
 
           {/* AI 연동 버튼 */}
-          <button
-            type="button"
-            onClick={handleSoapGeneration}
-            disabled={!selectedJoint || isGenerating}
-            className="w-full h-16 bg-orange-500 text-white rounded-2xl font-black shadow-xl hover:bg-orange-600 transition-all flex justify-center items-center gap-2"
-          >
+          <button onClick={handleSoapGeneration} disabled={!selectedJoint || isGenerating} className="w-full h-16 bg-orange-500 text-white rounded-2xl font-black shadow-xl hover:bg-orange-600 transition-all flex justify-center items-center gap-2">
             {isGenerating ? (
               <span className="animate-pulse">OpenAI가 전문 임상 추론 중...</span>
             ) : (
@@ -292,23 +242,14 @@ function SoapContent() {
           <h2 className="text-xl font-black text-blue-950 mb-4 flex items-center gap-2">
             <span className="bg-orange-500 w-2 h-8 rounded-full"></span> 완성된 전문 SOAP 노트
           </h2>
-          {["subjective", "objective", "assessment", "plan"].map((key) => (
+          {["subjective", "objective", "assessment", "plan"].map(key => (
             <div key={key} className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm">
               <label className="block text-xs font-black uppercase text-orange-500 mb-2">{key}</label>
-              <textarea
-                value={soapData[key as keyof typeof soapData]}
-                onChange={(e) => setSoapData({ ...soapData, [key]: e.target.value })}
-                className="w-full h-32 bg-zinc-50/50 border-none rounded-2xl p-4 text-sm text-zinc-800 resize-none focus:ring-2 focus:ring-orange-100"
-              />
+              <textarea value={soapData[key as keyof typeof soapData]} onChange={e => setSoapData({...soapData, [key]: e.target.value})} className="w-full h-32 bg-zinc-50/50 border-none rounded-2xl p-4 text-sm text-zinc-800 resize-none focus:ring-2 focus:ring-orange-100" />
             </div>
           ))}
 
-          <button
-            type="button"
-            onClick={handleSaveSoap}
-            disabled={isSaving}
-            className="w-full h-16 bg-blue-950 text-white rounded-2xl font-black shadow-xl hover:bg-blue-900 transition-all mt-6"
-          >
+          <button onClick={handleSaveSoap} disabled={isSaving} className="w-full h-16 bg-blue-950 text-white rounded-2xl font-black shadow-xl hover:bg-blue-900 transition-all mt-6">
             {isSaving ? "진료 기록 보관함에 넣는 중..." : "최종 SOAP 차트 DB 저장"}
           </button>
         </div>
