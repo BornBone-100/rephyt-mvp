@@ -81,37 +81,55 @@ function SoapContent() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // SOAP 로컬 자동 생성 (AI 연결 전 기본 동작)
-  const handleSoapGeneration = () => {
+  // 🪄 [진짜 OpenAI 통신 버전] 성준님이 지켜낸 핵심 로직!
+  const handleSoapGeneration = async () => {
     setIsGenerating(true);
-    setTimeout(() => {
-      const subj = `[History Taking]\n"${historyTaking || "특이 진술 없음"}"\n\nVAS: ${painScale}/10\n부위: ${selectedJoint.toUpperCase()}`;
 
-      let obj = `[ROM & MMT Profile]\n`;
+    try {
+      // 1. 디테일한 평가 UI에서 입력받은 데이터를 예쁘게 포장합니다.
+      let rawData = `[환자 평가 데이터]\n`;
+      rawData += `■ 주호소 관절: ${selectedJoint.toUpperCase()}\n`;
+      rawData += `■ History: ${historyTaking || "특이 진술 없음"}\n`;
+      rawData += `■ VAS: ${painScale}/10\n\n`;
+
+      rawData += `■ ROM 및 MMT 데이터:\n`;
       jointMovements[selectedJoint as keyof typeof jointMovements]?.forEach((m) => {
-        obj += `${m}: ROM ${romValues[m] || "-"}° / MMT ${mmtValues[m] || "-"}\n`;
+        rawData += `- ${m}: ROM ${romValues[m] || "측정안됨"}° / MMT ${mmtValues[m] || "측정안됨"}\n`;
       });
 
-      obj += `\n[Special Tests]\n`;
-      let posTests: string[] = [];
-      ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.forEach((t) => {
-        if (specialTests[t.id]) {
-          obj += `- ${t.name}: ${specialTests[t.id]}\n`;
-          if (specialTests[t.id] === "Positive (+)") posTests.push(t.name);
+      rawData += `\n■ 특수 검사 결과:\n`;
+      ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.forEach((test) => {
+        if (specialTests[test.id]) {
+          rawData += `- ${test.name}: ${specialTests[test.id]}\n`;
         }
       });
 
-      setSoapData({
-        subjective: subj,
-        objective: obj,
-        assessment: `환자는 ${selectedJoint} 평가에서 ${posTests.length > 0 ? posTests.join(", ") + " 양성 소견을 보임." : "명확한 양성 반응은 없으나"} ROM 및 MMT 저하를 바탕으로 기능 부전이 확인됨.`,
-        plan: `- 1단계: 통증 제어\n- 2단계: 가동성 및 근력(MMT 등급) 증진\n- 3단계: 기능적 재트레이닝`
+      // 2. 백엔드 비밀 통로(/api/ai-soap)로 POST 요청을 보냅니다.
+      const response = await fetch("/api/ai-soap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ promptData: rawData })
       });
+
+      if (!response.ok) throw new Error("AI 서버 에러");
+
+      // 3. AI가 예쁘게 써준 S, O, A, P 결과를 화면에 꽂아 넣습니다!
+      const aiResult = await response.json();
+      setSoapData({
+        subjective: aiResult.subjective,
+        objective: aiResult.objective,
+        assessment: aiResult.assessment,
+        plan: aiResult.plan
+      });
+    } catch (error) {
+      alert("AI 차트 생성에 실패했습니다. 관리자에게 문의하세요.");
+      console.error(error);
+    } finally {
       setIsGenerating(false);
-    }, 800);
+    }
   };
 
-  // DB에 저장하는 로직
+  // 💾 [DB 저장 로직] 생성된 차트를 Supabase에 영구 보존합니다.
   const handleSaveSoap = async () => {
     if (!patientId) {
       alert("환자가 선택되지 않았습니다. 목록에서 환자를 선택 후 작성해 주세요.");
@@ -254,13 +272,18 @@ function SoapContent() {
             </>
           )}
 
+          {/* AI 연동 버튼 */}
           <button
             type="button"
             onClick={handleSoapGeneration}
             disabled={!selectedJoint || isGenerating}
-            className="w-full h-16 bg-orange-500 text-white rounded-2xl font-black shadow-xl hover:bg-orange-600 transition-all"
+            className="w-full h-16 bg-orange-500 text-white rounded-2xl font-black shadow-xl hover:bg-orange-600 transition-all flex justify-center items-center gap-2"
           >
-            {isGenerating ? "데이터 분석 중..." : "EBP 기반 SOAP 자동 완성"}
+            {isGenerating ? (
+              <span className="animate-pulse">OpenAI가 전문 임상 추론 중...</span>
+            ) : (
+              "OpenAI 기반 전문가 SOAP 자동 작성"
+            )}
           </button>
         </div>
 
