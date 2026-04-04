@@ -54,7 +54,7 @@ export default function PatientsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-blue-950">Re:PhyT 환자 관리</h1>
           <p className="mt-2 text-sm font-medium text-zinc-600">
-            데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다
+            데이터는 정직하고 케어는 전문물리치료사가 정교하게 실행합니다.
           </p>
         </div>
         
