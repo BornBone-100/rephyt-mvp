@@ -174,7 +174,6 @@ function SoapContent() {
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="mb-8 border-b border-zinc-200 pb-6">
         <h1 className="text-3xl font-bold text-blue-950">Re:PhyT 하이엔드 임상 평가</h1>
-        <p className="mt-1 text-sm text-zinc-600">데이터는 정직하고 케어는 전문 물리치료사와 동명대 스포츠재활과 함께 정교하게 실행합니다.</p>
       </div>
 
       <div className="grid lg:grid-cols-12 gap-10">
