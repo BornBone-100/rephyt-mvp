@@ -108,6 +108,9 @@ export default function PatientDetailPage() {
             </button>
           </Link>
         </div>
+        <p className="mt-2 text-sm text-zinc-600">
+          데이터는 정직하고 케어는 전문물리치료사가 정교하게 실행합니다.
+        </p>
       </div>
 
       <div className="bg-white rounded-3xl p-8 border border-zinc-200 shadow-sm mb-10 flex flex-wrap gap-10">
