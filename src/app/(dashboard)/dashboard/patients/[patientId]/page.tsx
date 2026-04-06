@@ -12,16 +12,14 @@ export default function PatientDetailPage() {
 
   const [patient, setPatient] = useState<any>(null);
   const [soapNotes, setSoapNotes] = useState<any[]>([]);
-  const [treatments, setTreatments] = useState<any[]>([]); // 💡 처치 내역 상태 추가
+  const [treatments, setTreatments] = useState<any[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
   const [debugError, setDebugError] = useState("");
   
-  // 💡 듀얼 탭 상태 관리 (기본값: soap)
   const [activeTab, setActiveTab] = useState<"soap" | "treatment">("soap");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   
-  // 💡 처치 내역 퀵 입력창 상태
   const [newTreatment, setNewTreatment] = useState("");
   const [isSubmittingTreatment, setIsSubmittingTreatment] = useState(false);
 
@@ -40,12 +38,10 @@ export default function PatientDetailPage() {
       if (!patientData) throw new Error(`DB에서 해당 환자를 찾을 수 없습니다.`);
       setPatient(patientData);
 
-      // 1. SOAP 기록 가져오기
       const { data: soapData } = await (supabase as any)
         .from("soap_notes").select("*").eq("patient_id", patientId).order("created_at", { ascending: false });
       if (soapData) setSoapNotes(soapData);
 
-      // 2. 처치 내역 가져오기
       const { data: treatmentData } = await (supabase as any)
         .from("treatments").select("*").eq("patient_id", patientId).order("created_at", { ascending: false });
       if (treatmentData) setTreatments(treatmentData);
@@ -61,7 +57,6 @@ export default function PatientDetailPage() {
     fetchPatientAndRecords();
   }, [patientId]);
 
-  // 💡 처치 내역 DB 저장 함수
   const handleAddTreatment = async () => {
     if (!newTreatment.trim()) return;
     setIsSubmittingTreatment(true);
@@ -74,8 +69,8 @@ export default function PatientDetailPage() {
     }]);
 
     if (!error) {
-      setNewTreatment(""); // 입력창 비우기
-      fetchPatientAndRecords(); // 목록 새로고침
+      setNewTreatment("");
+      fetchPatientAndRecords();
     } else {
       alert("처치 기록 저장 실패: " + error.message);
     }
@@ -118,7 +113,7 @@ export default function PatientDetailPage() {
         <div className="flex-1 min-w-[200px]"><p className="text-sm font-bold text-zinc-400 mb-1">특이사항 (Memo)</p><p className="text-sm font-medium text-zinc-600">{patient.memo || '특이사항 없음'}</p></div>
       </div>
 
-      {/* 💡 듀얼 탭 내비게이션 */}
+      {/* 듀얼 탭 내비게이션 */}
       <div className="flex border-b border-zinc-200 mb-8 gap-8">
         <button 
           onClick={() => setActiveTab("soap")} 
@@ -134,9 +129,7 @@ export default function PatientDetailPage() {
         </button>
       </div>
 
-      {/* ========================================== */}
-      {/* 1. SOAP 진단 기록 탭 (기존 타임라인 완벽 유지) */}
-      {/* ========================================== */}
+      {/* 1. SOAP 진단 기록 탭 */}
       {activeTab === "soap" && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="flex justify-between items-center mb-8">
@@ -145,14 +138,15 @@ export default function PatientDetailPage() {
             </h2>
             {soapNotes.length > 0 && (
               <div className="bg-zinc-100 p-1 rounded-xl flex gap-1">
-                <button onClick={() => setSortOrder("desc")} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${sortOrder === "desc" ? "bg-white text-blue-950 shadow-sm" : "text-zinc-500 hover:bg-zinc-200"}`}>최신 치료순</button>
-                <button onClick={() => setSortOrder("asc")} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${sortOrder === "asc" ? "bg-white text-blue-950 shadow-sm" : "text-zinc-500 hover:bg-zinc-200"}`}>첫 치료순</button>
+                {/* 💡 디테일 수정: 치료순 -> 평가순 */}
+                <button onClick={() => setSortOrder("desc")} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${sortOrder === "desc" ? "bg-white text-blue-950 shadow-sm" : "text-zinc-500 hover:bg-zinc-200"}`}>최신 평가순</button>
+                <button onClick={() => setSortOrder("asc")} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${sortOrder === "asc" ? "bg-white text-blue-950 shadow-sm" : "text-zinc-500 hover:bg-zinc-200"}`}>첫 평가순</button>
               </div>
             )}
           </div>
 
           {soapNotes.length === 0 ? (
-            <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 shadow-sm text-zinc-500 font-bold">아직 작성된 치료 기록이 없습니다.</div>
+            <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 shadow-sm text-zinc-500 font-bold">아직 작성된 평가 기록이 없습니다.</div>
           ) : (
             <div className="relative pl-4 md:pl-8">
               <div className="absolute left-[11px] md:left-[27px] top-6 bottom-0 w-[2px] bg-blue-100"></div>
@@ -166,7 +160,7 @@ export default function PatientDetailPage() {
                         <div className="flex flex-col gap-2 mb-6 border-b border-zinc-100 pb-4">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-black text-blue-900 bg-blue-50 px-3 py-1.5 rounded-lg">{formatDateTime(note.created_at)}</span>
-                            <span className="text-xs font-bold text-zinc-400">#{visitNumber}번째 진단</span>
+                            <span className="text-xs font-bold text-zinc-400">#{visitNumber}번째 평가</span>
                           </div>
                           <div className="flex gap-2 mt-1">
                             <span className="font-bold text-zinc-600 bg-zinc-100 px-3 py-1 rounded-md text-xs border border-zinc-200">진단 부위: {note.joint?.toUpperCase() || '미지정'}</span>
@@ -201,13 +195,9 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* 2. 처치 내역 탭 (새롭게 추가된 직관적 UI) */}
-      {/* ========================================== */}
+      {/* 2. 처치 내역 탭 */}
       {activeTab === "treatment" && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-          
-          {/* 💡 처치 내용 퀵 입력창 */}
           <div className="bg-white p-6 rounded-3xl border border-blue-200 shadow-sm mb-8">
             <label className="block text-sm font-black text-blue-950 mb-2">새로운 처치 기록 입력</label>
             <div className="flex gap-4">
@@ -229,7 +219,6 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
-          {/* 💡 누적된 처치 기록 리스트 */}
           <h2 className="text-xl font-black text-blue-950 mb-6 flex items-center gap-2">
             <span className="bg-blue-950 w-2 h-6 rounded-full"></span> 누적 처치 내역 ({treatments.length}건)
           </h2>
