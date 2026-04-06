@@ -9,14 +9,13 @@ export default function PatientsListPage() {
   const [patients, setPatients] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 💡 DB에서 환자 목록 가져오기
   const fetchPatients = async () => {
     setIsLoading(true);
     try {
       const { data, error } = await (supabase as any)
         .from("patients")
         .select("*")
-        .order("created_at", { ascending: false }); // 최신 등록순 정렬
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
       if (data) setPatients(data);
@@ -31,12 +30,11 @@ export default function PatientsListPage() {
     fetchPatients();
   }, []);
 
-  // 💡 삭제 기능 (유령 데이터 청소용)
   const handleDelete = async (id: string) => {
     if (window.confirm("이 환자의 모든 기록을 삭제하시겠습니까?")) {
       const { error } = await (supabase as any).from("patients").delete().eq("id", id);
       if (!error) {
-        fetchPatients(); // 삭제 성공 시 목록 새로고침
+        fetchPatients();
       } else {
         alert("삭제 실패: " + error.message);
       }
@@ -91,7 +89,6 @@ export default function PatientsListPage() {
                 patients.map((patient) => (
                   <tr key={patient.id} className="hover:bg-zinc-50/50 transition">
                     <td className="px-6 py-5 font-black text-zinc-800 text-base">
-                      {/* 💡 정확하게 patient.name 을 꺼내옵니다 */}
                       {patient.name || "이름 없음"}
                     </td>
                     <td className="px-6 py-5 font-medium text-zinc-600">
@@ -109,6 +106,14 @@ export default function PatientsListPage() {
                           차트 보기
                         </button>
                       </Link>
+                      
+                      {/* 💡 원상 복구된 SOAP 작성 다크 버튼! */}
+                      <Link href={`/dashboard/soap/new?patientId=${patient.id}`}>
+                        <button className="px-4 py-2 rounded-lg bg-zinc-900 text-white font-bold hover:bg-zinc-800 transition text-xs">
+                          SOAP 작성
+                        </button>
+                      </Link>
+
                       <button onClick={() => handleDelete(patient.id)} className="px-4 py-2 rounded-lg bg-red-50 text-red-600 font-bold hover:bg-red-100 transition text-xs">
                         삭제
                       </button>
