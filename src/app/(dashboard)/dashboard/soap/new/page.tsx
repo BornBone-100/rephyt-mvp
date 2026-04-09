@@ -3,6 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import RomMmtAssessment from "@/components/RomMmtAssessment";
 
 // 📚 전신 관절별 EBP 특수검사 데이터베이스
 const ebpDatabase = {
@@ -257,10 +258,19 @@ function SoapContent() {
           <h2 className="text-xl font-black text-blue-950 mb-4 flex items-center gap-2">
             <span className="bg-orange-500 w-2 h-8 rounded-full"></span> 완성된 전문 SOAP 노트
           </h2>
-          {["subjective", "objective", "assessment", "plan"].map(key => (
-            <div key={key} className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm">
-              <label className="block text-xs font-black uppercase text-orange-500 mb-2">{key}</label>
-              <textarea value={soapData[key as keyof typeof soapData]} onChange={e => setSoapData({...soapData, [key]: e.target.value})} className="w-full h-32 bg-zinc-50/50 border-none rounded-2xl p-4 text-sm text-zinc-800 resize-none focus:ring-2 focus:ring-orange-100" />
+          {(["subjective", "objective", "assessment", "plan"] as const).map((key) => (
+            <div key={key}>
+              {key === "objective" && <RomMmtAssessment />}
+              <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+                <label className="mb-2 block text-xs font-black uppercase text-orange-500">
+                  {key === "objective" ? "objective (객관적 평가)" : key}
+                </label>
+                <textarea
+                  value={soapData[key]}
+                  onChange={(e) => setSoapData({ ...soapData, [key]: e.target.value })}
+                  className="h-32 w-full resize-none rounded-2xl border-none bg-zinc-50/50 p-4 text-sm text-zinc-800 focus:ring-2 focus:ring-orange-100"
+                />
+              </div>
             </div>
           ))}
 
