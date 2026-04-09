@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 
-interface AssessmentRecord {
+export interface RomMmtRecord {
   id: string;
   movement: string;
   arom: string;
@@ -28,8 +28,17 @@ const MMT_OPTIONS = [
   "0 (Z)",
 ];
 
-export default function RomMmtAssessment() {
-  const [records, setRecords] = useState<AssessmentRecord[]>([]);
+type RomMmtAssessmentProps = {
+  title?: string;
+  records: RomMmtRecord[];
+  onRecordsChange: (next: RomMmtRecord[]) => void;
+};
+
+export default function RomMmtAssessment({
+  title = "STEP 2. 정밀 평가 (ROM & MMT)",
+  records,
+  onRecordsChange,
+}: RomMmtAssessmentProps) {
   const [newMovement, setNewMovement] = useState("");
   const [newArom, setNewArom] = useState("");
   const [newProm, setNewProm] = useState("");
@@ -42,7 +51,7 @@ export default function RomMmtAssessment() {
       return;
     }
 
-    const newRecord: AssessmentRecord = {
+    const newRecord: RomMmtRecord = {
       id: uuidv4(),
       movement: newMovement,
       arom: newArom || "-",
@@ -51,7 +60,7 @@ export default function RomMmtAssessment() {
       note: newNote,
     };
 
-    setRecords([...records, newRecord]);
+    onRecordsChange([...records, newRecord]);
 
     setNewMovement("");
     setNewArom("");
@@ -61,17 +70,12 @@ export default function RomMmtAssessment() {
   };
 
   const handleRemoveRecord = (id: string) => {
-    setRecords(records.filter((record) => record.id !== id));
+    onRecordsChange(records.filter((record) => record.id !== id));
   };
 
   return (
-    <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm mb-4">
-      <div className="flex items-center gap-2 mb-6">
-        <span className="h-6 w-2 rounded-full bg-blue-500" />
-        <h3 className="text-lg font-black text-blue-950">
-          관절 가동성 및 근력 정밀 평가 (ROM & MMT)
-        </h3>
-      </div>
+    <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <h2 className="mb-6 border-b border-zinc-200 pb-2 text-lg font-bold text-blue-950">{title}</h2>
 
       <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-zinc-100 bg-zinc-50 p-5">
         <div className="flex flex-col gap-3 md:flex-row">
@@ -205,6 +209,6 @@ export default function RomMmtAssessment() {
           평가된 가동 범위(ROM) 및 근력(MMT) 데이터가 없습니다.
         </div>
       )}
-    </div>
+    </section>
   );
 }

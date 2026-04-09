@@ -3,7 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
-import RomMmtAssessment from "@/components/RomMmtAssessment";
+import RomMmtAssessment, { type RomMmtRecord } from "@/components/RomMmtAssessment";
 
 // 📚 전신 관절별 EBP 특수검사 데이터베이스
 const ebpDatabase = {
@@ -52,17 +52,6 @@ const ebpDatabase = {
   ]
 };
 
-const jointMovements = {
-  cervical: ["Flexion", "Extension", "Lat_Flexion", "Rotation"],
-  shoulder: ["Flexion", "Extension", "Abduction", "Int_Rotation", "Ext_Rotation"],
-  lumbar: ["Flexion", "Extension", "Lat_Flexion", "Rotation"],
-  hip: ["Flexion", "Extension", "Abduction", "Adduction", "Int_Rotation", "Ext_Rotation"],
-  knee: ["Flexion", "Extension"],
-  ankle: ["Dorsiflexion", "Plantarflexion", "Inversion", "Eversion"]
-};
-
-const mmtGrades = ["5 (Normal)", "4 (Good)", "3 (Fair)", "2 (Poor)", "1 (Trace)", "0 (Zero)"];
-
 function SoapContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -73,8 +62,7 @@ function SoapContent() {
   const [painScale, setPainScale] = useState<string>("5");
   const [historyTaking, setHistoryTaking] = useState("");
   
-  const [romValues, setRomValues] = useState<Record<string, string>>({});
-  const [mmtValues, setMmtValues] = useState<Record<string, string>>({});
+  const [romMmtRecords, setRomMmtRecords] = useState<RomMmtRecord[]>([]);
   const [specialTests, setSpecialTests] = useState<Record<string, string>>({});
   
   const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
@@ -90,10 +78,14 @@ function SoapContent() {
       rawData += `■ History: ${historyTaking || "특이 진술 없음"}\n`;
       rawData += `■ VAS: ${painScale}/10\n\n`;
       
-      rawData += `■ ROM 및 MMT 데이터:\n`;
-      jointMovements[selectedJoint as keyof typeof jointMovements]?.forEach(m => {
-        rawData += `- ${m}: ROM ${romValues[m] || "측정안됨"}° / MMT ${mmtValues[m] || "측정안됨"}\n`;
-      });
+      rawData += `■ ROM 및 MMT (정밀 평가):\n`;
+      if (romMmtRecords.length === 0) {
+        rawData += `- (표에 기록된 항목 없음)\n`;
+      } else {
+        romMmtRecords.forEach((r) => {
+          rawData += `- ${r.movement}: AROM ${r.arom}, PROM ${r.prom}, MMT ${r.mmt}, 비고 ${r.note || "-"}\n`;
+        });
+      }
 
       rawData += `\n■ 특수 검사 결과:\n`;
       ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.forEach(test => {
@@ -190,6 +182,7 @@ function SoapContent() {
               onChange={(e) => {
                 setSelectedJoint(e.target.value as keyof typeof ebpDatabase | "");
                 setSpecialTests({});
+                setRomMmtRecords([]);
               }}
             >
               <option value="">진단 부위 선택</option>
@@ -205,24 +198,11 @@ function SoapContent() {
 
           {selectedJoint && (
             <>
-              <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
-                <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 2. ROM & MMT (움직임별)</h2>
-                <div className="space-y-6">
-                  {/* 🚨 Vercel 배포 에러의 주범이었던 곳! ?(안전장치)를 완벽하게 추가했습니다 */}
-                  {jointMovements[selectedJoint as keyof typeof jointMovements]?.map(move => (
-                    <div key={move} className="space-y-2 border-b border-zinc-50 pb-4">
-                      <p className="text-sm font-black text-blue-900 underline decoration-orange-300">{move}</p>
-                      <div className="grid grid-cols-2 gap-4">
-                        <input placeholder="ROM (°)" className="h-10 rounded-lg border border-zinc-200 px-3 text-xs" onChange={e => setRomValues({...romValues, [move]: e.target.value})} />
-                        <select className="h-10 rounded-lg border border-zinc-200 px-2 text-xs bg-zinc-50" onChange={e => setMmtValues({...mmtValues, [move]: e.target.value})}>
-                          <option value="">MMT Grade</option>
-                          {mmtGrades.map(g => <option key={g} value={g}>{g}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
+              <RomMmtAssessment
+                title="STEP 2. 정밀 평가 (ROM & MMT)"
+                records={romMmtRecords}
+                onRecordsChange={setRomMmtRecords}
+              />
 
               <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
                 <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 3. EBP 특수 검사</h2>
@@ -260,7 +240,6 @@ function SoapContent() {
           </h2>
           {(["subjective", "objective", "assessment", "plan"] as const).map((key) => (
             <div key={key}>
-              {key === "objective" && <RomMmtAssessment />}
               <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
                 <label className="mb-2 block text-xs font-black uppercase text-orange-500">
                   {key === "objective" ? "objective (객관적 평가)" : key}
