@@ -77,46 +77,49 @@ export default function RomMmtAssessment({
     <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
       <h2 className="mb-6 border-b border-zinc-200 pb-2 text-lg font-bold text-blue-950">{title}</h2>
 
-      <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-zinc-100 bg-zinc-50 p-5">
-        <div className="flex flex-col gap-3 md:flex-row">
-          <div className="flex-1">
-            <label className="mb-1 block text-xs font-bold text-zinc-500">
-              관절 및 동작명 (예: Shoulder Flexion)
-            </label>
-            <input
-              type="text"
-              value={newMovement}
-              onChange={(e) => setNewMovement(e.target.value)}
-              className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              placeholder="동작 또는 근육명 입력"
-            />
-          </div>
-          <div className="w-full md:w-24">
+      <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-zinc-100 bg-zinc-50 p-5">
+        {/* 1행: 동작명 — 가로 전체 */}
+        <div className="w-full min-w-0">
+          <label className="mb-1 block text-xs font-bold text-zinc-500">
+            관절 및 동작명 (예: Shoulder Flexion)
+          </label>
+          <input
+            type="text"
+            value={newMovement}
+            onChange={(e) => setNewMovement(e.target.value)}
+            className="h-11 w-full min-w-0 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            placeholder="동작 또는 근육명 입력"
+          />
+        </div>
+
+        {/* 2행: AROM / PROM / MMT — 1:1:1 */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="min-w-0">
             <label className="mb-1 block text-xs font-bold text-zinc-500">AROM (°)</label>
             <input
               type="text"
               value={newArom}
               onChange={(e) => setNewArom(e.target.value)}
-              className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-blue-500"
+              className="h-11 w-full min-w-0 rounded-xl border border-zinc-200 px-2 text-sm outline-none focus:border-blue-500 sm:px-3"
               placeholder="예: 150"
             />
           </div>
-          <div className="w-full md:w-24">
+          <div className="min-w-0">
             <label className="mb-1 block text-xs font-bold text-zinc-500">PROM (°)</label>
             <input
               type="text"
               value={newProm}
               onChange={(e) => setNewProm(e.target.value)}
-              className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-blue-500"
+              className="h-11 w-full min-w-0 rounded-xl border border-zinc-200 px-2 text-sm outline-none focus:border-blue-500 sm:px-3"
               placeholder="예: 160"
             />
           </div>
-          <div className="w-full md:w-32">
+          <div className="min-w-0">
             <label className="mb-1 block text-xs font-bold text-zinc-500">MMT 등급</label>
             <select
               value={newMmt}
               onChange={(e) => setNewMmt(e.target.value)}
-              className="h-11 w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3 text-sm font-bold text-zinc-700 outline-none focus:border-blue-500"
+              className="h-11 w-full min-w-0 cursor-pointer rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-700 outline-none focus:border-blue-500 sm:text-sm sm:px-3"
             >
               {MMT_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>
@@ -127,7 +130,8 @@ export default function RomMmtAssessment({
           </div>
         </div>
 
-        <div className="mt-2 flex-1">
+        {/* 3행: End-feel + 버튼 */}
+        <div className="min-w-0">
           <label className="mb-1 block text-xs font-bold text-zinc-500">
             End-feel / 통증 양상 / 특이사항
           </label>
@@ -137,13 +141,13 @@ export default function RomMmtAssessment({
               value={newNote}
               onChange={(e) => setNewNote(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddRecord()}
-              className="h-11 flex-1 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-blue-500"
+              className="h-11 min-w-0 flex-1 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-blue-500"
               placeholder="예: Firm, 끝범위 통증, 근약화 뚜렷함"
             />
             <button
               type="button"
               onClick={handleAddRecord}
-              className="h-11 shrink-0 rounded-xl bg-blue-950 px-6 text-sm font-bold whitespace-nowrap text-white shadow-sm transition hover:bg-blue-900"
+              className="h-11 shrink-0 rounded-xl bg-blue-950 px-4 text-sm font-bold whitespace-nowrap text-white shadow-sm transition hover:bg-blue-900 sm:px-6"
             >
               기록 추가
             </button>
