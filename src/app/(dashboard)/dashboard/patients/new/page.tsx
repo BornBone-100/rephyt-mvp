@@ -8,125 +8,146 @@ import { createClient } from "@/utils/supabase/client";
 export default function NewPatientPage() {
   const router = useRouter();
   const supabase = createClient();
+
+  const [name, setName] = useState("");
+  const [gender, setGender] = useState("");
+  const [age, setAge] = useState("");
+  const [phone, setPhone] = useState("");
+  const [diagnosis, setDiagnosis] = useState("");
+  const [memo, setMemo] = useState("");
+  
+  // 💡 새롭게 추가된 상태값들
+  const [isFirstVisit, setIsFirstVisit] = useState(true);
+  const [pastHistory, setPastHistory] = useState("");
+  const [symptomChange, setSymptomChange] = useState("");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // 💡 [핵심] DB 서랍장 이름표(Column)와 1000% 똑같이 스펠링을 맞췄습니다!
-  const [formData, setFormData] = useState({
-    name: "",
-    age: "",
-    gender: "남성",
-    diagnosis: "",
-    phone: "",
-    memo: ""
-  });
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleRadioChange = (gender: string) => {
-    setFormData({ ...formData, gender });
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name) {
-      alert("환자 이름은 필수 입력 사항입니다.");
+    if (!name || !gender || !age) {
+      alert("이름, 성별, 나이는 필수 입력 항목입니다.");
       return;
     }
 
     setIsSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    // 💡 DB로 데이터를 쏠 때, 우리가 만든 칸에 정확히 꽂아 넣습니다.
-    const { error } = await (supabase as any)
-      .from('patients')
-      .insert([
-        {
-          name: formData.name,
-          age: parseInt(formData.age) || null, // 숫자로 안전하게 변환
-          gender: formData.gender,
-          diagnosis: formData.diagnosis,
-          phone: formData.phone,
-          memo: formData.memo,
-          created_by: user?.id
-        }
-      ]);
+    const { error } = await (supabase as any).from("patients").insert([{
+      name,
+      gender,
+      age: parseInt(age),
+      phone,
+      diagnosis,
+      memo,
+      is_first_visit: isFirstVisit,
+      past_history: isFirstVisit ? null : pastHistory,
+      symptom_change: isFirstVisit ? null : symptomChange,
+      created_by: user?.id
+    }]);
 
-    if (error) {
-      alert("환자 등록 중 오류가 발생했습니다: " + error.message);
-      setIsSubmitting(false);
+    setIsSubmitting(false);
+
+    if (!error) {
+      router.push("/dashboard/patients");
     } else {
-      router.push("/dashboard/patients"); // 성공 시 환자 목록으로 즉시 이동
+      alert("환자 등록 실패: " + error.message);
     }
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 p-6 md:p-10">
+    <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="max-w-3xl mx-auto">
-        <div className="mb-8 border-b border-zinc-200 pb-6">
-          <Link href="/dashboard/patients" className="inline-flex items-center text-sm font-bold text-zinc-500 hover:text-zinc-900 mb-4 transition">
-            &larr; 돌아가기
-          </Link>
-          <h1 className="text-3xl font-black text-blue-950">신규 환자 등록</h1>
-          <p className="mt-2 text-sm text-zinc-600">Re:PhyT 케어 시스템에 새로운 환자 차트를 등록해 주세요.</p>
-        </div>
+        <Link href="/dashboard/patients" className="inline-flex items-center text-sm font-bold text-zinc-500 hover:text-zinc-900 mb-6 transition">
+          &larr; 환자 목록으로
+        </Link>
+        <h1 className="text-3xl font-black text-blue-950 mb-8">신규 환자 등록</h1>
 
-        <form onSubmit={handleSubmit} className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm space-y-8">
-          <div className="grid md:grid-cols-2 gap-8">
-            {/* 이름 입력 */}
-            <div className="space-y-2">
-              <label className="block text-sm font-black text-zinc-800">환자 이름 <span className="text-orange-500">*</span></label>
-              <input required type="text" name="name" value={formData.name} onChange={handleChange} className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition" placeholder="예: 김성준" />
+        <form onSubmit={handleSubmit} className="bg-white rounded-3xl p-8 border border-zinc-200 shadow-sm space-y-8">
+          
+          {/* 1. 기본 인적 사항 */}
+          <div>
+            <h2 className="text-lg font-black text-zinc-800 mb-4 flex items-center gap-2">
+              <span className="w-1.5 h-5 bg-blue-500 rounded-full"></span> 기본 인적 사항
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-bold text-zinc-600 mb-2">환자 이름 *</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 홍길동" className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 outline-none" required />
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-bold text-zinc-600 mb-2">성별 *</label>
+                  <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 outline-none" required>
+                    <option value="">선택</option>
+                    <option value="남성">남성</option>
+                    <option value="여성">여성</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-bold text-zinc-600 mb-2">나이 *</label>
+                  <input type="number" value={age} onChange={(e) => setAge(e.target.value)} placeholder="예: 35" className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 outline-none" required />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-zinc-600 mb-2">연락처</label>
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="예: 010-1234-5678" className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-zinc-600 mb-2">주 진단명</label>
+                <input type="text" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="예: 요추 추간판 탈출증" className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 outline-none" />
+              </div>
+            </div>
+          </div>
+
+          <hr className="border-zinc-100" />
+
+          {/* 💡 2. 내원 이력 및 History Taking (새로 추가된 하이라이트 부분!) */}
+          <div>
+            <h2 className="text-lg font-black text-zinc-800 mb-4 flex items-center gap-2">
+              <span className="w-1.5 h-5 bg-orange-500 rounded-full"></span> 내원 이력 (History Taking)
+            </h2>
+            
+            <div className="mb-6 bg-zinc-50 p-2 rounded-xl inline-flex gap-1 border border-zinc-200">
+              <button type="button" onClick={() => setIsFirstVisit(true)} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${isFirstVisit ? "bg-white text-blue-950 shadow-sm border border-zinc-200" : "text-zinc-500 hover:text-zinc-700"}`}>
+                🌱 첫 발병 / 첫 내원
+              </button>
+              <button type="button" onClick={() => setIsFirstVisit(false)} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${!isFirstVisit ? "bg-white text-orange-600 shadow-sm border border-zinc-200" : "text-zinc-500 hover:text-zinc-700"}`}>
+                🔄 타 병원/센터 치료 경험 있음
+              </button>
             </div>
 
-            {/* 나이 입력 */}
-            <div className="space-y-2">
-              <label className="block text-sm font-black text-zinc-800">나이 (세)</label>
-              <input type="number" name="age" value={formData.age} onChange={handleChange} className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition" placeholder="예: 33" />
-            </div>
+            {/* 재내원 환자일 경우에만 스르륵 나타나는 입력칸 */}
+            {!isFirstVisit && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-top-2 duration-300 bg-orange-50/50 p-6 rounded-2xl border border-orange-100/50 mb-6">
+                <div>
+                  <label className="block text-sm font-black text-orange-800 mb-2">기존 치료 내역</label>
+                  <textarea value={pastHistory} onChange={(e) => setPastHistory(e.target.value)} placeholder="예: A신경외과 주사치료 3회, B한의원 침치료 1개월 등" className="w-full h-24 rounded-xl bg-white border border-orange-200 px-4 py-3 text-sm focus:border-orange-500 outline-none resize-none"></textarea>
+                </div>
+                <div>
+                  <label className="block text-sm font-black text-orange-800 mb-2">기존 치료 후 증상 변화</label>
+                  <textarea value={symptomChange} onChange={(e) => setSymptomChange(e.target.value)} placeholder="예: 주사 맞을 때만 하루 반짝 좋고 다시 똑같이 저림. 물리치료는 효과 없었음." className="w-full h-24 rounded-xl bg-white border border-orange-200 px-4 py-3 text-sm focus:border-orange-500 outline-none resize-none"></textarea>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* 성별 선택 */}
-          <div className="space-y-3">
-            <label className="block text-sm font-black text-zinc-800">성별</label>
-            <div className="flex gap-6">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="gender" checked={formData.gender === "남성"} onChange={() => handleRadioChange("남성")} className="w-5 h-5 accent-blue-600" />
-                <span className="text-sm font-medium text-zinc-700">남성</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="gender" checked={formData.gender === "여성"} onChange={() => handleRadioChange("여성")} className="w-5 h-5 accent-blue-600" />
-                <span className="text-sm font-medium text-zinc-700">여성</span>
-              </label>
-            </div>
+          <hr className="border-zinc-100" />
+
+          {/* 3. 기타 메모 */}
+          <div>
+            <h2 className="text-lg font-black text-zinc-800 mb-4 flex items-center gap-2">
+              <span className="w-1.5 h-5 bg-zinc-300 rounded-full"></span> 특이사항 (Memo)
+            </h2>
+            <textarea value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="환자의 직업, 취미, 특별히 주의해야 할 금기증 등을 자유롭게 메모하세요." className="w-full h-24 rounded-xl bg-zinc-50 border border-zinc-200 px-4 py-3 text-sm focus:border-blue-500 outline-none resize-none"></textarea>
           </div>
 
-          {/* 주 진단명 */}
-          <div className="space-y-2">
-            <label className="block text-sm font-black text-zinc-800">주 진단명 (Diagnosis)</label>
-            <input type="text" name="diagnosis" value={formData.diagnosis} onChange={handleChange} className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition" placeholder="예: 요추 추간판 탈출증" />
-          </div>
-
-          {/* 연락처 */}
-          <div className="space-y-2">
-            <label className="block text-sm font-black text-zinc-800">연락처</label>
-            <input type="tel" name="phone" value={formData.phone} onChange={handleChange} className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition" placeholder="예: 010-1234-5678" />
-          </div>
-
-          {/* 특이사항 */}
-          <div className="space-y-2">
-            <label className="block text-sm font-black text-zinc-800">특이사항 (Memo)</label>
-            <textarea name="memo" value={formData.memo} onChange={handleChange} className="w-full h-24 rounded-xl bg-zinc-50 border border-zinc-200 p-4 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition resize-none" placeholder="환자의 수술 이력, 기저질환 등을 자유롭게 적어주세요." />
-          </div>
-
-          {/* 제출 버튼 */}
-          <div className="pt-4">
-            <button type="submit" disabled={isSubmitting} className="w-full md:w-auto md:float-right h-12 rounded-xl bg-blue-950 px-8 font-bold text-white shadow-md transition hover:bg-blue-900 disabled:opacity-50">
-              {isSubmitting ? "DB에 저장하는 중..." : "환자 등록 완료"}
+          <div className="pt-4 flex justify-end">
+            <button type="submit" disabled={isSubmitting} className="h-14 rounded-xl bg-blue-950 px-10 font-black text-white shadow-lg transition hover:bg-blue-900 disabled:opacity-50 text-lg">
+              {isSubmitting ? "등록 중..." : "환자 등록 완료"}
             </button>
-            <div className="clear-both"></div>
           </div>
+
         </form>
       </div>
     </div>

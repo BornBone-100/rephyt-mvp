@@ -90,6 +90,9 @@ export default function PatientDetailPage() {
 
   const sortedNotes = sortOrder === "desc" ? [...soapNotes] : [...soapNotes].reverse();
 
+  const isFirstVisit = patient?.is_first_visit === true;
+  const hasPriorCareElsewhere = patient?.is_first_visit === false;
+
   if (isLoading) return <div className="flex min-h-screen items-center justify-center font-bold text-blue-900 animate-pulse">차트와 타임라인을 동기화하는 중입니다...</div>;
   if (!patient) return <div className="flex min-h-screen items-center justify-center font-bold text-red-500">환자 데이터를 불러오지 못했습니다. 목록으로 돌아가주세요.</div>;
 
@@ -105,12 +108,62 @@ export default function PatientDetailPage() {
         </div>
       </div>
 
-      {/* 환자 기본 정보 카드 */}
-      <div className="bg-white rounded-3xl p-8 border border-zinc-200 shadow-sm mb-10 flex flex-wrap gap-10">
-        <div><p className="text-sm font-bold text-zinc-400 mb-1">성별 / 나이</p><p className="text-lg font-black text-zinc-800">{patient.gender} / {patient.age}세</p></div>
-        <div><p className="text-sm font-bold text-zinc-400 mb-1">연락처</p><p className="text-lg font-black text-zinc-800">{patient.phone || '미입력'}</p></div>
-        <div><p className="text-sm font-bold text-zinc-400 mb-1">주 진단명</p><p className="text-lg font-black text-blue-600">{patient.diagnosis || '미입력'}</p></div>
-        <div className="flex-1 min-w-[200px]"><p className="text-sm font-bold text-zinc-400 mb-1">특이사항 (Memo)</p><p className="text-sm font-medium text-zinc-600">{patient.memo || '특이사항 없음'}</p></div>
+      {/* 환자 기본 정보 카드 + 내원/과거력 */}
+      <div className="mb-10 space-y-4">
+        <div className="flex flex-col gap-6 rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
+          {isFirstVisit && (
+            <div className="border-b border-emerald-100 pb-4">
+              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-black leading-tight text-emerald-800 shadow-sm">
+                🌱 첫 발병/내원 환자
+              </span>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-10">
+            <div>
+              <p className="mb-1 text-sm font-bold text-zinc-400">성별 / 나이</p>
+              <p className="text-lg font-black text-zinc-800">
+                {patient.gender} / {patient.age}세
+              </p>
+            </div>
+            <div>
+              <p className="mb-1 text-sm font-bold text-zinc-400">연락처</p>
+              <p className="text-lg font-black text-zinc-800">{patient.phone || "미입력"}</p>
+            </div>
+            <div>
+              <p className="mb-1 text-sm font-bold text-zinc-400">주 진단명</p>
+              <p className="text-lg font-black text-blue-600">{patient.diagnosis || "미입력"}</p>
+            </div>
+            <div className="min-w-[200px] flex-1">
+              <p className="mb-1 text-sm font-bold text-zinc-400">특이사항 (Memo)</p>
+              <p className="text-sm font-medium text-zinc-600">{patient.memo || "특이사항 없음"}</p>
+            </div>
+          </div>
+        </div>
+
+        {hasPriorCareElsewhere && (
+          <div className="rounded-3xl border-2 border-orange-200 bg-gradient-to-br from-orange-50/90 to-amber-50/50 p-6 shadow-sm md:p-8">
+            <div className="mb-5">
+              <span className="inline-flex items-center rounded-full border border-orange-300 bg-orange-100 px-3 py-1.5 text-xs font-black text-orange-900 shadow-sm">
+                🔄 타 병원 치료 경험 있음
+              </span>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="rounded-2xl border border-orange-200/80 bg-white/80 p-5 shadow-sm">
+                <p className="mb-2 text-xs font-black uppercase tracking-wide text-orange-700">기존 치료 내역</p>
+                <p className="min-h-[3rem] whitespace-pre-wrap text-sm leading-relaxed text-zinc-800">
+                  {patient.past_history?.trim() ? patient.past_history : "입력된 기존 치료 내역이 없습니다."}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-orange-200/80 bg-white/80 p-5 shadow-sm">
+                <p className="mb-2 text-xs font-black uppercase tracking-wide text-orange-700">증상 변화</p>
+                <p className="min-h-[3rem] whitespace-pre-wrap text-sm leading-relaxed text-zinc-800">
+                  {patient.symptom_change?.trim() ? patient.symptom_change : "입력된 증상 변화가 없습니다."}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 듀얼 탭 내비게이션 */}
