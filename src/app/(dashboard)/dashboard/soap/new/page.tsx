@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import RomMmtAssessment, { type RomMmtRecord } from "@/components/RomMmtAssessment";
@@ -52,6 +52,15 @@ const ebpDatabase = {
   ]
 };
 
+type PlanTier = "basic" | "pro" | "enterprise";
+
+function normalizePlanTier(raw: string | null | undefined): PlanTier {
+  const t = (raw ?? "basic").toLowerCase();
+  if (t === "pro") return "pro";
+  if (t === "enterprise") return "enterprise";
+  return "basic";
+}
+
 function SoapContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -68,6 +77,48 @@ function SoapContent() {
   const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  const [planTier, setPlanTier] = useState<PlanTier>("basic");
+  const [planTierLoading, setPlanTierLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user || cancelled) {
+          if (!cancelled) setPlanTierLoading(false);
+          return;
+        }
+
+        const { data, error } = await (supabase as any)
+          .from("profiles")
+          .select("plan_tier")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (cancelled) return;
+        if (error) {
+          console.error("profiles plan_tier 조회 실패:", error);
+          setPlanTier("basic");
+        } else {
+          setPlanTier(normalizePlanTier(data?.plan_tier));
+        }
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setPlanTier("basic");
+      } finally {
+        if (!cancelled) setPlanTierLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSoapGeneration = async () => {
     setIsGenerating(true);
@@ -163,6 +214,19 @@ function SoapContent() {
     setIsSaving(false);
   };
 
+  const handleAiGenerateClick = () => {
+    if (planTier === "basic") {
+      alert("해당 기능은 Pro 요금제부터 사용 가능합니다. 요금제 안내 페이지로 이동합니다.");
+      router.push("/dashboard/pricing");
+      return;
+    }
+    void handleSoapGeneration();
+  };
+
+  const canUseAiSoap = planTier === "pro" || planTier === "enterprise";
+  const aiButtonDisabled =
+    planTierLoading || (canUseAiSoap && (!selectedJoint || isGenerating));
+
   return (
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="mb-8 border-b border-zinc-200 pb-6">
@@ -225,11 +289,24 @@ function SoapContent() {
             </>
           )}
 
-          <button onClick={handleSoapGeneration} disabled={!selectedJoint || isGenerating} className="w-full h-16 bg-orange-500 text-white rounded-2xl font-black shadow-xl hover:bg-orange-600 transition-all flex justify-center items-center gap-2">
-            {isGenerating ? (
-              <span className="animate-pulse">OpenAI가 전문 임상 추론 중...</span>
+          <button
+            type="button"
+            onClick={handleAiGenerateClick}
+            disabled={aiButtonDisabled}
+            className={
+              planTier === "basic"
+                ? "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-zinc-700 font-black text-white shadow-xl transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                : "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 font-black text-white shadow-xl transition-all hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+            }
+          >
+            {planTierLoading ? (
+              <span className="animate-pulse text-sm">요금제 확인 중...</span>
+            ) : planTier === "basic" ? (
+              "🔒 AI 임상 추론 (Pro 전용)"
+            ) : isGenerating ? (
+              <span className="animate-pulse">🧠 OpenAI가 전문 임상 추론 중...</span>
             ) : (
-              "OpenAI 기반 전문가 SOAP 자동 작성"
+              "🧠 OpenAI 자동 작성"
             )}
           </button>
         </div>
