@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import RomMmtAssessment, { type RomMmtRecord } from "@/components/RomMmtAssessment";
+import TestClusterSelector from "@/components/TestClusterSelector";
 
 // 📚 전신 관절별 EBP 특수검사 데이터베이스
 const ebpDatabase = {
@@ -73,6 +74,7 @@ function SoapContent() {
   
   const [romMmtRecords, setRomMmtRecords] = useState<RomMmtRecord[]>([]);
   const [specialTests, setSpecialTests] = useState<Record<string, string>>({});
+  const [selectedClusterTests, setSelectedClusterTests] = useState<string[]>([]);
   
   const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -80,6 +82,11 @@ function SoapContent() {
 
   const [planTier, setPlanTier] = useState<PlanTier>("basic");
   const [planTierLoading, setPlanTierLoading] = useState(true);
+
+  const handleTestsSelected = (tests: string[]) => {
+    setSelectedClusterTests(tests);
+    console.log("AI에게 보낼 테스트 항목들:", tests);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +151,15 @@ function SoapContent() {
           rawData += `- ${test.name}: ${specialTests[test.id]}\n`;
         }
       });
+
+      rawData += `\n■ 스페셜 테스트 클러스터(선택):\n`;
+      if (selectedClusterTests.length === 0) {
+        rawData += `- (선택된 클러스터 테스트 없음)\n`;
+      } else {
+        selectedClusterTests.forEach((test) => {
+          rawData += `- ${test}\n`;
+        });
+      }
 
       const response = await fetch('/api/ai-soap', {
         method: 'POST',
@@ -285,6 +301,11 @@ function SoapContent() {
                     </div>
                   ))}
                 </div>
+              </section>
+
+              <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 4. 스페셜 테스트 클러스터</h2>
+                <TestClusterSelector onSelectionChange={handleTestsSelected} />
               </section>
             </>
           )}
