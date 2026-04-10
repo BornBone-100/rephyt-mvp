@@ -77,6 +77,23 @@ export default function PatientDetailPage() {
     setIsSubmittingTreatment(false);
   };
 
+  // 🗑️ 처치 내역 삭제 함수
+  const handleDeleteTreatment = async (logId: string) => {
+    if (!confirm("정말로 이 처치 내역을 삭제하시겠습니까?")) return;
+
+    const { error } = await (supabase as any)
+      .from("treatments")
+      .delete()
+      .eq("id", logId);
+
+    if (error) {
+      alert("삭제 실패: " + error.message);
+    } else {
+      alert("삭제되었습니다.");
+      fetchPatientAndRecords();
+    }
+  };
+
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
     return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short", hour: "numeric", minute: "numeric", hour12: true }).format(date);
@@ -290,6 +307,12 @@ export default function PatientDetailPage() {
                   <div className="text-zinc-800 font-medium text-sm w-full">
                     {treatment.content}
                   </div>
+                  <button
+                    onClick={() => handleDeleteTreatment(treatment.id)}
+                    className="text-red-500 hover:text-red-700 text-xs font-bold ml-0 md:ml-4 self-end md:self-center"
+                  >
+                    삭제
+                  </button>
                 </div>
               ))}
             </div>
