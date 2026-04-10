@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import RomMmtAssessment, { type RomMmtRecord } from "@/components/RomMmtAssessment";
 
-// 📚 전신 관절별 EBP 특수검사 데이터베이스
+// 📚 전신 관절별 EBP 특수검사 데이터베이스 (원본 그대로 유지)
 const ebpDatabase = {
   cervical: [
     { id: "spurling", name: "Spurling's Test", paper: "Spurling (1944)", purpose: "경추 신경근병증" },
@@ -182,8 +182,6 @@ function SoapContent() {
     setIsSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    // supabase-generated 타입과 실제 DB 스키마가 불일치할 수 있어,
-    // 여기서는 "from()/insert()"만 최소 인터페이스로 안전하게 타입캐스팅합니다.
     const supabaseForInsert = supabase as unknown as {
       from: (table: string) => {
         insert: (rows: unknown[]) => Promise<{ error: { message: string } | null }>;
@@ -229,110 +227,122 @@ function SoapContent() {
 
   return (
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
-      <div className="mb-8 border-b border-zinc-200 pb-6">
-        <h1 className="text-3xl font-bold text-blue-950">Re:PhyT 하이엔드 임상 평가</h1>
-        <p className="mt-1 text-sm text-zinc-600">
-          데이터는 정직하고 케어는 전문물리치료사가 정교하게 실행합니다.
-        </p>
-      </div>
-
-      <div className="grid lg:grid-cols-12 gap-10">
-        <div className="lg:col-span-5 space-y-8">
-          <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
-            <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 1. 진단 부위 & 문진</h2>
-            <select
-              className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 mb-6"
-              value={selectedJoint}
-              onChange={(e) => {
-                setSelectedJoint(e.target.value as keyof typeof ebpDatabase | "");
-                setSpecialTests({});
-                setRomMmtRecords([]);
-              }}
-            >
-              <option value="">진단 부위 선택</option>
-              {Object.keys(ebpDatabase).map(k => <option key={k} value={k}>{k.toUpperCase()}</option>)}
-            </select>
-
-            <label className="block text-sm font-bold mb-2">병력 청취 (History Taking)</label>
-            <textarea className="w-full h-24 bg-zinc-50 rounded-xl p-3 text-sm border border-zinc-100" value={historyTaking} onChange={e => setHistoryTaking(e.target.value)} />
-            
-            <label className="block text-sm font-bold mt-4 mb-2">통증 척도 (VAS): {painScale}</label>
-            <input type="range" min="0" max="10" value={painScale} onChange={(e) => setPainScale(e.target.value)} className="w-full accent-orange-500" />
-          </section>
-
-          {selectedJoint && (
-            <>
-              <RomMmtAssessment
-                title="STEP 2. 정밀 평가 (ROM & MMT)"
-                records={romMmtRecords}
-                onRecordsChange={setRomMmtRecords}
-              />
-
-              <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
-                <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 3. EBP 특수 검사</h2>
-                <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                  {/* 🚨 여기도 ? 추가 완료! */}
-                  {ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.map(test => (
-                    <div key={test.id} className="p-4 bg-zinc-50 rounded-xl border border-zinc-100">
-                      <p className="text-sm font-bold">{test.name} <span className="text-[10px] text-blue-500">Ref: {test.paper}</span></p>
-                      <div className="flex gap-2 mt-2">
-                        {["Positive (+)", "Negative (-)"].map(res => (
-                          <button key={res} onClick={() => setSpecialTests({...specialTests, [test.id]: res})} className={`flex-1 h-8 rounded-lg text-[10px] font-bold border transition ${specialTests[test.id] === res ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-zinc-200 text-zinc-600'}`}>
-                            {res}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </>
-          )}
-
-          <button
-            type="button"
-            onClick={handleAiGenerateClick}
-            disabled={aiButtonDisabled}
-            className={
-              planTier === "basic"
-                ? "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-zinc-700 font-black text-white shadow-xl transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-                : "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 font-black text-white shadow-xl transition-all hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-            }
-          >
-            {planTierLoading ? (
-              <span className="animate-pulse text-sm">요금제 확인 중...</span>
-            ) : planTier === "basic" ? (
-              "🔒 AI 임상 추론 (Pro 전용)"
-            ) : isGenerating ? (
-              <span className="animate-pulse">🧠 OpenAI가 전문 임상 추론 중...</span>
-            ) : (
-              "🧠 OpenAI 자동 작성"
-            )}
-          </button>
+      {/* 🚀 변경점 1: 화면 양옆 여백을 적절히 주어 UI가 예쁘게 담기도록 최대 너비(max-w) 설정 */}
+      <div className="max-w-[1400px] mx-auto w-full">
+        
+        <div className="mb-8 border-b border-zinc-200 pb-6">
+          <h1 className="text-3xl font-bold text-blue-950">Re:PhyT 하이엔드 임상 평가</h1>
+          <p className="mt-1 text-sm text-zinc-600">
+            데이터는 정직하고 케어는 전문물리치료사가 정교하게 실행합니다.
+          </p>
         </div>
 
-        <div className="lg:col-span-7 space-y-4">
-          <h2 className="text-xl font-black text-blue-950 mb-4 flex items-center gap-2">
-            <span className="bg-orange-500 w-2 h-8 rounded-full"></span> 완성된 전문 SOAP 노트
-          </h2>
-          {(["subjective", "objective", "assessment", "plan"] as const).map((key) => (
-            <div key={key}>
-              <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-                <label className="mb-2 block text-xs font-black uppercase text-orange-500">
-                  {key === "objective" ? "objective (객관적 평가)" : key}
-                </label>
-                <textarea
-                  value={soapData[key]}
-                  onChange={(e) => setSoapData({ ...soapData, [key]: e.target.value })}
-                  className="h-32 w-full resize-none rounded-2xl border-none bg-zinc-50/50 p-4 text-sm text-zinc-800 focus:ring-2 focus:ring-orange-100"
-                />
-              </div>
-            </div>
-          ))}
+        {/* 🚀 변경점 2: lg:grid-cols-2 로 정확히 50:50으로 나누고, items-start로 양쪽 높이 독립화 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start w-full">
+          
+          {/* ==========================================
+              [왼쪽 영역] 입력 폼
+             ========================================== */}
+          <div className="w-full space-y-8">
+            <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+              <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 1. 진단 부위 & 문진</h2>
+              <select
+                className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 mb-6"
+                value={selectedJoint}
+                onChange={(e) => {
+                  setSelectedJoint(e.target.value as keyof typeof ebpDatabase | "");
+                  setSpecialTests({});
+                  setRomMmtRecords([]);
+                }}
+              >
+                <option value="">진단 부위 선택</option>
+                {Object.keys(ebpDatabase).map(k => <option key={k} value={k}>{k.toUpperCase()}</option>)}
+              </select>
 
-          <button onClick={handleSaveSoap} disabled={isSaving} className="w-full h-16 bg-blue-950 text-white rounded-2xl font-black shadow-xl hover:bg-blue-900 transition-all mt-6">
-            {isSaving ? "진료 기록 보관함에 넣는 중..." : "최종 SOAP 차트 DB 저장"}
-          </button>
+              <label className="block text-sm font-bold mb-2">병력 청취 (History Taking)</label>
+              <textarea className="w-full h-24 bg-zinc-50 rounded-xl p-3 text-sm border border-zinc-100" value={historyTaking} onChange={e => setHistoryTaking(e.target.value)} />
+              
+              <label className="block text-sm font-bold mt-4 mb-2">통증 척도 (VAS): {painScale}</label>
+              <input type="range" min="0" max="10" value={painScale} onChange={(e) => setPainScale(e.target.value)} className="w-full accent-orange-500" />
+            </section>
+
+            {selectedJoint && (
+              <>
+                <RomMmtAssessment
+                  title="STEP 2. 정밀 평가 (ROM & MMT)"
+                  records={romMmtRecords}
+                  onRecordsChange={setRomMmtRecords}
+                />
+
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 3. EBP 특수 검사</h2>
+                  <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                    {ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.map(test => (
+                      <div key={test.id} className="p-4 bg-zinc-50 rounded-xl border border-zinc-100">
+                        <p className="text-sm font-bold">{test.name} <span className="text-[10px] text-blue-500">Ref: {test.paper}</span></p>
+                        <div className="flex gap-2 mt-2">
+                          {["Positive (+)", "Negative (-)"].map(res => (
+                            <button key={res} onClick={() => setSpecialTests({...specialTests, [test.id]: res})} className={`flex-1 h-8 rounded-lg text-[10px] font-bold border transition ${specialTests[test.id] === res ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                              {res}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={handleAiGenerateClick}
+              disabled={aiButtonDisabled}
+              className={
+                planTier === "basic"
+                  ? "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-zinc-700 font-black text-white shadow-xl transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  : "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 font-black text-white shadow-xl transition-all hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+              }
+            >
+              {planTierLoading ? (
+                <span className="animate-pulse text-sm">요금제 확인 중...</span>
+              ) : planTier === "basic" ? (
+                "🔒 AI 임상 추론 (Pro 전용)"
+              ) : isGenerating ? (
+                <span className="animate-pulse">🧠 OpenAI가 전문 임상 추론 중...</span>
+              ) : (
+                "🧠 OpenAI 자동 작성"
+              )}
+            </button>
+          </div>
+
+          {/* ==========================================
+              [오른쪽 영역] 결과창 (sticky top-6 으로 스크롤 고정)
+             ========================================== */}
+          <div className="w-full space-y-4 sticky top-6">
+            <h2 className="text-xl font-black text-blue-950 mb-4 flex items-center gap-2">
+              <span className="bg-orange-500 w-2 h-8 rounded-full"></span> 완성된 전문 SOAP 노트
+            </h2>
+            {(["subjective", "objective", "assessment", "plan"] as const).map((key) => (
+              <div key={key}>
+                <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+                  <label className="mb-2 block text-xs font-black uppercase text-orange-500">
+                    {key === "objective" ? "objective (객관적 평가)" : key}
+                  </label>
+                  <textarea
+                    value={soapData[key]}
+                    onChange={(e) => setSoapData({ ...soapData, [key]: e.target.value })}
+                    className="h-32 w-full resize-none rounded-2xl border-none bg-zinc-50/50 p-4 text-sm text-zinc-800 focus:ring-2 focus:ring-orange-100"
+                  />
+                </div>
+              </div>
+            ))}
+
+            <button onClick={handleSaveSoap} disabled={isSaving} className="w-full h-16 bg-blue-950 text-white rounded-2xl font-black shadow-xl hover:bg-blue-900 transition-all mt-6">
+              {isSaving ? "진료 기록 보관함에 넣는 중..." : "최종 SOAP 차트 DB 저장"}
+            </button>
+          </div>
+          
         </div>
       </div>
     </div>
