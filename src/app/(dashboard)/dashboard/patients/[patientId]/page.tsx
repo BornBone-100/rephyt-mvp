@@ -300,16 +300,24 @@ export default function PatientDetailPage() {
           ) : (
             <div className="space-y-4">
               {treatments.map((treatment) => (
-                <div key={treatment.id} className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm flex flex-col md:flex-row md:items-center gap-4 hover:border-blue-200 transition">
-                  <div className="bg-zinc-100 text-zinc-600 font-bold px-4 py-2 rounded-lg text-sm whitespace-nowrap">
-                    {formatDateTime(treatment.created_at)}
+                <div
+                  key={treatment.id}
+                  className="group flex items-center justify-between rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-blue-200"
+                >
+                  <div className="flex-1">
+                    <div className="mb-1 flex items-center gap-3">
+                      <span className="text-sm font-bold text-zinc-700">
+                        {new Date(treatment.created_at).toLocaleString("ko-KR")}
+                      </span>
+                    </div>
+                    <p className="text-sm leading-relaxed text-zinc-500" style={{ whiteSpace: "pre-wrap" }}>
+                      {treatment.content}
+                    </p>
                   </div>
-                  <div className="text-zinc-800 font-medium text-sm w-full">
-                    {treatment.content}
-                  </div>
+
                   <button
                     onClick={() => handleDeleteTreatment(treatment.id)}
-                    className="text-red-500 hover:text-red-700 text-xs font-bold ml-0 md:ml-4 self-end md:self-center"
+                    className="rounded-lg border border-transparent px-3 py-1.5 text-xs font-bold text-zinc-300 transition-all hover:border-red-100 hover:bg-red-50 hover:text-red-500"
                   >
                     삭제
                   </button>
