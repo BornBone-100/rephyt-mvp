@@ -265,62 +265,81 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* 2. 처치 내역 탭 */}
+      {/* 2. 처치 내역 탭 (P-노트 누적형) */}
       {activeTab === "treatment" && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <div className="bg-white p-6 rounded-3xl border border-blue-200 shadow-sm mb-8">
-            <label className="block text-sm font-black text-blue-950 mb-2">새로운 처치 기록 입력</label>
-            <div className="flex gap-4">
-              <input 
-                type="text" 
-                value={newTreatment} 
-                onChange={(e) => setNewTreatment(e.target.value)} 
-                onKeyDown={(e) => e.key === 'Enter' && handleAddTreatment()}
-                placeholder="예: 경추 도수치료 30분, 체외충격파 1500타 적용 (엔터키로 저장 가능)" 
-                className="flex-1 h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+          
+          {/* 🚀 핵심: 다시 복구된 주황색 P-노트 입력 섹션 */}
+          <div className="bg-orange-50 p-8 rounded-[2.5rem] border-2 border-orange-200 shadow-sm mb-10">
+            <label className="block text-xl font-black text-orange-600 mb-4 flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-white text-sm">P</span>
+              오늘의 처치 기록 (Plan)
+            </label>
+            <div className="flex flex-col gap-4">
+              <textarea
+                value={newTreatment}
+                onChange={(e) => setNewTreatment(e.target.value)}
+                placeholder="오늘 진행한 도수치료 및 운동요법 내용을 상세히 기록하세요... (엔터키 줄바꿈 가능)"
+                className="w-full h-40 rounded-3xl bg-white border-none p-6 text-base shadow-inner focus:ring-2 focus:ring-orange-300 outline-none transition leading-relaxed text-zinc-800"
+                style={{ whiteSpace: "pre-wrap" }}
               />
-              <button 
-                onClick={handleAddTreatment} 
+              <button
+                onClick={handleAddTreatment}
                 disabled={isSubmittingTreatment || !newTreatment.trim()}
-                className="h-12 rounded-xl bg-blue-950 px-6 font-bold text-white shadow-md transition hover:bg-blue-900 disabled:opacity-50 whitespace-nowrap"
+                className="h-16 rounded-2xl bg-orange-500 font-black text-white text-lg shadow-lg shadow-orange-200 transition hover:bg-orange-600 disabled:opacity-50 active:scale-[0.98]"
               >
-                {isSubmittingTreatment ? "저장 중..." : "기록 추가"}
+                {isSubmittingTreatment ? "기록 저장 중..." : "오늘의 P-노트 저장하기"}
               </button>
             </div>
           </div>
 
-          <h2 className="text-xl font-black text-blue-950 mb-6 flex items-center gap-2">
-            <span className="bg-blue-950 w-2 h-6 rounded-full"></span> 누적 처치 내역 ({treatments.length}건)
-          </h2>
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-black text-blue-950 flex items-center gap-2">
+              <span className="bg-blue-950 w-2 h-6 rounded-full"></span> 누적 처치 내역 ({treatments.length}건)
+            </h2>
+          </div>
 
           {treatments.length === 0 ? (
             <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 shadow-sm text-zinc-500 font-bold">
-              아직 작성된 처치 기록이 없습니다. 상단의 입력창을 통해 첫 치료를 기록해 보세요.
+              아직 작성된 처치 기록이 없습니다. 상단의 주황색 P-노트 칸에 첫 치료를 기록해 보세요.
             </div>
           ) : (
             <div className="space-y-4">
               {treatments.map((treatment) => (
                 <div
                   key={treatment.id}
-                  className="group flex items-center justify-between rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-blue-200"
+                  className="group flex items-start justify-between rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm transition hover:shadow-md hover:border-blue-200"
                 >
                   <div className="flex-1">
-                    <div className="mb-1 flex items-center gap-3">
-                      <span className="text-sm font-bold text-zinc-700">
-                        {new Date(treatment.created_at).toLocaleString("ko-KR")}
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                      <span className="text-sm font-black text-zinc-400">
+                        {new Date(treatment.created_at).toLocaleString("ko-KR", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </span>
                     </div>
-                    <p className="text-sm leading-relaxed text-zinc-500" style={{ whiteSpace: "pre-wrap" }}>
+                    <p className="text-base font-medium leading-relaxed text-zinc-700" style={{ whiteSpace: "pre-wrap" }}>
                       {treatment.content}
                     </p>
                   </div>
 
-                  <button
-                    onClick={() => handleDeleteTreatment(treatment.id)}
-                    className="rounded-lg border border-transparent px-3 py-1.5 text-xs font-bold text-zinc-300 transition-all hover:border-red-100 hover:bg-red-50 hover:text-red-500"
-                  >
-                    삭제
-                  </button>
+                  {/* 🗑️ 선명한 버튼식 삭제 버튼 유지 */}
+                  <div className="ml-6 flex-shrink-0">
+                    <button
+                      onClick={() => handleDeleteTreatment(treatment.id)}
+                      className="inline-flex items-center justify-center rounded-xl bg-red-50 px-4 py-2.5 text-xs font-black text-red-600 border border-red-100 transition-all hover:bg-red-600 hover:text-white hover:shadow-lg hover:shadow-red-200 active:scale-95"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="mr-1.5 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      삭제
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
