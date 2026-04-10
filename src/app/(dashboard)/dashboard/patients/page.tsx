@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
 export default function PatientsListPage() {
+  const router = useRouter();
   const supabase = createClient();
   const [patients, setPatients] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,6 +43,16 @@ export default function PatientsListPage() {
     }
   };
 
+  // 🚀 로그아웃 함수
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      alert("로그아웃 중 오류가 발생했습니다.");
+    } else {
+      router.push("/login");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="mb-8 border-b border-zinc-200 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -48,7 +60,13 @@ export default function PatientsListPage() {
           <h1 className="text-3xl font-black text-blue-950">Re:PhyT 환자 관리</h1>
           <p className="mt-2 text-sm text-zinc-600">데이터는 정직하고 케어는 전문물리치료사가 정교하게 실행합니다.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          <button
+            onClick={handleLogout}
+            className="h-12 px-5 rounded-xl text-sm font-bold text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-all"
+          >
+            로그아웃
+          </button>
           <button onClick={fetchPatients} className="h-12 rounded-xl bg-white border border-zinc-200 px-6 font-bold text-zinc-700 shadow-sm transition hover:bg-zinc-50 flex items-center gap-2">
             새로고침
           </button>
