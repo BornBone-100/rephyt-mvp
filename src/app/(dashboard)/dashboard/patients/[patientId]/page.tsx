@@ -268,23 +268,23 @@ export default function PatientDetailPage() {
       {/* 2. 처치 내역 탭 */}
       {activeTab === "treatment" && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <div className="bg-white p-6 rounded-3xl border border-blue-200 shadow-sm mb-8">
-            <label className="block text-sm font-black text-blue-950 mb-2">새로운 처치 기록 입력</label>
-            <div className="flex gap-4">
-              <input 
-                type="text" 
-                value={newTreatment} 
-                onChange={(e) => setNewTreatment(e.target.value)} 
-                onKeyDown={(e) => e.key === 'Enter' && handleAddTreatment()}
-                placeholder="예: 경추 도수치료 30분, 체외충격파 1500타 적용 (엔터키로 저장 가능)" 
-                className="flex-1 h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+          {/* 🚀 교체할 처치 기록 입력창 영역 */}
+          <div className="bg-orange-50 p-8 rounded-[2rem] border-2 border-orange-200 shadow-sm mb-10">
+            <label className="block text-lg font-black text-orange-600 mb-4">⚡ 오늘의 처치 기록 (Plan)</label>
+            <div className="flex flex-col gap-4">
+              <textarea
+                value={newTreatment}
+                onChange={(e) => setNewTreatment(e.target.value)}
+                placeholder="오늘 진행한 도수치료 및 운동요법 내용을 입력하세요... (엔터키 줄바꿈 가능)"
+                className="w-full h-32 rounded-2xl bg-white border-none p-5 text-base shadow-inner focus:ring-2 focus:ring-orange-300 outline-none transition leading-relaxed"
+                style={{ whiteSpace: "pre-wrap" }}
               />
-              <button 
-                onClick={handleAddTreatment} 
+              <button
+                onClick={handleAddTreatment}
                 disabled={isSubmittingTreatment || !newTreatment.trim()}
-                className="h-12 rounded-xl bg-blue-950 px-6 font-bold text-white shadow-md transition hover:bg-blue-900 disabled:opacity-50 whitespace-nowrap"
+                className="h-16 rounded-2xl bg-orange-500 font-black text-white text-lg shadow-lg shadow-orange-200 transition hover:bg-orange-600 disabled:opacity-50"
               >
-                {isSubmittingTreatment ? "저장 중..." : "기록 추가"}
+                {isSubmittingTreatment ? "기록 저장 중..." : "오늘의 P-노트 저장하기"}
               </button>
             </div>
           </div>
@@ -302,22 +302,23 @@ export default function PatientDetailPage() {
               {treatments.map((treatment) => (
                 <div
                   key={treatment.id}
-                  className="group flex items-center justify-between rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-blue-200"
+                  className="group flex items-start justify-between rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm transition hover:shadow-md hover:border-blue-200"
                 >
                   <div className="flex-1">
-                    <div className="mb-1 flex items-center gap-3">
-                      <span className="text-sm font-bold text-zinc-700">
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                      <span className="text-xs font-black text-zinc-400">
                         {new Date(treatment.created_at).toLocaleString("ko-KR")}
                       </span>
                     </div>
-                    <p className="text-sm leading-relaxed text-zinc-500" style={{ whiteSpace: "pre-wrap" }}>
+                    <p className="text-base font-medium leading-relaxed text-zinc-700" style={{ whiteSpace: "pre-wrap" }}>
                       {treatment.content}
                     </p>
                   </div>
 
                   <button
                     onClick={() => handleDeleteTreatment(treatment.id)}
-                    className="rounded-lg border border-transparent px-3 py-1.5 text-xs font-bold text-zinc-300 transition-all hover:border-red-100 hover:bg-red-50 hover:text-red-500"
+                    className="opacity-0 group-hover:opacity-100 rounded-xl px-4 py-2 text-xs font-black text-zinc-300 transition-all hover:bg-red-50 hover:text-red-500"
                   >
                     삭제
                   </button>
