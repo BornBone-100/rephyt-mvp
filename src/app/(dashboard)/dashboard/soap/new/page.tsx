@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import RomMmtAssessment, { type RomMmtRecord } from "@/components/RomMmtAssessment";
 
-// 📚 [데이터 100% 보존] 성준 님의 EBP 특수검사 DB
+// 📚 [데이터 100% 유지] EBP 특수검사 데이터베이스
 const ebpDatabase = {
   cervical: [
     { id: "spurling", name: "Spurling's Test", paper: "Spurling (1944)", purpose: "경추 신경근병증" },
@@ -54,6 +54,13 @@ const ebpDatabase = {
 
 type PlanTier = "basic" | "pro" | "enterprise";
 
+function normalizePlanTier(raw: string | null | undefined): PlanTier {
+  const t = (raw ?? "basic").toLowerCase();
+  if (t === "pro") return "pro";
+  if (t === "enterprise") return "enterprise";
+  return "basic";
+}
+
 function SoapContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -62,7 +69,9 @@ function SoapContent() {
 
   const [selectedJoint, setSelectedJoint] = useState<keyof typeof ebpDatabase | "">("");
   const [painScale, setPainScale] = useState<string>("5");
-  const [historyTaking, setHistoryTaking] = useState(""); 
+  const [historyTaking, setHistoryTaking] = useState("");
+  
+  // 🕒 [날짜/시간 수동 선택 상태 추가]
   const [treatmentDate, setTreatmentDate] = useState(() => {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -71,44 +80,46 @@ function SoapContent() {
 
   const [romMmtRecords, setRomMmtRecords] = useState<RomMmtRecord[]>([]);
   const [specialTests, setSpecialTests] = useState<Record<string, string>>({});
-  const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
   
-  // 🚀 누적 처치 내역 상태 (실시간 삭제 반영을 위함)
-  const [pastRecords, setPastRecords] = useState<any[]>([]);
+  const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // 데이터 로드 (환자의 기존 처치 내역 불러오기)
+  const [planTier, setPlanTier] = useState<PlanTier>("basic");
+  const [planTierLoading, setPlanTierLoading] = useState(true);
+
   useEffect(() => {
-    if (patientId) {
-      const fetchPastRecords = async () => {
-        const { data, error } = await supabase
-          .from("soap_notes")
-          .select("*")
-          .eq("patient_id", patientId)
-          .order("created_at", { ascending: false });
-        if (data) setPastRecords(data);
-      };
-      fetchPastRecords();
-    }
-  }, [patientId]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) { if (!cancelled) setPlanTierLoading(false); return; }
+        const { data, error } = await (supabase as any).from("profiles").select("plan_tier").eq("id", user.id).maybeSingle();
+        if (cancelled) return;
+        setPlanTier(error ? "basic" : normalizePlanTier(data?.plan_tier));
+      } catch (e) { if (!cancelled) setPlanTier("basic"); } finally { if (!cancelled) setPlanTierLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  // 🗑️ [핵심 추가] 처치 내역 삭제 함수
-  const handleDeleteRecord = async (recordId: string) => {
-    if (!confirm("정말로 이 진료 기록을 삭제하시겠습니까? 복구할 수 없습니다.")) return;
+  const handleSoapGeneration = async () => {
+    setIsGenerating(true);
+    try {
+      let rawData = `[환자 평가 데이터]\n■ 주호소 관절: ${selectedJoint.toUpperCase()}\n■ History: ${historyTaking}\n■ VAS: ${painScale}/10\n\n■ ROM 및 MMT:\n`;
+      romMmtRecords.forEach(r => { rawData += `- ${r.movement}: AROM ${r.arom}, PROM ${r.prom}, MMT ${r.mmt}\n`; });
+      rawData += `\n■ 특수 검사:\n`;
+      ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.forEach(test => {
+        if (specialTests[test.id]) rawData += `- ${test.name}: ${specialTests[test.id]}\n`;
+      });
 
-    const { error } = await supabase
-      .from("soap_notes")
-      .delete()
-      .eq("id", recordId);
-
-    if (error) {
-      alert("삭제 실패: " + error.message);
-    } else {
-      alert("기록이 정상적으로 삭제되었습니다.");
-      // 화면에서 즉시 제거
-      setPastRecords(prev => prev.filter(r => r.id !== recordId));
-    }
+      const response = await fetch('/api/ai-soap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptData: rawData }),
+      });
+      const aiResult = await response.json();
+      setSoapData({ subjective: aiResult.subjective, objective: aiResult.objective, assessment: aiResult.assessment, plan: aiResult.plan });
+    } catch (error) { alert("AI 생성 실패"); } finally { setIsGenerating(false); }
   };
 
   const handleSaveSoap = async () => {
@@ -116,7 +127,8 @@ function SoapContent() {
     setIsSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     
-    const { data, error } = await (supabase as any).from("soap_notes").insert([{
+    // 수동 선택한 시간을 반영하여 저장
+    const { error } = await (supabase as any).from("soap_notes").insert([{
       patient_id: patientId,
       created_by: user?.id,
       joint: selectedJoint,
@@ -125,93 +137,121 @@ function SoapContent() {
       objective: soapData.objective,
       assessment: soapData.assessment,
       plan: soapData.plan,
-      created_at: new Date(treatmentDate).toISOString()
-    }]).select();
+      created_at: new Date(treatmentDate).toISOString() // 🕒 선택한 날짜로 저장
+    }]);
 
-    if (error) alert("저장 실패"); 
-    else {
-      alert("저장 완료");
-      if (data) setPastRecords(prev => [data[0], ...prev]); // 새 기록 상단 추가
-      router.push(`/dashboard/patients/${patientId}`); 
-    }
+    if (error) alert("저장 실패"); else { alert("저장 완료"); router.push(`/dashboard/patients/${patientId}`); }
     setIsSaving(false);
   };
 
+  const handleAiGenerateClick = () => {
+    if (planTier === "basic") {
+      alert("Pro 요금제 전용 기능입니다.");
+      router.push("/dashboard/pricing");
+      return;
+    }
+    void handleSoapGeneration();
+  };
+
   return (
-    <div className="w-full min-h-screen bg-zinc-50 p-6 md:p-10">
+    <div className="w-full min-h-screen bg-zinc-50 p-6 md:p-10 overflow-x-hidden">
       <div className="max-w-[1700px] mx-auto w-full">
         
-        <header className="mb-10 border-b border-zinc-200 pb-6">
-          <h1 className="text-3xl font-black text-blue-950">Re:PhyT 하이엔드 임상 평가</h1>
-          <p className="mt-1 text-zinc-500">데이터는 정직하고 케어는 정교하게 실행합니다.</p>
+        <header className="mb-8 border-b border-zinc-200 pb-6">
+          <h1 className="text-3xl font-bold text-blue-950">Re:PhyT 하이엔드 임상 평가</h1>
+          <p className="mt-1 text-sm text-zinc-600 font-medium">실제 치료 현장을 위한 2단 분리형 스마트 차트</p>
         </header>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-10 items-start">
+        {/* 🚀 [강제 2단 레이아웃] 화면이 넓을 때 무조건 50:50 분할 */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-10 items-start w-full">
           
-          {/* [좌측 영역] 입력 섹션 */}
-          <div className="space-y-8">
-            <section className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm">
-              <h2 className="text-xl font-bold text-blue-950 mb-6 border-b pb-3 font-black">STEP 1. 진단 및 시간 설정</h2>
+          {/* [좌측 영역] 입력 폼 */}
+          <div className="space-y-8 w-full">
+            <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+              <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 1. 진단 부위 & 문진 시간 설정</h2>
+              
               <div className="grid grid-cols-2 gap-4 mb-6">
-                <select className="h-14 rounded-2xl bg-zinc-50 border border-zinc-200 px-4 font-bold" value={selectedJoint} onChange={(e) => setSelectedJoint(e.target.value as any)}>
-                  <option value="">부위 선택</option>
-                  {Object.keys(ebpDatabase).map(k => <option key={k} value={k}>{k.toUpperCase()}</option>)}
-                </select>
-                <input type="datetime-local" className="h-14 rounded-2xl bg-orange-50/30 border border-orange-200 px-4 font-bold text-orange-700" value={treatmentDate} onChange={(e) => setTreatmentDate(e.target.value)} />
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 mb-2 uppercase">진단 부위</label>
+                  <select
+                    className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 font-bold"
+                    value={selectedJoint}
+                    onChange={(e) => setSelectedJoint(e.target.value as any)}
+                  >
+                    <option value="">부위 선택</option>
+                    {Object.keys(ebpDatabase).map(k => <option key={k} value={k}>{k.toUpperCase()}</option>)}
+                  </select>
+                </div>
+                
+                {/* 🕒 날짜/시간 수동 선택 추가 */}
+                <div>
+                  <label className="block text-xs font-bold text-orange-400 mb-2 uppercase">진료/처치 일시 (수동 선택)</label>
+                  <input 
+                    type="datetime-local" 
+                    className="w-full h-12 rounded-xl bg-orange-50/50 border border-orange-200 px-4 font-bold text-orange-700 outline-none focus:ring-2 focus:ring-orange-200"
+                    value={treatmentDate}
+                    onChange={(e) => setTreatmentDate(e.target.value)}
+                  />
+                </div>
               </div>
-              <textarea className="w-full h-32 bg-zinc-50 rounded-2xl p-4 text-sm border border-zinc-100 focus:ring-2 focus:ring-blue-100 outline-none leading-relaxed" style={{ whiteSpace: 'pre-wrap' }} placeholder="환자 병력 입력 (줄바꿈 가능)" value={historyTaking} onChange={e => setHistoryTaking(e.target.value)} />
+
+              <label className="block text-sm font-bold mb-2">병력 청취 (History Taking)</label>
+              <textarea className="w-full h-24 bg-zinc-50 rounded-xl p-3 text-sm border border-zinc-100" value={historyTaking} onChange={e => setHistoryTaking(e.target.value)} />
+              
+              <label className="block text-sm font-bold mt-4 mb-2">통증 척도 (VAS): {painScale}</label>
+              <input type="range" min="0" max="10" value={painScale} onChange={(e) => setPainScale(e.target.value)} className="w-full accent-orange-500" />
             </section>
 
-            {/* 🚀 누적 처치 내역 리스트 (삭제 버튼 포함) */}
-            <section className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm">
-              <h2 className="text-xl font-bold text-blue-950 mb-6 flex items-center justify-between">
-                <span>📊 누적 처치 내역 ({pastRecords.length}건)</span>
-              </h2>
-              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
-                {pastRecords.length === 0 ? (
-                  <p className="text-center py-10 text-zinc-400 text-sm">기존 진료 기록이 없습니다.</p>
-                ) : (
-                  pastRecords.map((record) => (
-                    <div key={record.id} className="p-5 bg-zinc-50 rounded-2xl border border-zinc-200 relative group transition-all hover:border-zinc-300">
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-xs font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-md">
-                          {new Date(record.created_at).toLocaleString('ko-KR')}
-                        </span>
-                        {/* 🗑️ 삭제 버튼 */}
-                        <button 
-                          onClick={() => handleDeleteRecord(record.id)}
-                          className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 text-xs font-bold transition-all"
-                        >
-                          삭제하기
-                        </button>
+            {selectedJoint && (
+              <>
+                <RomMmtAssessment title="STEP 2. 정밀 평가 (ROM & MMT)" records={romMmtRecords} onRecordsChange={setRomMmtRecords} />
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">STEP 3. EBP 특수 검사</h2>
+                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                    {ebpDatabase[selectedJoint]?.map(test => (
+                      <div key={test.id} className="p-4 bg-zinc-50 rounded-xl border border-zinc-100">
+                        <p className="text-sm font-bold">{test.name} <span className="text-[10px] text-blue-500 font-normal">Ref: {test.paper}</span></p>
+                        <div className="flex gap-2 mt-2">
+                          {["Positive (+)", "Negative (-)"].map(res => (
+                            <button key={res} onClick={() => setSpecialTests({...specialTests, [test.id]: res})} className={`flex-1 h-8 rounded-lg text-[10px] font-bold border transition ${specialTests[test.id] === res ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                              {res}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <p className="text-sm font-bold text-zinc-800 uppercase tracking-tight mb-1">{record.joint}</p>
-                      <p className="text-xs text-zinc-500 line-clamp-2 leading-normal" style={{ whiteSpace: 'pre-wrap' }}>{record.subjective}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
+                    ))}
+                  </div>
+                </section>
+              </>
+            )}
+
+            <button type="button" onClick={handleAiGenerateClick} className="flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 font-black text-white shadow-xl hover:bg-orange-600 transition-all">
+               {isGenerating ? "🧠 AI 임상 추론 분석 중..." : "🧠 OpenAI 자동 작성"}
+            </button>
           </div>
 
-          {/* [우측 영역] 결과 섹션 (Sticky 고정) */}
-          <div className="space-y-4 xl:sticky xl:top-10">
-            <h2 className="text-2xl font-black text-blue-950 mb-6 flex items-center gap-2">
-              <span className="bg-orange-500 w-2.5 h-10 rounded-full"></span> 완성된 전문 SOAP 노트
+          {/* [우측 영역] 결과창 - sticky로 화면에 고정 */}
+          <div className="space-y-4 xl:sticky xl:top-10 w-full">
+            <h2 className="text-xl font-black text-blue-950 mb-4 flex items-center gap-2">
+              <span className="bg-orange-500 w-2 h-8 rounded-full"></span> 완성된 전문 SOAP 노트
             </h2>
             {(["subjective", "objective", "assessment", "plan"] as const).map((key) => (
-              <div key={key} className="bg-white p-6 rounded-[2rem] border border-zinc-200 shadow-sm">
-                <label className="mb-2 block text-xs font-black uppercase text-orange-500">{key}</label>
-                <textarea
-                  value={soapData[key]}
-                  onChange={(e) => setSoapData({ ...soapData, [key]: e.target.value })}
-                  style={{ whiteSpace: 'pre-wrap' }}
-                  className="h-36 w-full resize-none rounded-2xl border-none bg-zinc-50/50 p-4 text-sm leading-relaxed text-zinc-800"
-                />
+              <div key={key}>
+                <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+                  <label className="mb-2 block text-xs font-black uppercase text-orange-500">
+                    {key === "objective" ? "objective (객관적 평가)" : key}
+                  </label>
+                  <textarea
+                    value={soapData[key]}
+                    onChange={(e) => setSoapData({ ...soapData, [key]: e.target.value })}
+                    className="h-32 w-full resize-none rounded-2xl border-none bg-zinc-50/50 p-4 text-sm text-zinc-800 focus:ring-2 focus:ring-orange-100"
+                  />
+                </div>
               </div>
             ))}
-            <button onClick={handleSaveSoap} disabled={isSaving} className="w-full h-20 bg-blue-950 text-white rounded-[2rem] font-black text-xl shadow-2xl hover:bg-blue-900 transition-all mt-6">
-              💾 최종 SOAP 차트 DB 저장
+
+            <button onClick={handleSaveSoap} disabled={isSaving} className="w-full h-16 bg-blue-950 text-white rounded-2xl font-black shadow-xl hover:bg-blue-900 transition-all mt-6">
+              {isSaving ? "저장 중..." : "최종 SOAP 차트 DB 저장"}
             </button>
           </div>
           
