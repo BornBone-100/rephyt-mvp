@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -77,8 +78,12 @@ export default function RootLayout({
                 © 2026 Re:PhyT AI Labs. All rights reserved.
               </p>
               <div className="flex gap-6 text-[11px] font-bold text-zinc-400">
-                <button className="hover:text-zinc-900 transition text-[11px] font-bold">이용약관</button>
-                <button className="hover:text-zinc-900 transition underline underline-offset-4 text-[11px] font-bold">개인정보처리방침</button>
+                <Link href="/terms" className="hover:text-zinc-900 transition">
+                  이용약관
+                </Link>
+                <Link href="/terms" className="hover:text-zinc-900 transition underline underline-offset-4">
+                  개인정보처리방침
+                </Link>
               </div>
             </div>
           </div>
