@@ -78,6 +78,9 @@ export default function RootLayout({
                 © 2026 Re:PhyT AI Labs. All rights reserved.
               </p>
               <div className="flex gap-6 text-[11px] font-bold text-zinc-400">
+                <Link href="/pricing" className="hover:text-zinc-900 transition">
+                  서비스 요금표
+                </Link>
                 <Link href="/terms" className="hover:text-zinc-900 transition">
                   이용약관
                 </Link>
