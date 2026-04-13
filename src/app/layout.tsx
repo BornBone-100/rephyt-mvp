@@ -81,7 +81,10 @@ export default function RootLayout({
                 <Link href="/terms" className="hover:text-zinc-900 transition">
                   이용약관
                 </Link>
-                <Link href="/terms" className="hover:text-zinc-900 transition underline underline-offset-4">
+                <Link
+                  href="/terms?tab=privacy"
+                  className="hover:text-zinc-900 transition underline underline-offset-4"
+                >
                   개인정보처리방침
                 </Link>
               </div>
