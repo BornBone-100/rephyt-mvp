@@ -1,7 +1,7 @@
-// @ts-ignore
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { sessionBundleInputSchema } from "@/features/sessions/schema";
+import type { Json } from "@/types/supabase-generated";
 
 export async function POST(req: Request) {
   try {
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    const { data, error } = await (supabase.rpc as any)("upsert_session_bundle", {
+    const { data, error } = await supabase.rpc("upsert_session_bundle", {
       p_patient_id: input.patientId,
 
       p_started_at: input.session?.startedAt,
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       p_head_neck_placement_notes:
         input.assessment?.headNeckPlacementNotes ?? null,
 
-      p_extra: (input.assessment?.extra ?? {}) as unknown,
+      p_extra: (input.assessment?.extra ?? {}) as Json,
     });
 
     if (error) {

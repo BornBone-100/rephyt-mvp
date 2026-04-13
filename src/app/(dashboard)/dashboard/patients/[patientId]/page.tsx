@@ -1,21 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
+import type { Tables } from "@/types/supabase";
 
 export default function PatientDetailPage() {
   const params = useParams();
   const patientId = params.patientId as string;
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
-  const [patient, setPatient] = useState<any>(null);
-  const [soapNotes, setSoapNotes] = useState<any[]>([]);
-  const [treatments, setTreatments] = useState<any[]>([]);
+  const [patient, setPatient] = useState<Tables<"patients"> | null>(null);
+  const [soapNotes, setSoapNotes] = useState<Tables<"soap_notes">[]>([]);
+  const [treatments, setTreatments] = useState<Tables<"treatments">[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
-  const [debugError, setDebugError] = useState("");
   
   const [activeTab, setActiveTab] = useState<"soap" | "treatment">("soap");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
@@ -23,46 +23,47 @@ export default function PatientDetailPage() {
   const [newTreatment, setNewTreatment] = useState("");
   const [isSubmittingTreatment, setIsSubmittingTreatment] = useState(false);
 
-  const fetchPatientAndRecords = async () => {
+  const fetchPatientAndRecords = useCallback(async () => {
     if (!patientId || patientId === "null" || patientId === "undefined") {
-      setDebugError("환자 ID가 정상적으로 전달되지 않았습니다.");
+      console.warn("환자 ID가 정상적으로 전달되지 않았습니다.");
       setIsLoading(false); return;
     }
-    setIsLoading(true); setDebugError("");
+    setIsLoading(true);
 
     try {
-      const { data: patientData, error: patientError } = await (supabase as any)
+      const { data: patientData, error: patientError } = await supabase
         .from("patients").select("*").eq("id", patientId).maybeSingle();
 
       if (patientError) throw patientError;
       if (!patientData) throw new Error(`DB에서 해당 환자를 찾을 수 없습니다.`);
       setPatient(patientData);
 
-      const { data: soapData } = await (supabase as any)
+      const { data: soapData } = await supabase
         .from("soap_notes").select("*").eq("patient_id", patientId).order("created_at", { ascending: false });
       if (soapData) setSoapNotes(soapData);
 
-      const { data: treatmentData } = await (supabase as any)
+      const { data: treatmentData } = await supabase
         .from("treatments").select("*").eq("patient_id", patientId).order("created_at", { ascending: false });
       if (treatmentData) setTreatments(treatmentData);
 
-    } catch (error: any) {
-      setDebugError(error.message || "데이터베이스 오류가 발생했습니다.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "데이터베이스 오류가 발생했습니다.";
+      console.error(message);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [patientId, supabase]);
 
   useEffect(() => {
-    fetchPatientAndRecords();
-  }, [patientId]);
+    void fetchPatientAndRecords();
+  }, [fetchPatientAndRecords]);
 
   const handleAddTreatment = async () => {
     if (!newTreatment.trim()) return;
     setIsSubmittingTreatment(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { error } = await (supabase as any).from("treatments").insert([{
+    const { error } = await supabase.from("treatments").insert([{
       patient_id: patientId,
       content: newTreatment,
       created_by: user?.id
@@ -81,7 +82,7 @@ export default function PatientDetailPage() {
   const handleDeleteTreatment = async (logId: string) => {
     if (!confirm("정말로 이 처치 내역을 삭제하시겠습니까?")) return;
 
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from("treatments")
       .delete()
       .eq("id", logId);
@@ -234,7 +235,7 @@ export default function PatientDetailPage() {
                           </div>
                           <div className="flex gap-2 mt-1">
                             <span className="font-bold text-zinc-600 bg-zinc-100 px-3 py-1 rounded-md text-xs border border-zinc-200">진단 부위: {note.joint?.toUpperCase() || '미지정'}</span>
-                            <span className={`font-black px-3 py-1 rounded-md text-xs border ${getVasBadgeStyle(note.pain_scale)}`}>VAS: {note.pain_scale}/10</span>
+                            <span className={`font-black px-3 py-1 rounded-md text-xs border ${getVasBadgeStyle(note.pain_scale ?? 0)}`}>VAS: {note.pain_scale ?? "—"}/10</span>
                           </div>
                         </div>
                         <div className="grid lg:grid-cols-2 gap-6">

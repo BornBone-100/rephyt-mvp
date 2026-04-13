@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
 // 기존의 LoginPage 전체를 LoginForm 이라는 이름으로 살짝 바꿉니다.
 function LoginForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

@@ -21,14 +21,14 @@ export async function GET(request: Request) {
             // 서버 컴포넌트에서는 안전하게 에러를 무시하도록 설정
             try {
               cookieStore.set({ name, value, ...options })
-            } catch (error) {
+            } catch {
               // 리다이렉트 시 쿠키 설정 에러 방지
             }
           },
           remove(name: string, options: CookieOptions) {
             try {
               cookieStore.set({ name, value: '', ...options })
-            } catch (error) {
+            } catch {
               // 리다이렉트 시 쿠키 삭제 에러 방지
             }
           },

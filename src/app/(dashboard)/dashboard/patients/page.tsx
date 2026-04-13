@@ -1,40 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import type { Tables } from "@/types/supabase";
 
 export default function PatientsListPage() {
   const router = useRouter();
-  const supabase = createClient();
-  const [patients, setPatients] = useState<any[]>([]);
+  const supabase = useMemo(() => createClient(), []);
+  const [patients, setPatients] = useState<Tables<"patients">[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchPatients = async () => {
+  const fetchPatients = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("patients")
         .select("*")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
       if (data) setPatients(data);
-    } catch (error) {
-      console.error("목록 불러오기 실패:", error);
+    } catch (err) {
+      console.error("목록 불러오기 실패:", err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [supabase]);
 
   useEffect(() => {
-    fetchPatients();
-  }, []);
+    void fetchPatients();
+  }, [fetchPatients]);
 
   const handleDelete = async (id: string) => {
     if (window.confirm("이 환자의 모든 기록을 삭제하시겠습니까?")) {
-      const { error } = await (supabase as any).from("patients").delete().eq("id", id);
+      const { error } = await supabase.from("patients").delete().eq("id", id);
       if (!error) {
         fetchPatients();
       } else {

@@ -45,7 +45,7 @@ export async function POST(req: Request) {
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      // @ts-ignore
+      // @ts-expect-error OpenAI Responses API 타입에 response_format 미반영
       response_format: { type: "json_object" },
     });
 

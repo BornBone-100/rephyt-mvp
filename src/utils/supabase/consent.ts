@@ -54,7 +54,7 @@ export async function savePatientConsent(input: SaveConsentInput): Promise<SaveC
   // private bucket이므로 signature_image_url에는 경로(path)를 저장
   const agreedAt = new Date().toISOString();
 
-  const { data, error: insertError } = await (supabase as any)
+  const { data, error: insertError } = await supabase
     .from("patient_consents")
     .insert({
       patient_id: input.patientId ?? null,
@@ -62,7 +62,7 @@ export async function savePatientConsent(input: SaveConsentInput): Promise<SaveC
       signature_image_url: storagePath,
       agreed_at: agreedAt,
     })
-    .select("id, signature_image_url, agreed_at" as any)
+    .select("id, signature_image_url, agreed_at")
     .single();
 
   if (insertError || !data) {

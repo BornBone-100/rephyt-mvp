@@ -17,56 +17,40 @@ export type Sex = "M" | "F" | "Other";
 export type Database = {
   public: {
     Tables: {
+      /** Re:PhyT MVP 대시보드용 환자 테이블 (실제 DB 컬럼과 맞춤) */
       patients: {
         Row: {
           id: string;
-          created_by: string;
-          primary_therapist_id: string | null;
-
-          full_name: string;
-          birth_date: string | null;
-          sex: Sex | null;
-          occupation: string | null;
+          created_by: string | null;
+          name: string;
+          gender: string;
+          age: number;
           phone: string | null;
-          email: string | null;
-          address: string | null;
-
-          chief_complaint: string | null;
-          primary_pain_area: string | null;
-          pain_areas: string[];
-          onset_date: string | null;
-          mechanism_of_injury: string | null;
-          pmhx: string | null;
-          notes: string | null;
-
+          diagnosis: string | null;
+          memo: string | null;
+          is_first_visit: boolean | null;
+          past_history: string | null;
+          symptom_change: string | null;
           created_at: string;
-          updated_at: string;
+          updated_at: string | null;
         };
         Insert: {
           id?: string;
-          created_by: string;
-          primary_therapist_id?: string | null;
-
-          full_name: string;
-          birth_date?: string | null;
-          sex?: Sex | null;
-          occupation?: string | null;
+          created_by?: string | null;
+          name: string;
+          gender: string;
+          age: number;
           phone?: string | null;
-          email?: string | null;
-          address?: string | null;
-
-          chief_complaint?: string | null;
-          primary_pain_area?: string | null;
-          pain_areas?: string[];
-          onset_date?: string | null;
-          mechanism_of_injury?: string | null;
-          pmhx?: string | null;
-          notes?: string | null;
-
+          diagnosis?: string | null;
+          memo?: string | null;
+          is_first_visit?: boolean | null;
+          past_history?: string | null;
+          symptom_change?: string | null;
           created_at?: string;
-          updated_at?: string;
+          updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["patients"]["Insert"]>;
+        Relationships: [];
       };
 
       assessments: {
@@ -129,6 +113,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["assessments"]["Insert"]>;
+        Relationships: [];
       };
 
       sessions: {
@@ -161,21 +146,28 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["sessions"]["Insert"]>;
+        Relationships: [];
       };
 
+      /** MVP SOAP 차트 + 세션 번들 양쪽 모두 커버하도록 필드 병합 */
       soap_notes: {
         Row: {
           id: string;
-          session_id: string;
+          session_id: string | null;
           patient_id: string;
-          therapist_id: string;
+          therapist_id: string | null;
+          created_by: string | null;
 
           assessment_id: string | null;
 
           subjective: string | null;
+          objective: string | null;
           adl_limitations: string | null;
           assessment: string | null;
           plan: string | null;
+
+          joint: string | null;
+          pain_scale: number | null;
 
           ai_generated_note: string | null;
           ai_model: string | null;
@@ -183,20 +175,25 @@ export type Database = {
           is_final: boolean;
 
           created_at: string;
-          updated_at: string;
+          updated_at: string | null;
         };
         Insert: {
           id?: string;
-          session_id: string;
+          session_id?: string | null;
           patient_id: string;
-          therapist_id: string;
+          therapist_id?: string | null;
+          created_by?: string | null;
 
           assessment_id?: string | null;
 
           subjective?: string | null;
+          objective?: string | null;
           adl_limitations?: string | null;
           assessment?: string | null;
           plan?: string | null;
+
+          joint?: string | null;
+          pain_scale?: number | null;
 
           ai_generated_note?: string | null;
           ai_model?: string | null;
@@ -204,9 +201,61 @@ export type Database = {
           is_final?: boolean;
 
           created_at?: string;
-          updated_at?: string;
+          updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["soap_notes"]["Insert"]>;
+        Relationships: [];
+      };
+
+      treatments: {
+        Row: {
+          id: string;
+          patient_id: string;
+          content: string;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id: string;
+          content: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["treatments"]["Insert"]>;
+        Relationships: [];
+      };
+
+      profiles: {
+        Row: {
+          id: string;
+          plan_tier: string | null;
+        };
+        Insert: {
+          id: string;
+          plan_tier?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
+        Relationships: [];
+      };
+
+      patient_consents: {
+        Row: {
+          id: string;
+          patient_id: string | null;
+          therapist_id: string;
+          signature_image_url: string;
+          agreed_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id?: string | null;
+          therapist_id: string;
+          signature_image_url: string;
+          agreed_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["patient_consents"]["Insert"]>;
+        Relationships: [];
       };
     };
 

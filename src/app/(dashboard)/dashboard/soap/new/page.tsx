@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import RomMmtAssessment, { type RomMmtRecord } from "@/components/RomMmtAssessment";
@@ -65,7 +65,7 @@ function SoapContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const patientId = searchParams.get("patientId"); 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [selectedJoint, setSelectedJoint] = useState<keyof typeof ebpDatabase | "">("");
   const [painScale, setPainScale] = useState<string>("5");
@@ -94,13 +94,13 @@ function SoapContent() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || cancelled) { if (!cancelled) setPlanTierLoading(false); return; }
-        const { data, error } = await (supabase as any).from("profiles").select("plan_tier").eq("id", user.id).maybeSingle();
+        const { data, error } = await supabase.from("profiles").select("plan_tier").eq("id", user.id).maybeSingle();
         if (cancelled) return;
         setPlanTier(error ? "basic" : normalizePlanTier(data?.plan_tier));
-      } catch (e) { if (!cancelled) setPlanTier("basic"); } finally { if (!cancelled) setPlanTierLoading(false); }
+      } catch { if (!cancelled) setPlanTier("basic"); } finally { if (!cancelled) setPlanTierLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [supabase]);
 
   const handleSoapGeneration = async () => {
     setIsGenerating(true);
@@ -119,7 +119,7 @@ function SoapContent() {
       });
       const aiResult = await response.json();
       setSoapData({ subjective: aiResult.subjective, objective: aiResult.objective, assessment: aiResult.assessment, plan: aiResult.plan });
-    } catch (error) { alert("AI 생성 실패"); } finally { setIsGenerating(false); }
+    } catch { alert("AI 생성 실패"); } finally { setIsGenerating(false); }
   };
 
   const handleSaveSoap = async () => {
@@ -128,7 +128,7 @@ function SoapContent() {
     const { data: { user } } = await supabase.auth.getUser();
     
     // 수동 선택한 시간을 반영하여 저장
-    const { error } = await (supabase as any).from("soap_notes").insert([{
+    const { error } = await supabase.from("soap_notes").insert([{
       patient_id: patientId,
       created_by: user?.id,
       joint: selectedJoint,
@@ -176,7 +176,7 @@ function SoapContent() {
                   <select
                     className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 font-bold"
                     value={selectedJoint}
-                    onChange={(e) => setSelectedJoint(e.target.value as any)}
+                    onChange={(e) => setSelectedJoint(e.target.value as keyof typeof ebpDatabase | "")}
                   >
                     <option value="">부위 선택</option>
                     {Object.keys(ebpDatabase).map(k => <option key={k} value={k}>{k.toUpperCase()}</option>)}
@@ -225,8 +225,25 @@ function SoapContent() {
               </>
             )}
 
-            <button type="button" onClick={handleAiGenerateClick} className="flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 font-black text-white shadow-xl hover:bg-orange-600 transition-all">
-               {isGenerating ? "🧠 AI 임상 추론 분석 중..." : "🧠 OpenAI 자동 작성"}
+            <button
+              type="button"
+              onClick={handleAiGenerateClick}
+              disabled={planTierLoading || isGenerating}
+              className={
+                planTier === "basic"
+                  ? "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-zinc-700 font-black text-white shadow-xl transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  : "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 font-black text-white shadow-xl transition-all hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+              }
+            >
+              {planTierLoading ? (
+                <span className="animate-pulse text-sm">요금제 확인 중...</span>
+              ) : planTier === "basic" ? (
+                "🔒 AI 임상 추론 (Pro 전용)"
+              ) : isGenerating ? (
+                <span className="animate-pulse">🧠 AI 임상 추론 분석 중...</span>
+              ) : (
+                "🧠 OpenAI 자동 작성"
+              )}
             </button>
           </div>
 

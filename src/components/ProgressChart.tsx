@@ -59,7 +59,10 @@ export default function ProgressChart({ data }: ProgressChartProps) {
               borderColor: "#e4e4e7",
               boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
             }}
-            formatter={(value: any) => [`VAS ${value}/10`, "통증 지수"]}
+            formatter={(value) => {
+              const n = typeof value === "number" ? value : Number(value);
+              return [`VAS ${Number.isFinite(n) ? n : 0}/10`, "통증 지수"];
+            }}
             labelFormatter={(label) => {
               const found = data.find((d) => d.date === label);
               const vas = found?.vas ?? 0;

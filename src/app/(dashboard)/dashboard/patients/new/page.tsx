@@ -33,7 +33,7 @@ export default function NewPatientPage() {
     setIsSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { error } = await (supabase as any).from("patients").insert([{
+    const { error } = await supabase.from("patients").insert([{
       name,
       gender,
       age: parseInt(age),
