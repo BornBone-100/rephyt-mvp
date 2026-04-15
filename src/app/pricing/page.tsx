@@ -1,6 +1,55 @@
 "use client";
 
+type NicePayErrorResult = { msg?: string };
+type NicePayRequestPaymentOptions = {
+  clientId: string;
+  method: string;
+  orderId: string;
+  amount: number;
+  goodsName: string;
+  returnUrl: string;
+  fnError?: (result: NicePayErrorResult) => void;
+};
+
+declare global {
+  interface Window {
+    NicePay?: {
+      requestPayment: (opts: NicePayRequestPaymentOptions) => void;
+    };
+  }
+}
+
 export default function PricingPage() {
+  const handleProPayment = () => {
+    const clientId = process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID?.trim();
+    if (!clientId) {
+      alert("결제 설정이 필요합니다. NEXT_PUBLIC_NICEPAY_CLIENT_ID를 확인해 주세요.");
+      return;
+    }
+
+    const nicePay = window.NicePay;
+    if (!nicePay?.requestPayment) {
+      alert("결제 모듈이 아직 로드되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.");
+      return;
+    }
+
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? window.location.origin;
+    const returnUrl = `${baseUrl}/api/payment/callback`;
+
+    nicePay.requestPayment({
+      clientId,
+      method: "card",
+      orderId: `rephyt_${Date.now()}`,
+      amount: 9900,
+      goodsName: "Re:PhyT Pro 1개월 구독",
+      returnUrl,
+      fnError(result) {
+        alert(`결제 실패: ${result.msg ?? "알 수 없는 오류"}`);
+      },
+    });
+  };
+
   const plans = [
     {
       name: "Free (무료체험)",
@@ -53,7 +102,11 @@ export default function PricingPage() {
                   ))}
                 </ul>
               </div>
-              <button type="button" className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color}`}>
+              <button
+                type="button"
+                onClick={plan.name.startsWith("Pro") ? handleProPayment : undefined}
+                className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color}`}
+              >
                 {plan.button}
               </button>
             </div>
