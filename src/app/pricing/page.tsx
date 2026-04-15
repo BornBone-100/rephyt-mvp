@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import Script from 'next/script'; // 👈 추가: 나이스페이 도구를 가져오는 엔진
 
+// 1. 타입 정의
 type NicePayErrorResult = { msg?: string };
 type NicePayRequestPaymentOptions = {
   clientId: string;
@@ -25,17 +25,21 @@ declare global {
 export default function PricingPage() {
   const [isSdkReady, setIsSdkReady] = useState(false);
 
-  useEffect(() => {
-    // 0.5초마다 나이스페이 SDK 로드 여부 체크
-    const checkSdk = setInterval(() => {
-      if (window.NicePay) {
+  // 🚀 핵심: 컴포넌트 마운트 시 스크립트를 수동으로 직접 삽입
+    useEffect(() => {
+      const script = document.createElement("script");
+      script.src = "https://pg-sdk.nicepay.co.kr/v1/latest/js/nicepay.js";
+      script.async = true;
+      script.onload = () => {
+        console.log("NicePay SDK Loaded");
         setIsSdkReady(true);
-        clearInterval(checkSdk);
-      }
-    }, 500);
+      };
+      document.body.appendChild(script);
 
-    return () => clearInterval(checkSdk);
-  }, []);
+      return () => {
+        document.body.removeChild(script); // 페이지 나갈 때 제거
+      };
+    }, []);
 
   const handleProPayment = () => {
     const clientId = process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID?.trim();
@@ -45,17 +49,18 @@ export default function PricingPage() {
     }
 
     const nicePay = window.NicePay;
-    if (!nicePay?.requestPayment || !isSdkReady) {
-      alert("결제 모듈을 다시 불러오는 중입니다. 잠시만 기다려주세요.");
+    if (!window.NicePay) {
+      alert("결제 모듈이 아직 로드되지 않았습니다. 새로고침 후 다시 시도해 주세요.");
       return;
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? window.location.origin;
     const returnUrl = `${baseUrl}/api/payment/callback`;
 
-    nicePay.requestPayment({
+    // 💡 심사 통과를 위한 카드 결제 요청
+    window.NicePay.requestPayment({
       clientId,
-      method: "card",
+      method: "card", // 심사팀이 확인하는 신용카드 결제 방식
       orderId: `rephyt_${Date.now()}`,
       amount: 9900,
       goodsName: "Re:PhyT Pro 1개월 구독",
@@ -92,12 +97,6 @@ export default function PricingPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50 py-20 px-6">
-      {/* 나이스페이 스크립트 로드 */}
-      <Script 
-        src="https://pg-sdk.nicepay.co.kr/v1/latest/js/nicepay.js" 
-        strategy="beforeInteractive"
-      />
-
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16 space-y-4">
           <h1 className="text-4xl md:text-5xl font-black text-blue-950 tracking-tight">서비스 요금제 안내</h1>
@@ -128,7 +127,7 @@ export default function PricingPage() {
                 type="button"
                 onClick={plan.name.startsWith("Pro") ? handleProPayment : undefined}
                 className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color} ${
-                  plan.name.startsWith("Pro") && !isSdkReady ? "opacity-50 cursor-wait" : ""
+                  plan.name.startsWith("Pro") && !isSdkReady ? "opacity-60 cursor-not-allowed" : ""
                 }`}
               >
                 {plan.name.startsWith("Pro") && !isSdkReady ? "준비 중..." : plan.button}
@@ -139,7 +138,7 @@ export default function PricingPage() {
 
         <div className="mt-20 text-center bg-white p-8 rounded-[2rem] border border-zinc-100 shadow-sm">
           <p className="text-zinc-400 text-sm font-bold mb-2">결제 안내</p>
-          <p className="text-zinc-600 text-xs leading-relaxed">
+          <p className="text-zinc-600 text-xs leading-relaxed text-center">
             모든 결제는 부가세 포함 가격이며, 구독 해지는 마이페이지에서 언제든 가능합니다.
             <br />
             결제 관련 문의: 010-5900-6834 (김성준 대표)
