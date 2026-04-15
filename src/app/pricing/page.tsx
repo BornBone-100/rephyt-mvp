@@ -25,7 +25,7 @@ declare global {
   }
 }
 
-const PRO_AMOUNT = 29_900;
+const PRO_AMOUNT = 9_900;
 
 export default function PricingPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -82,7 +82,7 @@ export default function PricingPage() {
     {
       tier: "pro" as const,
       name: "Pro (전문가용)",
-      price: "29,900",
+      price: "9,900",
       features: ["환자 무제한 등록", "AI SOAP 자동 완성", "P-노트 무한 누적", "PDF 차트보내기"],
       button: "구독하기",
       color: "bg-orange-500 text-white shadow-orange-200",
