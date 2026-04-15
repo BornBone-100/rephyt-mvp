@@ -79,6 +79,9 @@ function TermsPageContent() {
           ) : (
             <div className="animate-in fade-in duration-500">
               <h1 className="text-3xl font-black text-zinc-900 mb-8">개인정보처리방침</h1>
+              <p className="mb-6 text-sm font-semibold text-zinc-500">
+                상호명: 리피트 (Re: PhyT)
+              </p>
               <section className="space-y-6 text-sm md:text-base">
                 <div>
                   <h3 className="text-lg font-bold text-zinc-800 mb-2">1. 수집하는 개인정보 항목</h3>
