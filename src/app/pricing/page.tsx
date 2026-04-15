@@ -1,62 +1,74 @@
 "use client";
 
-import React from "react";
-import Script from "next/script";
-
 export default function PricingPage() {
-  const handlePayment = () => {
-    const { NicePay } = window as any;
-
-    if (!NicePay) {
-      alert("결제 모듈이 아직 로드되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.");
-      return;
-    }
-
-    NicePay.requestPayment({
-      clientId: process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID,
-      method: "card",
-      orderId: `rephyt_${new Date().getTime()}`,
-      amount: 9900,
-      goodsName: "Re:PhyT Pro 1개월 구독",
-      returnUrl: "https://rephyt-ai.vercel.app/api/payment/callback",
-      fnError: function (result: any) {
-        alert(`결제 실패: ${result.msg}`);
-      },
-    });
-  };
+  const plans = [
+    {
+      name: "Free (무료체험)",
+      price: "0",
+      features: ["환자 5명 등록 가능", "기본 SOAP 차트 생성", "처치 로그(P-노트) 10건"],
+      button: "지금 시작하기",
+      color: "bg-zinc-100 text-zinc-600",
+    },
+    {
+      name: "Pro (전문가용)",
+      price: "29,900",
+      features: ["환자 무제한 등록", "AI SOAP 자동 완성", "P-노트 무한 누적", "PDF 차트 내보내기"],
+      button: "구독하기",
+      color: "bg-orange-500 text-white shadow-orange-200",
+    },
+    {
+      name: "Premium (기관용)",
+      price: "99,000",
+      features: ["Pro의 모든 기능", "다수 계정 연동 (원장+선생님)", "병원 로고 커스텀", "우선 고객 지원"],
+      button: "도입 문의",
+      color: "bg-blue-950 text-white shadow-blue-200",
+    },
+  ];
 
   return (
-    <>
-      {/* 요금제 페이지에 직접 나이스페이 스크립트 삽입 */}
-      <Script
-        src="https://pg-sdk.nicepay.co.kr/v1/latest/js/nicepay.js"
-        strategy="lazyOnload"
-      />
+    <div className="min-h-screen bg-zinc-50 py-20 px-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-16 space-y-4">
+          <h1 className="text-4xl md:text-5xl font-black text-blue-950 tracking-tight">서비스 요금제 안내</h1>
+          <p className="text-zinc-500 font-medium text-lg">Re:PhyT AI와 함께 물리치료의 질을 높이세요.</p>
+        </div>
 
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-sm rounded-3xl border-2 border-orange-500 bg-white p-8 text-center shadow-xl">
-          <h2 className="mb-2 text-2xl font-bold text-gray-900">Re:PhyT Pro</h2>
-          <p className="mb-6 font-medium text-gray-500">물리치료사를 위한 전문 AI 솔루션</p>
+        <div className="grid md:grid-cols-3 gap-8">
+          {plans.map((plan, index) => (
+            <div
+              key={index}
+              className="bg-white rounded-[2.5rem] p-10 border border-zinc-200 shadow-sm flex flex-col justify-between hover:shadow-xl transition duration-300"
+            >
+              <div>
+                <h3 className="text-xl font-black text-zinc-800 mb-4">{plan.name}</h3>
+                <div className="mb-8">
+                  <span className="text-4xl font-black text-blue-950">₩{plan.price}</span>
+                  <span className="text-zinc-400 font-bold ml-1">/ 월</span>
+                </div>
+                <ul className="space-y-4 mb-10">
+                  {plan.features.map((f, i) => (
+                    <li key={i} className="flex items-center gap-3 text-zinc-600 font-medium text-sm">
+                      <span className="text-orange-500 font-bold">✓</span> {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button type="button" className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color}`}>
+                {plan.button}
+              </button>
+            </div>
+          ))}
+        </div>
 
-          <div className="mb-8">
-            <span className="text-4xl font-black text-blue-950">9,900원</span>
-            <span className="ml-1 text-gray-400">/월</span>
-          </div>
-
-          <ul className="mb-8 space-y-4 text-left">
-            <li className="flex items-center text-sm text-gray-600">✅ AI SOAP 무제한 생성</li>
-            <li className="flex items-center text-sm text-gray-600">✅ 환자 데이터 무제한 검색/관리</li>
-            <li className="flex items-center text-sm text-gray-600">✅ 월간 환자 분석 리포트 제공</li>
-          </ul>
-
-          <button
-            onClick={handlePayment}
-            className="w-full rounded-2xl bg-orange-500 py-4 font-bold text-white shadow-lg transition-all hover:bg-orange-600"
-          >
-            지금 구독 시작하기
-          </button>
+        <div className="mt-20 text-center bg-white p-8 rounded-[2rem] border border-zinc-100 shadow-sm">
+          <p className="text-zinc-400 text-sm font-bold mb-2">결제 안내</p>
+          <p className="text-zinc-600 text-xs leading-relaxed">
+            모든 결제는 부가세 포함 가격이며, 구독 해지는 마이페이지에서 언제든 가능합니다.
+            <br />
+            결제 관련 문의: 010-5900-6834 (김성준 대표)
+          </p>
         </div>
       </div>
-    </>
+    </div>
   );
 }
