@@ -23,11 +23,18 @@ declare global {
 }
 
 export default function PricingPage() {
-  // 💡 추가된 상태: 결제 준비가 됐는지 확인
   const [isSdkReady, setIsSdkReady] = useState(false);
 
   useEffect(() => {
-    if (window.NicePay) setIsSdkReady(true);
+    // 0.5초마다 나이스페이 SDK 로드 여부 체크
+    const checkSdk = setInterval(() => {
+      if (window.NicePay) {
+        setIsSdkReady(true);
+        clearInterval(checkSdk);
+      }
+    }, 500);
+
+    return () => clearInterval(checkSdk);
   }, []);
 
   const handleProPayment = () => {
@@ -38,9 +45,8 @@ export default function PricingPage() {
     }
 
     const nicePay = window.NicePay;
-    // 💡 변경된 체크: 준비가 안됐으면 경고 대신 준비 중임을 알림
     if (!nicePay?.requestPayment || !isSdkReady) {
-      alert("결제 모듈이 아직 로드되지 않았습니다. 잠시 후 다시 시도해주세요.");
+      alert("결제 모듈을 다시 불러오는 중입니다. 잠시만 기다려주세요.");
       return;
     }
 
@@ -86,11 +92,10 @@ export default function PricingPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50 py-20 px-6">
-      {/* 🚀 핵심: 나이스페이 스크립트를 페이지에 직접 심어줍니다 */}
+      {/* 나이스페이 스크립트 로드 */}
       <Script 
         src="https://pg-sdk.nicepay.co.kr/v1/latest/js/nicepay.js" 
-        strategy="afterInteractive" 
-        onLoad={() => setIsSdkReady(true)}
+        strategy="beforeInteractive"
       />
 
       <div className="max-w-6xl mx-auto">
