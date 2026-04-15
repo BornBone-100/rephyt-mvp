@@ -127,30 +127,30 @@ export default function PricingPage() {
                   ))}
                 </ul>
 
-                {plan.ctaVariant === "muted" && (
-                  <button
-                    type="button"
-                    className="h-12 w-full rounded-2xl bg-zinc-100 text-sm font-bold text-zinc-700 transition hover:bg-zinc-200 active:scale-[0.99]"
-                  >
-                    {plan.cta}
-                  </button>
-                )}
-                {plan.ctaVariant === "primary" && (
-                  <button
-                    type="button"
-                    className="h-12 w-full rounded-2xl bg-blue-950 text-sm font-bold text-white shadow-md transition hover:bg-blue-900 active:scale-[0.99]"
-                  >
-                    {plan.cta}
-                  </button>
-                )}
-                {plan.ctaVariant === "outline" && (
-                  <button
-                    type="button"
-                    className="h-12 w-full rounded-2xl border-2 border-blue-950 bg-transparent text-sm font-bold text-blue-950 transition hover:bg-blue-950/5 active:scale-[0.99]"
-                  >
-                    {plan.cta}
-                  </button>
-                )}
+                            {plan.ctaVariant === "muted" && (
+                              <Link
+                                href="/dashboard/patients/new"
+                                className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-zinc-100 text-sm font-bold text-zinc-700 transition hover:bg-zinc-200 active:scale-[0.99]"
+                              >
+                                {plan.cta}
+                              </Link>
+                            )}
+                            {plan.ctaVariant === "primary" && (
+                              <Link
+                                href="/pricing"
+                                className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-blue-950 text-sm font-bold text-white shadow-md transition hover:bg-blue-900 active:scale-[0.99]"
+                              >
+                                {plan.cta}
+                              </Link>
+                            )}
+                            {plan.ctaVariant === "outline" && (
+                              <Link
+                                href="tel:01059006834"
+                                className="inline-flex h-12 w-full items-center justify-center rounded-2xl border-2 border-blue-950 bg-transparent text-sm font-bold text-blue-950 transition hover:bg-blue-950/5 active:scale-[0.99]"
+                              >
+                                {plan.cta}
+                              </Link>
+                            )}
               </div>
             );
 
