@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
+import { createClient } from "@/utils/supabase/client";
 
 type NicePayErrorResult = { msg?: string };
 
@@ -12,6 +13,7 @@ type NicePayRequestPaymentOptions = {
   amount: number;
   goodsName: string;
   returnUrl: string;
+  mallReserved?: string;
   fnError?: (result: NicePayErrorResult) => void;
 };
 
@@ -26,7 +28,9 @@ declare global {
 const PRO_AMOUNT = 29_900;
 
 export default function PricingPage() {
-  const handleProPayment = useCallback(() => {
+  const supabase = useMemo(() => createClient(), []);
+
+  const handleProPayment = useCallback(async () => {
     const clientId = process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID?.trim();
     if (!clientId) {
       alert("결제 설정이 필요합니다. NEXT_PUBLIC_NICEPAY_CLIENT_ID를 확인해 주세요.");
@@ -42,19 +46,29 @@ export default function PricingPage() {
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? window.location.origin;
     const returnUrl = `${baseUrl}/api/payment/callback`;
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      alert("구독 결제를 위해 먼저 로그인해 주세요.");
+      window.location.href = "/login";
+      return;
+    }
 
     NicePay.requestPayment({
       clientId,
       method: "card",
-      orderId: `order_${Date.now()}`,
+      orderId: `order_${user.id}_${Date.now()}`,
       amount: PRO_AMOUNT,
       goodsName: "Re:PhyT AI Pro 1개월 구독",
       returnUrl,
+      mallReserved: user.id,
       fnError(result: NicePayErrorResult) {
         alert(`결제 실패: ${result.msg ?? "알 수 없는 오류"}`);
       },
     });
-  }, []);
+  }, [supabase]);
 
   const plans = [
     {
