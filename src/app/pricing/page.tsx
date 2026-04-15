@@ -1,5 +1,8 @@
 "use client";
 
+import React, { useState, useEffect } from 'react';
+import Script from 'next/script'; // 👈 추가: 나이스페이 도구를 가져오는 엔진
+
 type NicePayErrorResult = { msg?: string };
 type NicePayRequestPaymentOptions = {
   clientId: string;
@@ -20,6 +23,13 @@ declare global {
 }
 
 export default function PricingPage() {
+  // 💡 추가된 상태: 결제 준비가 됐는지 확인
+  const [isSdkReady, setIsSdkReady] = useState(false);
+
+  useEffect(() => {
+    if (window.NicePay) setIsSdkReady(true);
+  }, []);
+
   const handleProPayment = () => {
     const clientId = process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID?.trim();
     if (!clientId) {
@@ -28,13 +38,13 @@ export default function PricingPage() {
     }
 
     const nicePay = window.NicePay;
-    if (!nicePay?.requestPayment) {
-      alert("결제 모듈이 아직 로드되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.");
+    // 💡 변경된 체크: 준비가 안됐으면 경고 대신 준비 중임을 알림
+    if (!nicePay?.requestPayment || !isSdkReady) {
+      alert("결제 모듈이 아직 로드되지 않았습니다. 잠시 후 다시 시도해주세요.");
       return;
     }
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? window.location.origin;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? window.location.origin;
     const returnUrl = `${baseUrl}/api/payment/callback`;
 
     nicePay.requestPayment({
@@ -76,6 +86,13 @@ export default function PricingPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50 py-20 px-6">
+      {/* 🚀 핵심: 나이스페이 스크립트를 페이지에 직접 심어줍니다 */}
+      <Script 
+        src="https://pg-sdk.nicepay.co.kr/v1/latest/js/nicepay.js" 
+        strategy="afterInteractive" 
+        onLoad={() => setIsSdkReady(true)}
+      />
+
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16 space-y-4">
           <h1 className="text-4xl md:text-5xl font-black text-blue-950 tracking-tight">서비스 요금제 안내</h1>
@@ -105,9 +122,11 @@ export default function PricingPage() {
               <button
                 type="button"
                 onClick={plan.name.startsWith("Pro") ? handleProPayment : undefined}
-                className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color}`}
+                className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color} ${
+                  plan.name.startsWith("Pro") && !isSdkReady ? "opacity-50 cursor-wait" : ""
+                }`}
               >
-                {plan.button}
+                {plan.name.startsWith("Pro") && !isSdkReady ? "준비 중..." : plan.button}
               </button>
             </div>
           ))}
