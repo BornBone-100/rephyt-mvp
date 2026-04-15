@@ -14,15 +14,25 @@ function extractUserId(orderId: string | undefined, mallReserved: string | undef
 
 export async function POST(request: Request) {
   try {
-    // 1. 나이스페이가 보낸 데이터 받기
-    const data = await request.json();
-    const resultCode = data?.resultCcde ?? data?.resultCode;
-    const amt = String(data?.amt ?? "");
-    const merchantID = String(data?.merchantID ?? "");
-    const ediDate = String(data?.ediDate ?? "");
-    const signData = String(data?.signData ?? "");
-    const orderId = typeof data?.orderId === "string" ? data.orderId : undefined;
-    const mallReserved = typeof data?.mallReserved === "string" ? data.mallReserved : undefined;
+    // 1. 나이스페이가 보낸 데이터 받기 (FormData 우선, JSON도 호환)
+    const contentType = request.headers.get("content-type") ?? "";
+    let payload: Record<string, unknown>;
+    if (contentType.includes("application/json")) {
+      payload = await request.json();
+    } else {
+      const formData = await request.formData();
+      payload = Object.fromEntries(formData.entries());
+    }
+
+    const resultCode = String(payload?.resultCode ?? payload?.resultCcde ?? "");
+    const resultMsg = String(payload?.resultMsg ?? "");
+    const amt = String(payload?.amt ?? "");
+    const merchantID = String(payload?.merchantID ?? "");
+    const ediDate = String(payload?.ediDate ?? "");
+    const signData = String(payload?.signData ?? "");
+    const orderId = typeof payload?.orderId === "string" ? payload.orderId : undefined;
+    const mallReserved = typeof payload?.mallReserved === "string" ? payload.mallReserved : undefined;
+    const tid = String(payload?.tid ?? "");
 
     // 2. 내 서버에 저장된 비밀 키 가져오기
     const merchantKey = process.env.NICEPAY_MERCHANT_KEY;
@@ -75,19 +85,21 @@ export async function POST(request: Request) {
         );
       }
 
-      return NextResponse.json({
-        result: "success",
-        message: "결제 및 등급 업데이트 완료",
-      });
+      return NextResponse.redirect(
+        new URL("/dashboard/patients?payment=success", request.url),
+        303,
+      );
     }
 
-    return NextResponse.json(
-      { result: "fail", message: "검증 실패" },
-      { status: 400 },
+    console.error("결제 검증 실패:", { resultMsg, tid, resultCode });
+    return NextResponse.redirect(
+      new URL("/pricing?payment=fail", request.url),
+      303,
     );
-  } catch {
+  } catch (error) {
+    console.error("서버 오류:", error);
     return NextResponse.json(
-      { result: "error", message: "서버 오류" },
+      { message: "Internal Server Error" },
       { status: 500 },
     );
   }
