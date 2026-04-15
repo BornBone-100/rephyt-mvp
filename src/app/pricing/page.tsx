@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 
-// 1. 타입 정의
+// 1. 타입 정의 (기존 유지)
 type NicePayErrorResult = { msg?: string };
 type NicePayRequestPaymentOptions = {
   clientId: string;
@@ -25,21 +25,40 @@ declare global {
 export default function PricingPage() {
   const [isSdkReady, setIsSdkReady] = useState(false);
 
-  // 🚀 핵심: 컴포넌트 마운트 시 스크립트를 수동으로 직접 삽입
-    useEffect(() => {
-      const script = document.createElement("script");
-      script.src = "https://pg-sdk.nicepay.co.kr/v1/latest/js/nicepay.js";
-      script.async = true;
-      script.onload = () => {
-        console.log("NicePay SDK Loaded");
-        setIsSdkReady(true);
-      };
-      document.body.appendChild(script);
+  // 🚀 핵심 변경: 스크립트가 로드되었는지 "강박적으로" 확인하는 로직 추가
+  useEffect(() => {
+    // 이미 로드되어 있는지 즉시 확인
+    if (window.NicePay) {
+      setIsSdkReady(true);
+      return;
+    }
 
-      return () => {
-        document.body.removeChild(script); // 페이지 나갈 때 제거
-      };
-    }, []);
+    // 수동으로 스크립트 태그 삽입
+    const script = document.createElement("script");
+    script.src = "https://pg-sdk.nicepay.co.kr/v1/latest/js/nicepay.js";
+    script.async = true;
+
+    const onLoad = () => {
+      console.log("NicePay SDK Loaded!");
+      setIsSdkReady(true);
+    };
+
+    script.addEventListener('load', onLoad);
+    document.head.appendChild(script);
+
+    // 💡 안전장치: 0.5초마다 윈도우 객체 뒤져서 NicePay가 나타나면 상태 변경
+    const checkInterval = setInterval(() => {
+      if (window.NicePay) {
+        setIsSdkReady(true);
+        clearInterval(checkInterval);
+      }
+    }, 500);
+
+    return () => {
+      script.removeEventListener('load', onLoad);
+      clearInterval(checkInterval);
+    };
+  }, []);
 
   const handleProPayment = () => {
     const clientId = process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID?.trim();
@@ -48,19 +67,17 @@ export default function PricingPage() {
       return;
     }
 
-    const nicePay = window.NicePay;
     if (!window.NicePay) {
-      alert("결제 모듈이 아직 로드되지 않았습니다. 새로고침 후 다시 시도해 주세요.");
+      alert("결제 모듈을 불러오는 중입니다. 잠시 후 다시 클릭해 주세요.");
       return;
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? window.location.origin;
     const returnUrl = `${baseUrl}/api/payment/callback`;
 
-    // 💡 심사 통과를 위한 카드 결제 요청
     window.NicePay.requestPayment({
       clientId,
-      method: "card", // 심사팀이 확인하는 신용카드 결제 방식
+      method: "card",
       orderId: `rephyt_${Date.now()}`,
       amount: 9900,
       goodsName: "Re:PhyT Pro 1개월 구독",
@@ -127,9 +144,10 @@ export default function PricingPage() {
                 type="button"
                 onClick={plan.name.startsWith("Pro") ? handleProPayment : undefined}
                 className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color} ${
-                  plan.name.startsWith("Pro") && !isSdkReady ? "opacity-60 cursor-not-allowed" : ""
+                  plan.name.startsWith("Pro") && !isSdkReady ? "opacity-60 cursor-wait" : ""
                 }`}
               >
+                {/* 💡 핵심: Pro 버튼은 준비될 때까지 "준비 중..."을 띄우되, 스크립트 감지 시 즉시 "구독하기"로 변경됨 */}
                 {plan.name.startsWith("Pro") && !isSdkReady ? "준비 중..." : plan.button}
               </button>
             </div>
