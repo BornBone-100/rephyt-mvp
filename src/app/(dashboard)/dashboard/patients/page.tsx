@@ -11,6 +11,7 @@ export default function PatientsListPage() {
   const supabase = useMemo(() => createClient(), []);
   const [patients, setPatients] = useState<Tables<"patients">[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchPatients = useCallback(async () => {
     setIsLoading(true);
@@ -54,6 +55,18 @@ export default function PatientsListPage() {
     }
   };
 
+  const filteredPatients = useMemo(() => {
+    const keyword = searchQuery.trim().toLowerCase();
+    if (!keyword) return patients;
+
+    return patients.filter((patient) => {
+      const name = patient.name?.toLowerCase() ?? "";
+      const diagnosis = patient.diagnosis?.toLowerCase() ?? "";
+      const phone = patient.phone?.toLowerCase() ?? "";
+      return name.includes(keyword) || diagnosis.includes(keyword) || phone.includes(keyword);
+    });
+  }, [patients, searchQuery]);
+
   return (
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="mb-8 border-b border-zinc-200 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -80,6 +93,15 @@ export default function PatientsListPage() {
       </div>
 
       <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
+        <div className="border-b border-zinc-100 bg-zinc-50/40 p-4 md:p-5">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="이름, 진단명, 연락처로 검색"
+            className="h-12 w-full rounded-xl border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-700 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-zinc-50/50 border-b border-zinc-200 text-zinc-500">
@@ -104,8 +126,14 @@ export default function PatientsListPage() {
                     등록된 환자가 없습니다. 신규 환자를 등록해주세요.
                   </td>
                 </tr>
+              ) : filteredPatients.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-zinc-400 font-bold">
+                    검색 결과가 없습니다.
+                  </td>
+                </tr>
               ) : (
-                patients.map((patient) => (
+                filteredPatients.map((patient) => (
                   <tr key={patient.id} className="hover:bg-zinc-50/50 transition">
                     <td className="px-6 py-5 font-black text-zinc-800 text-base">
                       {patient.name || "이름 없음"}
