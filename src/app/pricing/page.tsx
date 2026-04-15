@@ -11,7 +11,7 @@ export default function PricingPage() {
     },
     {
       name: "Pro (전문가용)",
-      price: "29,900",
+      price: "9,900",
       features: ["환자 무제한 등록", "AI SOAP 자동 완성", "P-노트 무한 누적", "PDF 차트 내보내기"],
       button: "구독하기",
       color: "bg-orange-500 text-white shadow-orange-200",
