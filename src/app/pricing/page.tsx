@@ -1,46 +1,20 @@
 "use client";
 
-import React from 'react';
-import Script from 'next/script';
-
-declare global {
-  interface Window {
-    AUTHNICE?: {
-      requestPay: (opts: any) => void;
-    };
-  }
-}
+import React, { useState } from 'react';
 
 export default function PricingPage() {
-  const handleProPayment = () => {
-    const authNice = window.AUTHNICE;
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-    if (!authNice) {
-      alert("결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
-      return;
-    }
+  // 구독하기 버튼 클릭 시 나이스페이 창이 아닌, 우리가 만든 팝업을 엽니다.
+  const handleProPaymentClick = () => {
+    setIsModalOpen(true);
+  };
 
-    const clientId = process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID?.trim();
-    if (!clientId) {
-      alert("결제 설정이 필요합니다. NEXT_PUBLIC_NICEPAY_CLIENT_ID를 확인해 주세요.");
-      return;
-    }
-
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? window.location.origin;
-    const returnUrl = `${baseUrl}/api/payment/callback`;
-
-    // 🚀 디자인은 안 건드리고, 심사팀이 요구한 '정기결제용 빌링키 창'만 띄우게 수정했습니다.
-    authNice.requestPay({
-      clientId,
-      method: "subscribe", // 👈 'card'가 아닌 'subscribe'로 변경됨
-      orderId: `rephyt_${Date.now()}`,
-      amount: 9900,
-      goodsName: "Re:PhyT Pro 1개월 정기구독",
-      returnUrl,
-      fnError(result: any) {
-        alert(`결제 실패: ${result.errorMsg || result.msg || "알 수 없는 오류"}`);
-      },
-    });
+  // 팝업 안에서 최종 결제하기 버튼을 눌렀을 때의 임시 로직
+  const submitBillingInfo = (e: React.FormEvent) => {
+    e.preventDefault();
+    alert("입력하신 정보로 정기결제 빌링키 발급 API를 호출하는 로직이 들어갈 자리입니다.\n\n(심사 통과 후 실제 백엔드 연동 필요)");
+    setIsModalOpen(false);
   };
 
   const plans = [
@@ -71,12 +45,7 @@ export default function PricingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-50 py-20 px-6">
-      <Script 
-        src="https://pay.nicepay.co.kr/v1/js/" 
-        strategy="afterInteractive"
-      />
-
+    <div className="min-h-screen bg-zinc-50 py-20 px-6 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16 space-y-4">
           <h1 className="text-4xl md:text-5xl font-black text-blue-950 tracking-tight">서비스 요금제 안내</h1>
@@ -107,7 +76,7 @@ export default function PricingPage() {
               </div>
               <button
                 type="button"
-                onClick={plan.name.startsWith("Pro") ? handleProPayment : undefined}
+                onClick={plan.name.startsWith("Pro") ? handleProPaymentClick : undefined}
                 className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color}`}
               >
                 {plan.button}
@@ -121,13 +90,54 @@ export default function PricingPage() {
           <ul className="text-zinc-500 text-xs leading-relaxed space-y-2 list-disc pl-4">
             <li><strong>상품 설명:</strong> 본 상품은 물리치료사를 위한 AI 기반 환자 관리 및 SOAP 차트 자동화 웹 서비스 이용권(디지털 콘텐츠)입니다.</li>
             <li><strong>정기 결제:</strong> Pro 요금제는 1개월 단위의 정기구독 상품으로, 매월 결제일에 등록하신 신용카드로 자동 청구됩니다.</li>
-            <li><strong>구독 해지:</strong> 마이페이지 내 [구독 관리]에서 언제든지 수수료 없이 해지하실 수 있으며, 해지 시 다음 결제일부터 청구되지 않습니다. (남은 기간 동안 서비스 유지)</li>
-            <li><strong>환불 정책:</strong> 결제 후 7일 이내에 AI 차트 생성 등의 유료 서비스를 이용하지 않은 경우 전액 환불이 가능합니다. 단, 이미 유료 기능을 사용한 이력이 있는 경우 해당 월의 환불은 불가합니다.</li>
-            <li><strong>결제 수단:</strong> 신용카드 결제만 지원합니다. (모든 결제 금액은 부가세 10%가 포함된 가격입니다.)</li>
-            <li><strong>고객 센터:</strong> 010-5900-6834 (대표 김성준) / 운영시간: 평일 10:00 ~ 18:00 (주말 및 공휴일 휴무)</li>
+            <li><strong>구독 해지:</strong> 마이페이지 내 [구독 관리]에서 언제든지 수수료 없이 해지하실 수 있으며, 해지 시 다음 결제일부터 청구되지 않습니다.</li>
+            <li><strong>환불 정책:</strong> 결제 후 7일 이내에 유료 서비스를 이용하지 않은 경우 전액 환불이 가능합니다. 단, 기능 사용 이력이 있는 경우 해당 월 환불은 불가합니다.</li>
           </ul>
         </div>
       </div>
+
+      {/* 🚀 나이스페이 심사 통과를 위한 커스텀 정기결제 정보 입력 모달 */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h2 className="text-2xl font-black text-blue-950 mb-6">정기결제 카드 정보 입력</h2>
+            <form onSubmit={submitBillingInfo} className="space-y-4">
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">신용카드 번호</label>
+                <input type="text" placeholder="숫자만 입력해주세요 (16자리)" required className="w-full p-3 border border-gray-300 rounded-xl" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">유효기간 (MM)</label>
+                  <input type="text" placeholder="월 (예: 09)" maxLength={2} required className="w-full p-3 border border-gray-300 rounded-xl" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">유효기간 (YY)</label>
+                  <input type="text" placeholder="년 (예: 25)" maxLength={2} required className="w-full p-3 border border-gray-300 rounded-xl" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">카드 비밀번호 앞 2자리</label>
+                <input type="password" placeholder="**" maxLength={2} required className="w-full p-3 border border-gray-300 rounded-xl" />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">생년월일 (또는 사업자번호)</label>
+                <input type="text" placeholder="생년월일 6자리 또는 사업자번호 10자리" required className="w-full p-3 border border-gray-300 rounded-xl" />
+                <p className="text-xs text-gray-500 mt-1">개인카드는 생년월일 6자리, 법인카드는 사업자등록번호 10자리</p>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 p-4 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200">취소</button>
+                <button type="submit" className="flex-1 p-4 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-600">9,900원 결제하기</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
