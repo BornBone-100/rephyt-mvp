@@ -68,7 +68,8 @@ export async function POST(request: Request) {
         .from('profiles')
         .update({ 
           billing_key: bid,
-          grade: 'Pro'      
+          grade: 'Pro',
+          plan_tier: 'pro'
         })
         .eq('id', userId)
         .select(); // 🚀 추가: 업데이트가 진짜 됐는지 결과값을 가져와 봅니다.
