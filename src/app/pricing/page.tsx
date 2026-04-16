@@ -29,12 +29,13 @@ export default function PricingPage() {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? window.location.origin;
     const returnUrl = `${baseUrl}/api/payment/callback`;
 
+    // 🚀 디자인은 안 건드리고, 심사팀이 요구한 '정기결제용 빌링키 창'만 띄우게 수정했습니다.
     authNice.requestPay({
       clientId,
-      method: "card",
+      method: "subscribe", // 👈 'card'가 아닌 'subscribe'로 변경됨
       orderId: `rephyt_${Date.now()}`,
       amount: 9900,
-      goodsName: "Re:PhyT Pro 1개월 정기구독", // 상품명 명확히 기재
+      goodsName: "Re:PhyT Pro 1개월 정기구독",
       returnUrl,
       fnError(result: any) {
         alert(`결제 실패: ${result.errorMsg || result.msg || "알 수 없는 오류"}`);
@@ -90,7 +91,6 @@ export default function PricingPage() {
             >
               <div>
                 <h3 className="text-xl font-black text-zinc-800 mb-2">{plan.name}</h3>
-                {/* 🚀 심사 통과를 위한 요금제별 상세 설명 추가 */}
                 <p className="text-sm text-zinc-500 mb-6 min-h-[3rem]">{plan.description}</p>
                 
                 <div className="mb-8">
@@ -116,7 +116,6 @@ export default function PricingPage() {
           ))}
         </div>
 
-        {/* 🚀 심사 통과를 위한 하단 법적 고지 및 환불 규정 상세화 */}
         <div className="mt-20 text-left bg-white p-8 rounded-[2rem] border border-zinc-100 shadow-sm">
           <h4 className="text-zinc-800 text-sm font-bold mb-4">결제 및 환불 안내 (전자상거래법 기준)</h4>
           <ul className="text-zinc-500 text-xs leading-relaxed space-y-2 list-disc pl-4">
