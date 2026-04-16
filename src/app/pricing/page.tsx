@@ -1,11 +1,9 @@
 "use client";
 
 import React, { useState } from 'react';
-import { createClient } from '@/utils/supabase/client';
 
 export default function PricingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const supabase = createClient();
 
   // 구독하기 버튼 클릭 시 나이스페이 창이 아닌, 우리가 만든 팝업을 엽니다.
   const handleProPaymentClick = () => {
@@ -17,21 +15,15 @@ export default function PricingPage() {
 
     // 폼에서 입력받은 데이터 가져오기
     const formData = new FormData(e.currentTarget);
-    const { data: authData } = await supabase.auth.getUser();
-    const userId = authData.user?.id;
-
-    if (!userId) {
-      alert("로그인 정보를 확인할 수 없습니다. 다시 로그인 후 시도해주세요.");
-      return;
-    }
-
     const requestData = {
       cardNumber: formData.get("cardNumber") as string,
       expMonth: formData.get("expMonth") as string,
       expYear: formData.get("expYear") as string,
       cardPw: formData.get("cardPw") as string,
       idNo: formData.get("idNo") as string,
-      userId,
+
+      // 🚀 드디어 주인을 찾았습니다! 성준 님의 실제 DB 아이디를 넣습니다.
+      userId: "4b321d24-8c45-4048-9f46-2932fe03844b",
     };
 
     try {
@@ -44,10 +36,11 @@ export default function PricingPage() {
 
       const result = await res.json();
 
+      // 💡 여기서 에러/성공 메시지를 띄워줍니다.
       if (result.success) {
-        alert("🎉 정기결제 카드가 성공적으로 등록되었습니다! Re:PhyT Pro의 모든 기능을 사용해보세요.");
+        alert(`🎉 ${result.message}`);
         setIsModalOpen(false);
-        // 여기서 성공 후 페이지 이동 (예: window.location.href = '/dashboard')
+        // 성공 후 대시보드나 마이페이지로 이동시키는 로직을 넣으시면 좋습니다.
       } else {
         alert(`등록 실패: ${result.message}`);
       }

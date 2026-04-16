@@ -53,20 +53,43 @@ export async function POST(request: Request) {
     console.log("나이스페이 결제 응답 데이터:", payData);
 
     if (payData.resultCode === '0000') {
-      // ⭐ 3. 드디어 Supabase에 빌링키 저장 및 등급 업그레이드!
-      const { error: dbError } = await supabase
-        .from('profiles')
-        .update({ 
-          billing_key: bid, // 발급받은 빌링키 저장
-          grade: 'Pro'      // 유저 등급 변경
-        })
-        .eq('id', userId);
+      // 🔍 디버그용: 넘어온 userId 확인
+      console.log("결제 성공! DB 업데이트 시도... 전달받은 userId:", userId);
 
-      if (dbError) {
-        return NextResponse.json({ success: false, message: "결제는 성공했으나 등급 업데이트에 실패했습니다." });
+      // 만약 프론트엔드에서 userId를 아예 안 보냈다면 여기서 즉시 차단
+      if (!userId) {
+         return NextResponse.json({ 
+           success: false, 
+           message: "결제는 성공했으나, 로그인된 유저 ID(userId)가 백엔드로 전달되지 않았습니다." 
+         });
       }
 
-      return NextResponse.json({ success: true, message: "구독 결제가 완료되었습니다!" });
+      const { data, error: dbError } = await supabase
+        .from('profiles')
+        .update({ 
+          billing_key: bid,
+          grade: 'Pro'      
+        })
+        .eq('id', userId)
+        .select(); // 🚀 추가: 업데이트가 진짜 됐는지 결과값을 가져와 봅니다.
+
+      // 1. Supabase 자체에서 권한/문법 에러를 뱉은 경우
+      if (dbError) {
+        return NextResponse.json({ 
+          success: false, 
+          message: `DB 권한/설정 에러: ${dbError.message}` 
+        });
+      }
+
+      // 2. 에러는 안 났는데, 해당 ID를 가진 유저를 못 찾은 경우
+      if (!data || data.length === 0) {
+        return NextResponse.json({ 
+          success: false, 
+          message: `결제 성공! 하지만 DB에서 아이디가 '${userId}'인 유저를 찾지 못했습니다.` 
+        });
+      }
+
+      return NextResponse.json({ success: true, message: "구독 결제 및 등급 업데이트 완벽하게 성공!" });
     } else {
       return NextResponse.json({ success: false, message: payData.resultMsg });
     }
