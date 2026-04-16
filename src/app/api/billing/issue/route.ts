@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     const payResponse = await fetch(`https://api.nicepay.co.kr/v1/subscribe/${bid}/payments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${credentials}` },
-      body: JSON.stringify({ amount: 9900, orderId: `rephyt_pay_${Date.now()}`, goodsName: "Re:PhyT Pro 1개월 정기구독", cardQuota: "00", useShopInterest: "N" }),
+      body: JSON.stringify({ amount: 9900, orderId: `rephyt_pay_${Date.now()}`, goodsName: "Re:PhyT Pro 1개월 정기구독", cardQuota: "00", useShopInterest: "N", buyerName: "원장님", buyerEmail: "test@rephyt.com", charSet: "utf-8", edition: "v1" }),
     });
     const payData = await payResponse.json();
 
