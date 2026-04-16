@@ -64,13 +64,18 @@ export async function POST(request: Request) {
          });
       }
 
+      const nextMonth = new Date();
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      const nextBillingDate = nextMonth.toISOString().split('T')[0];
+
       const { error: dbError } = await supabase
         .from('profiles')
         .upsert({
           id: userId,
           billing_key: bid,
           grade: 'Pro',
-          plan_tier: 'pro'
+          plan_tier: 'pro',
+          next_billing_date: nextBillingDate
         }, { onConflict: 'id' });
 
       if (dbError) {
