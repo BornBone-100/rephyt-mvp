@@ -64,30 +64,17 @@ export async function POST(request: Request) {
          });
       }
 
-      const { data, error: dbError } = await supabase
+      const { error: dbError } = await supabase
         .from('profiles')
-        .update({ 
+        .upsert({
+          id: userId,
           billing_key: bid,
           grade: 'Pro',
           plan_tier: 'pro'
-        })
-        .eq('id', userId)
-        .select(); // 🚀 추가: 업데이트가 진짜 됐는지 결과값을 가져와 봅니다.
+        }, { onConflict: 'id' });
 
-      // 1. Supabase 자체에서 권한/문법 에러를 뱉은 경우
       if (dbError) {
-        return NextResponse.json({ 
-          success: false, 
-          message: `DB 권한/설정 에러: ${dbError.message}` 
-        });
-      }
-
-      // 2. 에러는 안 났는데, 해당 ID를 가진 유저를 못 찾은 경우
-      if (!data || data.length === 0) {
-        return NextResponse.json({ 
-          success: false, 
-          message: `결제 성공! 하지만 DB에서 아이디가 '${userId}'인 유저를 찾지 못했습니다.` 
-        });
+        return NextResponse.json({ success: false, message: `DB 업데이트 실패: ${dbError.message}` });
       }
 
       return NextResponse.json({ success: true, message: "구독 결제 및 등급 업데이트 완벽하게 성공!" });
