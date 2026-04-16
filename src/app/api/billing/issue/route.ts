@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function POST(request: Request) {
   try {
@@ -11,6 +17,10 @@ export async function POST(request: Request) {
 
     if (!clientId || !secretKey) {
       return NextResponse.json({ success: false, message: "결제 설정 정보가 누락되었습니다." }, { status: 500 });
+    }
+
+    if (!userId) {
+      return NextResponse.json({ success: false, message: "사용자 정보가 누락되었습니다." }, { status: 400 });
     }
 
     // --- [STEP 1] 카드 정보 암호화 (AES-128-ECB) ---
@@ -62,10 +72,17 @@ export async function POST(request: Request) {
 
     if (payData.resultCode === '0000') {
       // ✅ [성공] 빌링키 발급 + 첫 결제 완료
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          billing_key: bid,
+          grade: 'Pro'
+        })
+        .eq('id', userId);
 
-      // TODO: 여기서 Supabase에 저장하는 로직을 추가하세요.
-      // 1. users 테이블의 'billing_key' 컬럼에 bid 저장
-      // 2. users 테이블의 'grade' 컬럼을 'Pro'로 업데이트
+      if (error) {
+        return NextResponse.json({ success: false, message: "결제는 완료되었지만 사용자 정보 업데이트에 실패했습니다." }, { status: 500 });
+      }
 
       return NextResponse.json({
         success: true,
