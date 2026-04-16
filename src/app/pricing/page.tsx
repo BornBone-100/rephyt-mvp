@@ -1,89 +1,46 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import Script from 'next/script'; 
 
-// 1. 타입 정의 (기존 유지)
-type NicePayErrorResult = { msg?: string };
-type NicePayRequestPaymentOptions = {
-  clientId: string;
-  method: string;
-  orderId: string;
-  amount: number;
-  goodsName: string;
-  returnUrl: string;
-  fnError?: (result: NicePayErrorResult) => void;
-};
-
+// 🚀 전역 객체 이름이 NicePay에서 AUTHNICE로 변경되었습니다.
 declare global {
   interface Window {
-    NicePay?: {
-      requestPayment: (opts: NicePayRequestPaymentOptions) => void;
+    AUTHNICE?: {
+      requestPay: (opts: any) => void;
     };
   }
 }
 
 export default function PricingPage() {
-  const [isSdkReady, setIsSdkReady] = useState(false);
+  const handleProPayment = () => {
+    const authNice = window.AUTHNICE;
 
-  // 🚀 핵심 변경: 스크립트가 로드되었는지 "강박적으로" 확인하는 로직 추가
-  useEffect(() => {
-    // 이미 로드되어 있는지 즉시 확인
-    if (window.NicePay) {
-      setIsSdkReady(true);
+    if (!authNice) {
+      alert("결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
       return;
     }
 
-    // 수동으로 스크립트 태그 삽입
-    const script = document.createElement("script");
-    script.src = "https://pg-sdk.nicepay.co.kr/v1/latest/js/nicepay.js";
-    script.async = true;
-
-    const onLoad = () => {
-      console.log("NicePay SDK Loaded!");
-      setIsSdkReady(true);
-    };
-
-    script.addEventListener('load', onLoad);
-    document.head.appendChild(script);
-
-    // 💡 안전장치: 0.5초마다 윈도우 객체 뒤져서 NicePay가 나타나면 상태 변경
-    const checkInterval = setInterval(() => {
-      if (window.NicePay) {
-        setIsSdkReady(true);
-        clearInterval(checkInterval);
-      }
-    }, 500);
-
-    return () => {
-      script.removeEventListener('load', onLoad);
-      clearInterval(checkInterval);
-    };
-  }, []);
-
-  const handleProPayment = () => {
     const clientId = process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID?.trim();
     if (!clientId) {
       alert("결제 설정이 필요합니다. NEXT_PUBLIC_NICEPAY_CLIENT_ID를 확인해 주세요.");
       return;
     }
 
-    if (!window.NicePay) {
-      alert("결제 모듈을 불러오는 중입니다. 잠시 후 다시 클릭해 주세요.");
-      return;
-    }
-
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? window.location.origin;
     const returnUrl = `${baseUrl}/api/payment/callback`;
 
-    window.NicePay.requestPayment({
+    // 💡 최신 규격의 호출 메서드입니다.
+    authNice.requestPay({
       clientId,
       method: "card",
       orderId: `rephyt_${Date.now()}`,
       amount: 9900,
       goodsName: "Re:PhyT Pro 1개월 구독",
       returnUrl,
-      fnError(result) {
-        alert(`결제 실패: ${result.msg ?? "알 수 없는 오류"}`);
+      fnError(result: any) {
+        // 에러 메시지 키값도 최신 규격에 맞게 보완했습니다.
+        alert(`결제 실패: ${result.errorMsg || result.msg || "알 수 없는 오류"}`);
       },
     });
   };
@@ -114,6 +71,12 @@ export default function PricingPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50 py-20 px-6">
+      {/* 🚀 완전히 교체된 나이스페이 최신 공식 SDK 주소 */}
+      <Script 
+        src="https://pay.nicepay.co.kr/v1/js/" 
+        strategy="afterInteractive"
+      />
+
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16 space-y-4">
           <h1 className="text-4xl md:text-5xl font-black text-blue-950 tracking-tight">서비스 요금제 안내</h1>
@@ -143,12 +106,9 @@ export default function PricingPage() {
               <button
                 type="button"
                 onClick={plan.name.startsWith("Pro") ? handleProPayment : undefined}
-                className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color} ${
-                  plan.name.startsWith("Pro") && !isSdkReady ? "opacity-60 cursor-wait" : ""
-                }`}
+                className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color}`}
               >
-                {/* 💡 핵심: Pro 버튼은 준비될 때까지 "준비 중..."을 띄우되, 스크립트 감지 시 즉시 "구독하기"로 변경됨 */}
-                {plan.name.startsWith("Pro") && !isSdkReady ? "준비 중..." : plan.button}
+                {plan.button}
               </button>
             </div>
           ))}
