@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState } from 'react';
+import { createClient } from '@/utils/supabase/client';
 
 export default function PricingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const supabase = createClient();
 
   // 구독하기 버튼 클릭 시 나이스페이 창이 아닌, 우리가 만든 팝업을 엽니다.
   const handleProPaymentClick = () => {
@@ -15,12 +17,21 @@ export default function PricingPage() {
 
     // 폼에서 입력받은 데이터 가져오기
     const formData = new FormData(e.currentTarget);
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData.user?.id;
+
+    if (!userId) {
+      alert("로그인 정보를 확인할 수 없습니다. 다시 로그인 후 시도해주세요.");
+      return;
+    }
+
     const requestData = {
       cardNumber: formData.get("cardNumber") as string,
       expMonth: formData.get("expMonth") as string,
       expYear: formData.get("expYear") as string,
       cardPw: formData.get("cardPw") as string,
       idNo: formData.get("idNo") as string,
+      userId,
     };
 
     try {
