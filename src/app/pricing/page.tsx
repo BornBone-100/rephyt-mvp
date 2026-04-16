@@ -10,11 +10,39 @@ export default function PricingPage() {
     setIsModalOpen(true);
   };
 
-  // 팝업 안에서 최종 결제하기 버튼을 눌렀을 때의 임시 로직
-  const submitBillingInfo = (e: React.FormEvent) => {
+  const submitBillingInfo = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    alert("입력하신 정보로 정기결제 빌링키 발급 API를 호출하는 로직이 들어갈 자리입니다.\n\n(심사 통과 후 실제 백엔드 연동 필요)");
-    setIsModalOpen(false);
+
+    // 폼에서 입력받은 데이터 가져오기
+    const formData = new FormData(e.currentTarget);
+    const requestData = {
+      cardNumber: formData.get("cardNumber") as string,
+      expMonth: formData.get("expMonth") as string,
+      expYear: formData.get("expYear") as string,
+      cardPw: formData.get("cardPw") as string,
+      idNo: formData.get("idNo") as string,
+    };
+
+    try {
+      // 백엔드 API로 카드 정보 전송
+      const res = await fetch("/api/billing/issue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        alert("🎉 정기결제 카드가 성공적으로 등록되었습니다! Re:PhyT Pro의 모든 기능을 사용해보세요.");
+        setIsModalOpen(false);
+        // 여기서 성공 후 페이지 이동 (예: window.location.href = '/dashboard')
+      } else {
+        alert(`등록 실패: ${result.message}`);
+      }
+    } catch (error) {
+      alert("서버와 통신 중 오류가 발생했습니다.");
+    }
   };
 
   const plans = [
@@ -105,28 +133,28 @@ export default function PricingPage() {
               
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">신용카드 번호</label>
-                <input type="text" placeholder="숫자만 입력해주세요 (16자리)" required className="w-full p-3 border border-gray-300 rounded-xl" />
+                <input type="text" name="cardNumber" placeholder="숫자만 입력해주세요 (16자리)" required className="w-full p-3 border border-gray-300 rounded-xl" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1">유효기간 (MM)</label>
-                  <input type="text" placeholder="월 (예: 09)" maxLength={2} required className="w-full p-3 border border-gray-300 rounded-xl" />
+                  <input type="text" name="expMonth" placeholder="월 (예: 09)" maxLength={2} required className="w-full p-3 border border-gray-300 rounded-xl" />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1">유효기간 (YY)</label>
-                  <input type="text" placeholder="년 (예: 25)" maxLength={2} required className="w-full p-3 border border-gray-300 rounded-xl" />
+                  <input type="text" name="expYear" placeholder="년 (예: 25)" maxLength={2} required className="w-full p-3 border border-gray-300 rounded-xl" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">카드 비밀번호 앞 2자리</label>
-                <input type="password" placeholder="**" maxLength={2} required className="w-full p-3 border border-gray-300 rounded-xl" />
+                <input type="password" name="cardPw" placeholder="**" maxLength={2} required className="w-full p-3 border border-gray-300 rounded-xl" />
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">생년월일 (또는 사업자번호)</label>
-                <input type="text" placeholder="생년월일 6자리 또는 사업자번호 10자리" required className="w-full p-3 border border-gray-300 rounded-xl" />
+                <input type="text" name="idNo" placeholder="생년월일 6자리 또는 사업자번호 10자리" required className="w-full p-3 border border-gray-300 rounded-xl" />
                 <p className="text-xs text-gray-500 mt-1">개인카드는 생년월일 6자리, 법인카드는 사업자등록번호 10자리</p>
               </div>
 
