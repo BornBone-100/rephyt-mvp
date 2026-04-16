@@ -1,9 +1,22 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createClient } from '@/utils/supabase/client';
 
 export default function PricingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const supabase = createClient();
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUserId(session.user.id);
+      }
+    };
+    getUser();
+  }, [supabase]);
 
   // 구독하기 버튼 클릭 시 나이스페이 창이 아닌, 우리가 만든 팝업을 엽니다.
   const handleProPaymentClick = () => {
@@ -13,6 +26,11 @@ export default function PricingPage() {
   const submitBillingInfo = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    if (!userId) {
+      alert("결제를 진행하려면 먼저 로그인이 필요합니다.");
+      return;
+    }
+
     // 폼에서 입력받은 데이터 가져오기
     const formData = new FormData(e.currentTarget);
     const requestData = {
@@ -21,9 +39,7 @@ export default function PricingPage() {
       expYear: formData.get("expYear") as string,
       cardPw: formData.get("cardPw") as string,
       idNo: formData.get("idNo") as string,
-
-      // 🚀 드디어 주인을 찾았습니다! 성준 님의 실제 DB 아이디를 넣습니다.
-      userId: "4b321d24-8c45-4048-9f46-2932fe03844b",
+      userId: userId,
     };
 
     try {
@@ -36,11 +52,12 @@ export default function PricingPage() {
 
       const result = await res.json();
 
-      // 💡 여기서 에러/성공 메시지를 띄워줍니다.
       if (result.success) {
-        alert(`🎉 ${result.message}`);
+        alert("🎉 구독 결제 및 등급 업데이트 완벽하게 성공!");
         setIsModalOpen(false);
-        // 성공 후 대시보드나 마이페이지로 이동시키는 로직을 넣으시면 좋습니다.
+        
+        // 대시보드 대신 임상 평가 페이지로 이동
+        window.location.href = "/evaluation";
       } else {
         alert(`등록 실패: ${result.message}`);
       }
