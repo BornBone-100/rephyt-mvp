@@ -50,7 +50,10 @@ export async function POST(request: Request) {
 
     // 3. 나이스페이 서버에게 "알림 잘 받았어!" 라고 꼭 응답해 주어야 합니다.
     // (안 그러면 나이스페이가 못 받은 줄 알고 계속 알림을 보냅니다)
-    return NextResponse.json({ success: true, message: "OK" });
+    return new NextResponse("OK", {
+      status: 200,
+      headers: { "Content-Type": "text/plain" }
+    });
 
   } catch (error) {
     console.error("웹훅 처리 중 에러 발생:", error);
