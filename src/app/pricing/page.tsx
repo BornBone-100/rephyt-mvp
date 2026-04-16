@@ -56,8 +56,8 @@ export default function PricingPage() {
         alert("🎉 구독 결제 및 등급 업데이트 완벽하게 성공!");
         setIsModalOpen(false);
         
-        // 대시보드 대신 임상 평가 페이지로 이동
-        window.location.href = "/evaluation";
+        // 결제 성공 시 하이엔드 임상 평가 화면으로 이동
+        window.location.href = "/dashboard/soap/new";
       } else {
         alert(`등록 실패: ${result.message}`);
       }
