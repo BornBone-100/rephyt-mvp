@@ -37,10 +37,20 @@ export async function POST(request: Request) {
     // 첫 달 결제 승인 요청
     const payResponse = await fetch(`https://api.nicepay.co.kr/v1/subscribe/${bid}/payments`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${credentials}` },
-      body: JSON.stringify({ amount: 9900, orderId: `rephyt_pay_${Date.now()}`, goodsName: "Re:PhyT Pro 1개월 정기구독", cardQuota: "00", useShopInterest: "N", buyerName: "원장님", buyerEmail: "test@rephyt.com", charSet: "utf-8", edition: "v1" }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${credentials}`
+      },
+      body: JSON.stringify({
+        amount: 9900,
+        orderId: `rephyt_pay_${Date.now()}`,
+        goodsName: "Re:PhyT Pro 1개월 정기구독",
+        cardQuota: 0,
+        useShopInterest: false
+      }),
     });
     const payData = await payResponse.json();
+    console.log("나이스페이 결제 응답 데이터:", payData);
 
     if (payData.resultCode === '0000') {
       // ⭐ 3. 드디어 Supabase에 빌링키 저장 및 등급 업그레이드!
