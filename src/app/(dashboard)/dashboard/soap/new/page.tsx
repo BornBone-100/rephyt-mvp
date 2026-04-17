@@ -68,6 +68,7 @@ function SoapContent() {
   const supabase = useMemo(() => createClient(), []);
 
   const [selectedJoint, setSelectedJoint] = useState<keyof typeof ebpDatabase | "">("");
+  const [targetLanguage, setTargetLanguage] = useState("Korean-Mixed");
   const [painScale, setPainScale] = useState<string>("5");
   const [historyTaking, setHistoryTaking] = useState("");
   
@@ -115,7 +116,7 @@ function SoapContent() {
       const response = await fetch('/api/ai-soap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promptData: rawData }),
+        body: JSON.stringify({ promptData: rawData, language: targetLanguage }),
       });
       const aiResult = await response.json();
       setSoapData({ subjective: aiResult.subjective, objective: aiResult.objective, assessment: aiResult.assessment, plan: aiResult.plan });
@@ -193,6 +194,21 @@ function SoapContent() {
                     onChange={(e) => setTreatmentDate(e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-xs font-bold text-zinc-400 mb-2 uppercase">출력 언어 선택</label>
+                <select
+                  value={targetLanguage}
+                  onChange={(e) => setTargetLanguage(e.target.value)}
+                  className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 font-bold"
+                >
+                  <option value="Korean-Mixed">한국어 + 영문 의학용어 (기본)</option>
+                  <option value="English">100% English (영문 차트)</option>
+                  <option value="Japanese">日本語 (일본어)</option>
+                  <option value="Chinese">中文 (중국어)</option>
+                  <option value="Russian">Русский (러시아어)</option>
+                </select>
               </div>
 
               <label className="block text-sm font-bold mb-2">병력 청취 (History Taking)</label>

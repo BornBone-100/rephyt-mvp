@@ -2,7 +2,21 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    const { promptData } = await req.json();
+    // 🚀 1. 프론트엔드에서 넘어온 언어 데이터(targetLanguage)를 함께 받습니다.
+    const { promptData, targetLanguage = "Korean-Mixed" } = await req.json();
+
+    // 🚀 2. 선택된 언어에 따른 AI 지시어 셋업
+    let languageDirective = "결과는 한국어와 영문 의학용어를 혼용하여 전문적으로 작성하세요.";
+
+    if (targetLanguage === "English") {
+      languageDirective = "Translate and write the entire content in 100% professional Medical English.";
+    } else if (targetLanguage === "Japanese") {
+      languageDirective = "결과를 전문적인 일본어 의학 용어(日本語)로 번역해서 작성하세요.";
+    } else if (targetLanguage === "Chinese") {
+      languageDirective = "결과를 전문적인 중국어 의학 용어(中文)로 번역해서 작성하세요.";
+    } else if (targetLanguage === "Russian") {
+      languageDirective = "결과를 전문적인 러시아어 의학 용어(Русский)로 번역해서 작성하세요.";
+    }
 
     // 🚨 [진짜 7년 차 치료사의 뇌 이식] AI에게 강력한 임상 추론을 지시합니다.
     const systemPrompt = `
@@ -28,7 +42,10 @@ export async function POST(req: Request) {
          - A에서 유추된 근본 원인을 해결하기 위한 근거 기반(EBP) 중재 계획을 작성하세요.
          - 단기 목표(통증 제어/염증 감소 등)와 장기 목표(기능/가동성 회복 등)를 명확히 분리하고, 도수치료 기법이나 치료적 운동(FITT 원리 등)의 구체적 방향을 제시하세요.
 
-      반드시 아래 JSON 형식으로만 반환하세요:
+      [출력 언어 지시사항]
+      ${languageDirective}
+
+      반드시 아래 JSON 형식으로만 반환하세요 (🚨주의: Key 값인 subjective, objective, assessment, plan은 절대 다른 언어로 번역하지 말고 영문 소문자 그대로 유지하세요):
       {
         "subjective": "심층 분석된 주관적 호소 및 손상 기전 유추",
         "objective": "객관적 검사 결과 요약",
