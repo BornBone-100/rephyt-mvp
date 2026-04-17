@@ -40,6 +40,7 @@ export default function PricingPage() {
       cardPw: formData.get("cardPw") as string,
       idNo: formData.get("idNo") as string,
       userId: userId,
+      amount: 5900,
     };
 
     try {
@@ -77,7 +78,7 @@ export default function PricingPage() {
     },
     {
       name: "Pro (전문가용)",
-      price: "9,900",
+      price: "5,900",
       description: "환자 데이터가 많은 프리랜서 및 병원 치료사에게 최적화된 무제한 AI 솔루션입니다. (1개월 단위 정기결제)",
       features: ["환자 무제한 등록", "AI SOAP 자동 완성", "P-노트 무한 누적", "PDF 차트 내보내기"],
       button: "구독하기",
@@ -181,7 +182,7 @@ export default function PricingPage() {
 
               <div className="pt-4 flex gap-3">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 p-4 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200">취소</button>
-                <button type="submit" className="flex-1 p-4 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-600">9,900원 결제하기</button>
+                <button type="submit" className="flex-1 p-4 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-600">5,900원 결제하기</button>
               </div>
             </form>
           </div>

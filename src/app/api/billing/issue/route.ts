@@ -42,9 +42,9 @@ export async function POST(request: Request) {
         'Authorization': `Basic ${credentials}`
       },
       body: JSON.stringify({
-        amount: 9900,
-        orderId: `rephyt_pay_${Date.now()}`,
-        goodsName: "Re:PhyT Pro 1개월 정기구독",
+        amount: 5900,
+        orderId: `rephyt_initial_${Date.now()}`,
+        goodsName: "Re:PhyT Pro 정기구독",
         cardQuota: 0,
         useShopInterest: false
       }),

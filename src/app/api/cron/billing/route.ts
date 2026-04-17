@@ -41,7 +41,7 @@ export async function GET(request: Request) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${credentials}` },
         body: JSON.stringify({
-          amount: 9900,
+          amount: 5900,
           orderId: `rephyt_auto_${Date.now()}`,
           goodsName: "Re:PhyT Pro 정기구독 자동결제",
           cardQuota: 0,
