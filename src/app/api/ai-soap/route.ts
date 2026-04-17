@@ -2,19 +2,19 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    // 🚀 1. 프론트엔드에서 넘어온 언어 데이터(targetLanguage)를 함께 받습니다.
-    const { promptData, targetLanguage = "Korean-Mixed" } = await req.json();
+    // 🚀 1. 프론트엔드에서 보낸 이름 그대로 'language'로 받습니다.
+    const { promptData, language = "Korean-Mixed" } = await req.json();
 
     // 🚀 2. 선택된 언어에 따른 AI 지시어 셋업
     let languageDirective = "결과는 한국어와 영문 의학용어를 혼용하여 전문적으로 작성하세요.";
 
-    if (targetLanguage === "English") {
+    if (language === "English") {
       languageDirective = "Translate and write the entire content in 100% professional Medical English.";
-    } else if (targetLanguage === "Japanese") {
+    } else if (language === "Japanese") {
       languageDirective = "결과를 전문적인 일본어 의학 용어(日本語)로 번역해서 작성하세요.";
-    } else if (targetLanguage === "Chinese") {
+    } else if (language === "Chinese") {
       languageDirective = "결과를 전문적인 중국어 의학 용어(中文)로 번역해서 작성하세요.";
-    } else if (targetLanguage === "Russian") {
+    } else if (language === "Russian") {
       languageDirective = "결과를 전문적인 러시아어 의학 용어(Русский)로 번역해서 작성하세요.";
     }
 
