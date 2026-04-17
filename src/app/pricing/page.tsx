@@ -6,6 +6,8 @@ import { createClient } from '@/utils/supabase/client';
 export default function PricingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [finalAmount] = useState(5900);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -26,10 +28,14 @@ export default function PricingPage() {
   const submitBillingInfo = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    if (isSubmitting) return;
+
     if (!userId) {
       alert("결제를 진행하려면 먼저 로그인이 필요합니다.");
       return;
     }
+
+    setIsSubmitting(true);
 
     // 폼에서 입력받은 데이터 가져오기
     const formData = new FormData(e.currentTarget);
@@ -40,7 +46,7 @@ export default function PricingPage() {
       cardPw: formData.get("cardPw") as string,
       idNo: formData.get("idNo") as string,
       userId: userId,
-      amount: 5900,
+      amount: finalAmount,
     };
 
     try {
@@ -64,6 +70,8 @@ export default function PricingPage() {
       }
     } catch (error) {
       alert("서버와 통신 중 오류가 발생했습니다.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -182,7 +190,17 @@ export default function PricingPage() {
 
               <div className="pt-4 flex gap-3">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 p-4 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200">취소</button>
-                <button type="submit" className="flex-1 p-4 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-600">5,900원 결제하기</button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className={`flex-1 py-3 rounded-md text-white font-bold transition-colors ${
+                    isSubmitting
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-[#FF5A00] hover:bg-[#E04D00]"
+                  }`}
+                >
+                  {isSubmitting ? "결제 진행 중..." : `${finalAmount.toLocaleString()}원 결제하기`}
+                </button>
               </div>
             </form>
           </div>
