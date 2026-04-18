@@ -9,6 +9,28 @@
     ],
     "button": "Subscribe Now"
   },
+  "auth": {
+    "title": "Re:PhyT Login",
+    "subtitle": "Re:PhyT Pro - Professional High-end Chart System",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "emailPlaceholder": "Email Address",
+    "passwordPlaceholder": "Password",
+    "loginBtn": "Login",
+    "signupBtn": "Sign Up",
+    "loginLoading": "Signing in...",
+    "signupLoading": "Signing up...",
+    "signupCooldown": "Wait to sign up ({seconds}s)",
+    "errorSignInFailed": "Sign-in failed.",
+    "errorEmailNotConfirmed": "Email not verified. Open the confirmation link in your inbox, then try signing in again.",
+    "signupSuccessCheckEmail": "Sign-up complete. Please check your email for the verification link.",
+    "resendNeedEmail": "Enter your email to resend the verification message.",
+    "resendSuccess": "Verification email sent. Check your inbox (and spam).",
+    "resendLoading": "Sending...",
+    "resendCooldown": "Wait to resend ({seconds}s)",
+    "resendButton": "Resend verification email",
+    "suspenseLoading": "Loading..."
+  },
   "dashboard": {
     "title": "Dashboard",
     "welcome": "Welcome, Doctor!",
