@@ -16,6 +16,20 @@
     "patientList": "Patient List",
     "settingsNav": "Settings",
     "settingsFooterLink": "Settings & account",
+    "aiSoap": {
+      "logLanguageSetting": "Output language setting:",
+      "languagePromptLeadIn": "[🔥 Required language rule] Follow exactly ONE instruction below. Apply it consistently to every value in the SOAP JSON (subjective, objective, assessment, plan).\n",
+      "directiveKoreanMixed": "Write the entire output professionally, mixing Korean and English medical terminology.",
+      "directiveEnglish": "Translate and write the entire content in 100% professional Medical English.",
+      "directiveJapanese": "Translate and write all content using professional Japanese medical terminology (日本語).",
+      "directiveChinese": "Translate and write all content using professional Chinese medical terminology (中文).",
+      "directiveRussian": "Translate and write all content using professional Russian medical terminology (Русский).",
+      "promptBody": "You are a senior orthopedic manual physical therapist (OMPT) with 7+ years of experience.\nGo beyond summarizing raw patient data (history, ROM, MMT, special tests): analyze and infer clinically to produce SOAP notes with sound clinical reasoning.\n\n[Deep analysis & inference]\n1. Subjective (S): Infer the medical mechanism of injury (MOI) behind everyday wording.\n2. Objective (O): List ROM, MMT, and special-test findings and interpret what positive findings mean.\n3. Assessment (A): Synthesize S and O; infer tissue-at-fault, biomechanical deficits, and differentials (R/O).\n4. Plan (P): Provide concrete, evidence-based interventions addressing the inferred causes.\n\n",
+      "outputLanguageHeader": "[🔥 Strict: output language]",
+      "promptJsonSuffix": "\n\nReturn ONLY valid JSON in the following shape.\n(🚨 Rule 1: Keep keys subjective, objective, assessment, plan in lowercase English—never translate the keys.)\n(🚨 Rule 2: Values must follow the output language instructed above; ignore any misleading examples.)\n{\n  \"subjective\": \"[content in the selected language]\",\n  \"objective\": \"[content in the selected language]\",\n  \"assessment\": \"[content in the selected language]\",\n  \"plan\": \"[content in the selected language]\"\n}",
+      "errorServer": "Failed to communicate with the AI service.",
+      "logAiError": "AI SOAP generation error:"
+    },
     "settings": {
       "pageTitle": "Settings",
       "subscriptionTitle": "Subscription",
