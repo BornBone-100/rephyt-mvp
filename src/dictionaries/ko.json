@@ -15,6 +15,7 @@
     "newChart": "새 SOAP 차트 작성",
     "patientList": "환자 목록",
     "settingsNav": "설정",
+    "settingsFooterLink": "설정 및 계정 관리",
     "settings": {
       "pageTitle": "설정",
       "subscriptionTitle": "구독 관리",
@@ -31,7 +32,23 @@
       "canceling": "취소 진행 중...",
       "cancelButton": "구독 취소하기",
       "noActiveSubscription": "진행 중인 유료·체험 구독이 없습니다.",
-      "loading": "불러오는 중..."
+      "loading": "불러오는 중...",
+      "accountHeading": "계정 설정 (Settings)",
+      "profileHeading": "내 프로필",
+      "nameLabel": "이름",
+      "emailLabel": "이메일",
+      "planInUse": "{plan} (사용 중)",
+      "nextBillingLabel": "다음 결제일",
+      "nextBillingNone": "—",
+      "changePaymentButton": "결제 수단 변경",
+      "dangerTitle": "Danger Zone",
+      "dangerDescription": "구독을 취소하면 Re:PhyT의 전문적인 AI 차트 기능과 데이터 분석 기능을 더 이상 사용할 수 없게 됩니다.",
+      "cancelConfirmPro": "정말 Re:PhyT Pro 구독을 취소하시겠습니까?\n취소 시 하이엔드 AI 차트 생성 기능이 즉시 제한됩니다.",
+      "cancelSuccessFree": "구독이 취소되었습니다. Free 요금제로 전환됩니다.",
+      "processingShort": "처리 중...",
+      "unsubscribeText": "구독 해지하기",
+      "alertErrorPrefix": "오류: ",
+      "serverCommError": "서버 통신 중 문제가 발생했습니다."
     },
     "patients": {
       "pageTitle": "Re:PhyT 환자 관리",

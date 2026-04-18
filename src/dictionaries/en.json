@@ -15,6 +15,7 @@
     "newChart": "Create New SOAP Chart",
     "patientList": "Patient List",
     "settingsNav": "Settings",
+    "settingsFooterLink": "Settings & account",
     "settings": {
       "pageTitle": "Settings",
       "subscriptionTitle": "Subscription",
@@ -31,7 +32,23 @@
       "canceling": "Canceling...",
       "cancelButton": "Cancel subscription",
       "noActiveSubscription": "You don’t have an active paid or trial subscription.",
-      "loading": "Loading..."
+      "loading": "Loading...",
+      "accountHeading": "Account settings",
+      "profileHeading": "My profile",
+      "nameLabel": "Name",
+      "emailLabel": "Email",
+      "planInUse": "{plan} (active)",
+      "nextBillingLabel": "Next billing date",
+      "nextBillingNone": "—",
+      "changePaymentButton": "Update payment method",
+      "dangerTitle": "Danger Zone",
+      "dangerDescription": "Canceling ends access to Re:PhyT Pro AI charting and related analytics.",
+      "cancelConfirmPro": "Cancel your Re:PhyT Pro subscription?\nHigh-end AI chart generation will be limited immediately.",
+      "cancelSuccessFree": "Your subscription was canceled. You are now on the Free plan.",
+      "processingShort": "Processing...",
+      "unsubscribeText": "Cancel subscription",
+      "alertErrorPrefix": "Error: ",
+      "serverCommError": "Something went wrong while contacting the server."
     },
     "patients": {
       "pageTitle": "Re:PhyT Patient Management",
