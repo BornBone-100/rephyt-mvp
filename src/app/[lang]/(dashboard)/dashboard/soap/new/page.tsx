@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense, useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import RomMmtAssessment, { type RomMmtRecord } from "@/components/RomMmtAssessment";
 
@@ -63,6 +63,9 @@ function normalizePlanTier(raw: string | null | undefined): PlanTier {
 
 function SoapContent() {
   const router = useRouter();
+  const routeParams = useParams();
+  const lang = routeParams.lang as string;
+  const base = `/${lang}`;
   const searchParams = useSearchParams();
   const patientId = searchParams.get("patientId"); 
   const supabase = useMemo(() => createClient(), []);
@@ -141,14 +144,14 @@ function SoapContent() {
       created_at: new Date(treatmentDate).toISOString() // 🕒 선택한 날짜로 저장
     }]);
 
-    if (error) alert("저장 실패"); else { alert("저장 완료"); router.push(`/dashboard/patients/${patientId}`); }
+    if (error) alert("저장 실패"); else { alert("저장 완료"); router.push(`${base}/dashboard/patients/${patientId}`); }
     setIsSaving(false);
   };
 
   const handleAiGenerateClick = () => {
     if (planTier === "basic") {
       alert("Pro 요금제 전용 기능입니다.");
-      router.push("/dashboard/pricing");
+      router.push(`${base}/dashboard/pricing`);
       return;
     }
     void handleSoapGeneration();

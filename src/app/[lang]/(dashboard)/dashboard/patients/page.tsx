@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import type { Tables } from "@/types/supabase";
 
 export default function PatientsListPage() {
   const router = useRouter();
+  const params = useParams();
+  const lang = params.lang as string;
+  const base = `/${lang}`;
   const supabase = useMemo(() => createClient(), []);
   const [patients, setPatients] = useState<Tables<"patients">[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -51,7 +54,7 @@ export default function PatientsListPage() {
     if (error) {
       alert("로그아웃 중 오류가 발생했습니다.");
     } else {
-      router.push("/login");
+      router.push(`${base}/login`);
     }
   };
 
@@ -84,7 +87,7 @@ export default function PatientsListPage() {
           <button onClick={fetchPatients} className="h-12 rounded-xl bg-white border border-zinc-200 px-6 font-bold text-zinc-700 shadow-sm transition hover:bg-zinc-50 flex items-center gap-2">
             새로고침
           </button>
-          <Link href="/dashboard/patients/new">
+          <Link href={`${base}/dashboard/patients/new`}>
             <button className="h-12 rounded-xl bg-orange-500 px-6 font-bold text-white shadow-lg transition hover:bg-orange-600">
               신규 환자 등록
             </button>
@@ -148,14 +151,14 @@ export default function PatientsListPage() {
                       {patient.phone || "-"}
                     </td>
                     <td className="px-6 py-5 text-right space-x-2">
-                      <Link href={`/dashboard/patients/${patient.id}`}>
+                      <Link href={`${base}/dashboard/patients/${patient.id}`}>
                         <button className="px-4 py-2 rounded-lg bg-zinc-100 text-zinc-700 font-bold hover:bg-zinc-200 transition text-xs">
                           차트 보기
                         </button>
                       </Link>
                       
                       {/* 💡 원상 복구된 SOAP 작성 다크 버튼! */}
-                      <Link href={`/dashboard/soap/new?patientId=${patient.id}`}>
+                      <Link href={`${base}/dashboard/soap/new?patientId=${patient.id}`}>
                         <button className="px-4 py-2 rounded-lg bg-zinc-900 text-white font-bold hover:bg-zinc-800 transition text-xs">
                           SOAP 작성
                         </button>

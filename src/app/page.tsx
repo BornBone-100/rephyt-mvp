@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
+/** 루트 `/` → 기본 로케일 로그인 (필요 시 middleware로 언어 감지 가능) */
 export default function RootPage() {
-  // 로딩창도 띄우지 않고, 접속하자마자 0.001초 만에 로그인 화면으로 강제 이동시킵니다!
-  redirect("/login");
+  redirect("/ko/login");
 }

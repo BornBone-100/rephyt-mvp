@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
 // 기존의 LoginPage 전체를 LoginForm 이라는 이름으로 살짝 바꿉니다.
 function LoginForm() {
   const router = useRouter();
+  const params = useParams();
+  const lang = params.lang as string;
   const supabase = useMemo(() => createClient(), []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16,7 +18,7 @@ function LoginForm() {
   const [cooldownSec, setCooldownSec] = useState(0);
 
   // 로그인 성공 후 첫 화면으로 이동
-  const nextPath = "/dashboard/patients";
+  const nextPath = `/${lang}/dashboard/patients`;
 
   useEffect(() => {
     if (cooldownSec <= 0) return;
@@ -68,7 +70,9 @@ function LoginForm() {
       password,
       options: {
         emailRedirectTo:
-          typeof window !== "undefined" ? `${window.location.origin}/callback` : undefined,
+          typeof window !== "undefined"
+            ? `${window.location.origin}/${lang}/callback`
+            : undefined,
       },
     });
     setLoading(null);
@@ -103,7 +107,9 @@ function LoginForm() {
       email,
       options: {
         emailRedirectTo:
-          typeof window !== "undefined" ? `${window.location.origin}/callback` : undefined,
+          typeof window !== "undefined"
+            ? `${window.location.origin}/${lang}/callback`
+            : undefined,
       },
     });
     setLoading(null);

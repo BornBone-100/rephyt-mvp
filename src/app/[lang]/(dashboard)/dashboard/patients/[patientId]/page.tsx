@@ -8,6 +8,8 @@ import type { Tables } from "@/types/supabase";
 
 export default function PatientDetailPage() {
   const params = useParams();
+  const lang = params.lang as string;
+  const base = `/${lang}`;
   const patientId = params.patientId as string;
   const supabase = useMemo(() => createClient(), []);
 
@@ -117,10 +119,10 @@ export default function PatientDetailPage() {
   return (
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="mb-8">
-        <Link href="/dashboard/patients" className="inline-flex items-center text-sm font-bold text-zinc-500 hover:text-zinc-900 mb-4 transition">&larr; 환자 목록으로</Link>
+        <Link href={`${base}/dashboard/patients`} className="inline-flex items-center text-sm font-bold text-zinc-500 hover:text-zinc-900 mb-4 transition">&larr; 환자 목록으로</Link>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <h1 className="text-3xl font-black text-blue-950">{patient.name} 환자 차트</h1>
-          <Link href={`/dashboard/soap/new?patientId=${patient.id}`}>
+          <Link href={`${base}/dashboard/soap/new?patientId=${patient.id}`}>
             <button className="h-12 rounded-xl bg-orange-500 px-6 font-bold text-white shadow-lg transition hover:bg-orange-600">+ 새 SOAP 차트 작성</button>
           </Link>
         </div>

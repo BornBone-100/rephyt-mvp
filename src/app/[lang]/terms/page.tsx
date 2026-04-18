@@ -2,9 +2,12 @@
 
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
 function TermsPageContent() {
+  const params = useParams();
+  const lang = params.lang as string;
+  const base = `/${lang}`;
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<"terms" | "privacy">("terms");
 
@@ -19,10 +22,10 @@ function TermsPageContent() {
       {/* 상단 네비게이션 */}
       <nav className="border-b border-zinc-100 bg-white/80 backdrop-blur-md sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="text-xl font-black text-blue-950">
+          <Link href={base} className="text-xl font-black text-blue-950">
             Re:PhyT
           </Link>
-          <Link href="/" className="text-sm font-bold text-zinc-400 hover:text-zinc-900 transition">
+          <Link href={base} className="text-sm font-bold text-zinc-400 hover:text-zinc-900 transition">
             홈으로 돌아가기
           </Link>
         </div>

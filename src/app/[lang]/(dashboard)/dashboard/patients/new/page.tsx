@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 
 export default function NewPatientPage() {
   const router = useRouter();
+  const params = useParams();
+  const lang = params.lang as string;
+  const base = `/${lang}`;
   const supabase = createClient();
 
   const [name, setName] = useState("");
@@ -49,7 +52,7 @@ export default function NewPatientPage() {
     setIsSubmitting(false);
 
     if (!error) {
-      router.push("/dashboard/patients");
+      router.push(`${base}/dashboard/patients`);
     } else {
       alert("환자 등록 실패: " + error.message);
     }
@@ -58,7 +61,7 @@ export default function NewPatientPage() {
   return (
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="max-w-3xl mx-auto">
-        <Link href="/dashboard/patients" className="inline-flex items-center text-sm font-bold text-zinc-500 hover:text-zinc-900 mb-6 transition">
+        <Link href={`${base}/dashboard/patients`} className="inline-flex items-center text-sm font-bold text-zinc-500 hover:text-zinc-900 mb-6 transition">
           &larr; 환자 목록으로
         </Link>
         <h1 className="text-3xl font-black text-blue-950 mb-8">신규 환자 등록</h1>
