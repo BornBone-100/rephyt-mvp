@@ -19,11 +19,11 @@ export async function GET(request: Request) {
     // 2. 오늘 날짜 구하기 (한국 시간 기준 처리 등은 편의상 UTC 기준으로 작성)
     const today = new Date().toISOString().split('T')[0];
 
-    // 3. 결제 대상자 뽑기 (오늘이 결제일이고, Pro 유저이며, 빌링키가 있는 사람)
+    // 3. 결제 대상자 뽑기 (오늘이 결제일이고, Pro·체험(trial) 유저이며, 빌링키가 있는 사람)
     const { data: users, error } = await supabase
       .from('profiles')
-      .select('id, billing_key')
-      .eq('plan_tier', 'pro')
+      .select('id, billing_key, plan_tier')
+      .in('plan_tier', ['pro', 'trial'])
       .not('billing_key', 'is', null)
       .lte('next_billing_date', today); // 오늘이거나 오늘보다 과거인 경우
 
@@ -52,14 +52,19 @@ export async function GET(request: Request) {
       const payData = await payResponse.json();
 
       if (payData.resultCode === '0000') {
-        // 결제 성공: 다음 결제일을 다시 한 달 뒤로 연장
+        // 결제 성공: 다음 결제일을 다시 한 달 뒤로 연장 (체험 종료 후 첫 결제면 pro로 전환)
         const nextMonth = new Date();
         nextMonth.setMonth(nextMonth.getMonth() + 1);
+        const nextDate = nextMonth.toISOString().split('T')[0];
 
-        await supabase
-          .from('profiles')
-          .update({ next_billing_date: nextMonth.toISOString().split('T')[0] })
-          .eq('id', user.id);
+        const updates: { next_billing_date: string; plan_tier?: string } = {
+          next_billing_date: nextDate,
+        };
+        if (user.plan_tier === 'trial') {
+          updates.plan_tier = 'pro';
+        }
+
+        await supabase.from('profiles').update(updates).eq('id', user.id);
 
         console.log(`[성공] 유저 ${user.id} 결제 완료 및 한 달 연장`);
       } else {

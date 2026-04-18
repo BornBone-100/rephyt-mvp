@@ -47,7 +47,7 @@ export function PricingClient({ dict, lang }: Props) {
     if (isSubmitting) return;
 
     if (!userId) {
-      alert("결제를 진행하려면 먼저 로그인이 필요합니다.");
+      alert("로그인이 필요합니다.");
       return;
     }
 
@@ -74,7 +74,7 @@ export function PricingClient({ dict, lang }: Props) {
       const result = await res.json();
 
       if (result.success) {
-        alert("🎉 구독 결제 및 등급 업데이트 완벽하게 성공!");
+        alert("🎉 카드 등록 완료! 이틀 동안 Re:PhyT Pro를 마음껏 경험해 보세요.");
         setIsModalOpen(false);
         window.location.href = `${base}/dashboard/soap/new`;
       } else {
@@ -205,8 +205,12 @@ export function PricingClient({ dict, lang }: Props) {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-            <h2 className="text-2xl font-black text-blue-950 mb-6">정기결제 카드 정보 입력</h2>
-            <form onSubmit={submitBillingInfo} className="space-y-4">
+            <h2 className="text-2xl font-black text-blue-950">카드 등록 (무료 체험)</h2>
+            <p className="mt-2 text-sm text-zinc-600 leading-relaxed">
+              <span className="font-bold text-blue-900">이 단계에서는 결제 금액이 청구되지 않습니다.</span> 카드만
+              안전하게 등록되며, 이틀간 Pro 기능을 무료로 이용할 수 있습니다.
+            </p>
+            <form onSubmit={submitBillingInfo} className="space-y-4 mt-6">
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">신용카드 번호</label>
                 <input
@@ -267,23 +271,30 @@ export function PricingClient({ dict, lang }: Props) {
                 <p className="text-xs text-gray-500 mt-1">개인카드는 생년월일 6자리, 법인카드는 사업자등록번호 10자리</p>
               </div>
 
-              <div className="pt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 p-4 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200"
-                >
-                  취소
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className={`flex-1 py-3 rounded-md text-white font-bold transition-colors ${
-                    isSubmitting ? "bg-gray-400 cursor-not-allowed" : "bg-[#FF5A00] hover:bg-[#E04D00]"
-                  }`}
-                >
-                  {isSubmitting ? "결제 진행 중..." : `${finalAmount.toLocaleString()}원 결제하기`}
-                </button>
+              <div className="mt-6 text-center space-y-3">
+                <p className="text-sm text-red-500 font-bold leading-snug">
+                  💡 2일간 무료 체험 후, 3일째 되는 날 월 5,900원이 결제됩니다.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="flex-1 p-4 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className={`flex-[2] py-3 rounded-xl text-white font-bold transition-colors ${
+                      isSubmitting
+                        ? "bg-gray-400 cursor-not-allowed"
+                        : "bg-blue-950 hover:bg-blue-900"
+                    }`}
+                  >
+                    {isSubmitting ? "카드 확인 중..." : "지금 무료로 시작하기"}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

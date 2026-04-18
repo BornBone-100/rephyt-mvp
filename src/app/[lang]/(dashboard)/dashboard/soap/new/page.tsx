@@ -10,7 +10,7 @@ type PlanTier = "basic" | "pro" | "enterprise";
 
 function normalizePlanTier(raw: string | null | undefined): PlanTier {
   const t = (raw ?? "basic").toLowerCase();
-  if (t === "pro") return "pro";
+  if (t === "pro" || t === "trial") return "pro";
   if (t === "enterprise") return "enterprise";
   return "basic";
 }
