@@ -46,17 +46,22 @@ export async function POST(request: Request) {
     trialEndDate.setDate(today.getDate() + 2);
     const nextBillingDate = trialEndDate.toISOString().split('T')[0];
 
-    const { error: dbError } = await supabase.from('profiles').upsert(
-      {
-        id: userId,
-        billing_key: bid,
-        grade: 'Pro',
-        plan_tier: 'trial',
-        monthly_amount: 5900,
-        next_billing_date: nextBillingDate,
-      },
-      { onConflict: 'id' },
-    );
+    /** 크론·표시용 기준 금액(원). DB에 monthly_amount 컬럼이 있으면 아래 upsert에 반영하세요. */
+    const amount = 5900;
+
+    // monthly_amount 컬럼이 아직 DB에 없다면 이 필드만 빼고 저장합니다.
+    const upsertData: Record<string, string | number> = {
+      id: userId,
+      billing_key: bid,
+      grade: 'Pro',
+      plan_tier: 'trial',
+      next_billing_date: nextBillingDate,
+    };
+
+    // DB에 컬럼을 추가하셨다면 아래 주석을 해제하세요!
+    // upsertData.monthly_amount = amount;
+
+    const { error: dbError } = await supabase.from('profiles').upsert(upsertData, { onConflict: 'id' });
 
     if (dbError) {
       return NextResponse.json({ success: false, message: `DB 업데이트 실패: ${dbError.message}` });
