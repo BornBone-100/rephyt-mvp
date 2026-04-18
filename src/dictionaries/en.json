@@ -8,5 +8,35 @@
       "✅ Data-driven Patient Management"
     ],
     "button": "Subscribe Now"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome, Doctor!",
+    "newChart": "Create New SOAP Chart",
+    "patientList": "Patient List",
+    "patients": {
+      "pageTitle": "Re:PhyT Patient Management",
+      "pageSubtitle": "Trustworthy data; care delivered with clinical precision.",
+      "logout": "Log out",
+      "refresh": "Refresh",
+      "newPatient": "Register new patient",
+      "searchPlaceholder": "Search by name, diagnosis, or phone",
+      "colName": "Patient name",
+      "colGenderAge": "Gender / Age",
+      "colDiagnosis": "Primary diagnosis",
+      "colPhone": "Contact",
+      "colActions": "Actions",
+      "loading": "Loading patient list...",
+      "emptyPatients": "No patients yet. Please register a new patient.",
+      "emptySearch": "No search results.",
+      "noName": "No name",
+      "ageSuffix": " yrs",
+      "viewChart": "View chart",
+      "writeSoap": "Write SOAP",
+      "delete": "Delete",
+      "confirmDelete": "Delete this patient and all of their records?",
+      "deleteFailedPrefix": "Delete failed: ",
+      "logoutError": "Something went wrong while signing out."
+    }
   }
 }
