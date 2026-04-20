@@ -195,10 +195,14 @@ create table if not exists public.soap_notes (
   ai_model text,
   ai_prompt_version text,
   is_final boolean not null default false,
+  is_shared boolean not null default false,
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- 기존 DB에 컬럼이 없을 때만 추가 (idempotent)
+alter table public.soap_notes add column if not exists is_shared boolean not null default false;
 
 create index if not exists soap_session_idx on public.soap_notes(session_id);
 create index if not exists soap_patient_idx on public.soap_notes(patient_id);

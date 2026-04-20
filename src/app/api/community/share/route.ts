@@ -39,8 +39,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as { originalSoap?: unknown };
-    const { originalSoap } = body;
+    const body = (await request.json()) as { originalSoap?: unknown; chartId?: string };
+    const { originalSoap, chartId } = body;
 
     if (originalSoap === undefined || originalSoap === null) {
       return NextResponse.json(
@@ -118,6 +118,18 @@ export async function POST(request: Request) {
         { success: false, message: `저장 실패: ${error.message}` },
         { status: 500 },
       );
+    }
+
+    const trimmedChartId = typeof chartId === "string" ? chartId.trim() : "";
+    if (trimmedChartId) {
+      const { error: updateError } = await supabase
+        .from("soap_notes")
+        .update({ is_shared: true })
+        .eq("id", trimmedChartId);
+
+      if (updateError) {
+        console.error("공유 상태 업데이트 실패:", updateError);
+      }
     }
 
     return NextResponse.json({

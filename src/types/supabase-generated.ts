@@ -173,6 +173,7 @@ export type Database = {
           ai_model: string | null;
           ai_prompt_version: string | null;
           is_final: boolean;
+          is_shared: boolean;
 
           created_at: string;
           updated_at: string | null;
@@ -199,6 +200,7 @@ export type Database = {
           ai_model?: string | null;
           ai_prompt_version?: string | null;
           is_final?: boolean;
+          is_shared?: boolean;
 
           created_at?: string;
           updated_at?: string | null;

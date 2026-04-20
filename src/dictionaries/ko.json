@@ -188,7 +188,14 @@
       "delete": "삭제",
       "confirmDelete": "이 환자의 모든 기록을 삭제하시겠습니까?",
       "deleteFailedPrefix": "삭제 실패: ",
-      "logoutError": "로그아웃 중 오류가 발생했습니다."
+      "logoutError": "로그아웃 중 오류가 발생했습니다.",
+      "soapSharePastConfirm": "이 과거 차트를 글로벌 커뮤니티에 공유하시겠습니까?\n환자의 개인정보는 AI가 안전하게 가명 처리합니다.",
+      "soapSharePastSuccess": "🎉 과거 케이스가 커뮤니티에 성공적으로 공유되었습니다!",
+      "soapSharePastError": "공유 중 오류가 발생했습니다.",
+      "soapSharePastEmpty": "공유할 SOAP 본문이 비어 있습니다.",
+      "soapSharePastButton": "🌍 이 케이스 커뮤니티에 공유하기",
+      "soapSharePastButtonLoading": "AI 비식별화 처리 중...",
+      "soapSharePastAlreadyShared": "✨ 이미 커뮤니티에 공유됨"
     }
   }
 }

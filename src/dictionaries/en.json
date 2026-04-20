@@ -188,7 +188,14 @@
       "delete": "Delete",
       "confirmDelete": "Delete this patient and all of their records?",
       "deleteFailedPrefix": "Delete failed: ",
-      "logoutError": "Something went wrong while signing out."
+      "logoutError": "Something went wrong while signing out.",
+      "soapSharePastConfirm": "Share this past chart to the global community?\nAI will anonymize sensitive information.",
+      "soapSharePastSuccess": "🎉 This case was shared to the community.",
+      "soapSharePastError": "Something went wrong while sharing.",
+      "soapSharePastEmpty": "There is no SOAP content to share.",
+      "soapSharePastButton": "🌍 Share this case to community",
+      "soapSharePastButtonLoading": "Anonymizing with AI...",
+      "soapSharePastAlreadyShared": "✨ Already shared to community"
     }
   }
 }
