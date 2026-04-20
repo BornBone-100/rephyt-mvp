@@ -49,6 +49,7 @@ function SoapContent({ dict }: Props) {
   const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
 
   const [planTier, setPlanTier] = useState<PlanTier>("basic");
   const [planTierLoading, setPlanTierLoading] = useState(true);
@@ -177,6 +178,39 @@ function SoapContent({ dict }: Props) {
       return;
     }
     void handleSoapGeneration();
+  };
+
+  const hasSoapContent =
+    soapData.subjective.trim() !== "" ||
+    soapData.objective.trim() !== "" ||
+    soapData.assessment.trim() !== "" ||
+    soapData.plan.trim() !== "";
+
+  const handleShareToCommunity = async () => {
+    if (!hasSoapContent) {
+      alert(d.shareEmptySoap);
+      return;
+    }
+    if (!window.confirm(d.shareConfirm)) return;
+
+    setIsSharing(true);
+    try {
+      const res = await fetch("/api/community/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ originalSoap: soapData }),
+      });
+      const result = (await res.json()) as { success?: boolean; message?: string };
+      if (result.success) {
+        alert(d.shareSuccess);
+      } else {
+        alert(result.message ?? d.shareError);
+      }
+    } catch {
+      alert(d.shareError);
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   return (
@@ -338,6 +372,17 @@ function SoapContent({ dict }: Props) {
             >
               {isSaving ? d.saving : d.saveButton}
             </button>
+
+            <div className="mt-8 flex justify-end border-t border-zinc-200 pt-6">
+              <button
+                type="button"
+                onClick={() => void handleShareToCommunity()}
+                disabled={isSharing}
+                className="flex items-center gap-2 rounded-md bg-green-600 px-6 py-3 font-bold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSharing ? d.shareButtonLoading : d.shareButton}
+              </button>
+            </div>
           </div>
         </div>
       </div>

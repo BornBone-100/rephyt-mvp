@@ -257,6 +257,52 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["patient_consents"]["Insert"]>;
         Relationships: [];
       };
+
+      /** 커뮤니티 공유용 비식별 SOAP 스냅샷 (Supabase에 동일 스키마 테이블 필요) */
+      community_posts: {
+        Row: {
+          id: string;
+          author_id: string;
+          content: Json;
+          likes: number;
+          views: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          author_id: string;
+          content: Json;
+          likes?: number;
+          views?: number;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["community_posts"]["Insert"]>;
+        Relationships: [];
+      };
+
+      /** 게시글 댓글 — 원문 + Medical English 번역 (Supabase에 동일 스키마 테이블 필요) */
+      community_comments: {
+        Row: {
+          id: string;
+          post_id: string;
+          author_id: string;
+          original_content: string;
+          translated_content: string;
+          author_lang: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          post_id: string;
+          author_id: string;
+          original_content: string;
+          translated_content: string;
+          author_lang?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["community_comments"]["Insert"]>;
+        Relationships: [];
+      };
     };
 
     Views: Record<string, never>;

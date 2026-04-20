@@ -30,6 +30,12 @@ export default async function DashboardPage({
         >
           {dict.dashboard.patientList}
         </Link>
+        <Link
+          href={`${base}/dashboard/community`}
+          className="inline-flex items-center justify-center rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm font-bold text-green-900 transition hover:bg-green-100"
+        >
+          {dict.dashboard.communityNav}
+        </Link>
       </div>
     </div>
   );
