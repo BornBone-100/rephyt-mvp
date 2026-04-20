@@ -39,6 +39,9 @@ export default async function CommunityPostDetailPage({
   const d = dict.dashboard.community;
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const { data: post, error: postError } = await supabase
     .from("community_posts")
     .select("*")
@@ -82,7 +85,13 @@ export default async function CommunityPostDetailPage({
           </div>
         </article>
 
-        <CommunityCommentsSection postId={postId} locale={locale} dict={dict} initialComments={comments} />
+        <CommunityCommentsSection
+          postId={postId}
+          locale={locale}
+          dict={dict}
+          initialComments={comments}
+          currentUserId={user?.id ?? null}
+        />
       </div>
     </div>
   );

@@ -120,3 +120,41 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "댓글 처리 중 오류가 발생했습니다." }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ success: false, message: "권한이 없습니다." }, { status: 401 });
+    }
+
+    const body = (await request.json()) as { commentId?: string };
+    const commentId = typeof body.commentId === "string" ? body.commentId.trim() : "";
+    if (!commentId) {
+      return NextResponse.json({ success: false, message: "commentId가 필요합니다." }, { status: 400 });
+    }
+
+    const { error } = await supabase
+      .from("community_comments")
+      .delete()
+      .match({ id: commentId, author_id: user.id });
+
+    if (error) {
+      console.error("community_comments delete:", error);
+      return NextResponse.json({ success: false, message: "댓글 삭제 중 오류가 발생했습니다." }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, message: "댓글이 삭제되었습니다." });
+  } catch (error) {
+    console.error("댓글 삭제 에러:", error);
+    return NextResponse.json(
+      { success: false, message: "댓글 삭제 중 오류가 발생했습니다." },
+      { status: 500 },
+    );
+  }
+}

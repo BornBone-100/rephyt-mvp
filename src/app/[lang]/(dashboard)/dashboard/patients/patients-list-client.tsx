@@ -174,12 +174,6 @@ export function PatientsListClient({ dict }: Props) {
                         </span>
                       </Link>
 
-                      <Link href={`${base}/dashboard/soap/new?patientId=${patient.id}`}>
-                        <span className="inline-block px-4 py-2 rounded-lg bg-zinc-900 text-white font-bold hover:bg-zinc-800 transition text-xs">
-                          {d.writeSoap}
-                        </span>
-                      </Link>
-
                       <button
                         type="button"
                         onClick={() => void handleDelete(patient.id)}

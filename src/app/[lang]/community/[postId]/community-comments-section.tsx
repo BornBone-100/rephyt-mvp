@@ -12,14 +12,16 @@ type Props = {
   locale: string;
   dict: Dictionary;
   initialComments: CommunityComment[];
+  currentUserId: string | null;
 };
 
-export function CommunityCommentsSection({ postId, locale, dict, initialComments }: Props) {
+export function CommunityCommentsSection({ postId, locale, dict, initialComments, currentUserId }: Props) {
   const d = dict.dashboard.community;
   const router = useRouter();
   const [comments, setComments] = useState<CommunityComment[]>(initialComments);
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,6 +75,8 @@ export function CommunityCommentsSection({ postId, locale, dict, initialComments
           <ul className="space-y-3">
             {comments.map((comment) => {
               const { text, showTranslatedBadge } = getCommentDisplayForLocale(locale, comment);
+              const isOwnComment = currentUserId != null && comment.author_id === currentUserId;
+              const isDeleting = deletingCommentId === comment.id;
               return (
                 <li
                   key={comment.id}
@@ -87,6 +91,36 @@ export function CommunityCommentsSection({ postId, locale, dict, initialComments
                       <span className="ml-auto rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-600">
                         {d.postDetailAiTranslatedBadge}
                       </span>
+                    ) : null}
+                    {isOwnComment ? (
+                      <button
+                        type="button"
+                        disabled={isDeleting}
+                        onClick={async () => {
+                          if (!window.confirm(d.commentDeleteConfirm)) return;
+                          setDeletingCommentId(comment.id);
+                          try {
+                            const res = await fetch("/api/community/comment", {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ commentId: comment.id }),
+                            });
+                            const data = (await res.json()) as { success?: boolean; message?: string };
+                            if (!res.ok || !data.success) {
+                              setError(data.message ?? d.commentSendError);
+                              return;
+                            }
+                            setComments((prev) => prev.filter((c) => c.id !== comment.id));
+                          } catch {
+                            setError(d.commentSendError);
+                          } finally {
+                            setDeletingCommentId(null);
+                          }
+                        }}
+                        className="ml-auto text-xs font-medium text-zinc-400 transition hover:text-zinc-600 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {d.commentDelete}
+                      </button>
                     ) : null}
                   </div>
                   <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-800">{text}</p>
