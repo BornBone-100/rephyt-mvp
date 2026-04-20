@@ -197,5 +197,16 @@
       "soapSharePastButtonLoading": "AI 비식별화 처리 중...",
       "soapSharePastAlreadyShared": "✨ 이미 커뮤니티에 공유됨"
     }
+  },
+  "step2": {
+    "jointMovementLabel": "관절 및 동작명 (예: Shoulder Flexion)",
+    "musclePainPlaceholder": "통증 위치, 근육명 입력",
+    "aromLabel": "AROM [°]",
+    "promLabel": "PROM [°]",
+    "mmtLabel": "MMT 등급",
+    "notesLabel": "End-feel / 통증 양상 / 특이사항",
+    "notesPlaceholder": "예: Firm, 끝범위 통증, 근력저하 뚜렷함",
+    "addButton": "기록 추가",
+    "emptyState": "평가된 가동 범위(ROM) 및 근력(MMT) 데이터가 없습니다."
   }
 }

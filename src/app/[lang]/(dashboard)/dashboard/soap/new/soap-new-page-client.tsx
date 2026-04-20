@@ -289,7 +289,12 @@ function SoapContent({ dict }: Props) {
 
             {selectedJoint && (
               <>
-                <RomMmtAssessment title={d.step2Title} records={romMmtRecords} onRecordsChange={setRomMmtRecords} />
+                <RomMmtAssessment
+                  title={d.step2Title}
+                  labels={dict.step2}
+                  records={romMmtRecords}
+                  onRecordsChange={setRomMmtRecords}
+                />
                 <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
                   <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">{d.step3Title}</h2>
                   <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">

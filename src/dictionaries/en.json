@@ -197,5 +197,16 @@
       "soapSharePastButtonLoading": "Anonymizing with AI...",
       "soapSharePastAlreadyShared": "✨ Already shared to community"
     }
+  },
+  "step2": {
+    "jointMovementLabel": "Joint & Movement (e.g., Shoulder Flexion)",
+    "musclePainPlaceholder": "Enter pain location or muscle name",
+    "aromLabel": "AROM [°]",
+    "promLabel": "PROM [°]",
+    "mmtLabel": "MMT Grade",
+    "notesLabel": "End-feel / Pain Pattern / Special Notes",
+    "notesPlaceholder": "e.g., Firm, pain at end-range, distinct weakness",
+    "addButton": "Add Record",
+    "emptyState": "No evaluated ROM or MMT data available."
   }
 }
