@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getDictionary } from "@/dictionaries/getDictionary";
+import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
 
 export default async function DashboardSectionLayout({
   children,
@@ -14,17 +15,30 @@ export default async function DashboardSectionLayout({
   const base = `/${locale}`;
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50">
-      <div className="flex-1">{children}</div>
+    <div className="flex min-h-screen flex-col bg-zinc-50 md:flex-row">
+      <DashboardSidebar
+        base={base}
+        labels={{
+          home: dict.dashboard.title,
+          patients: dict.dashboard.patientList,
+          newSoap: dict.dashboard.newChart,
+          community: dict.dashboard.communityNav,
+          settings: dict.dashboard.settingsNav,
+        }}
+      />
 
-      <div className="mt-auto border-t border-zinc-200 bg-zinc-50/80 px-6 py-4 backdrop-blur-sm">
-        <Link
-          href={`${base}/dashboard/settings`}
-          className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-blue-950"
-        >
-          <span aria-hidden>⚙️</span>
-          {dict.dashboard.settingsFooterLink}
-        </Link>
+      <div className="flex min-h-screen flex-1 flex-col">
+        <div className="flex-1">{children}</div>
+
+        <div className="mt-auto border-t border-zinc-200 bg-zinc-50/80 px-6 py-4 backdrop-blur-sm">
+          <Link
+            href={`${base}/dashboard/settings`}
+            className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-blue-950"
+          >
+            <span aria-hidden>⚙️</span>
+            {dict.dashboard.settingsFooterLink}
+          </Link>
+        </div>
       </div>
     </div>
   );
