@@ -102,7 +102,7 @@
       "shareSuccess": "🎉 커뮤니티에 안전하게 공유되었습니다! 전 세계 치료사들과 의견을 나누어 보세요.",
       "shareError": "공유 중 오류가 발생했습니다.",
       "shareEmptySoap": "공유할 SOAP 내용을 먼저 작성하거나 생성해 주세요.",
-      "shareButton": "🌍 글로벌 커뮤니티에 케이스 공유하기",
+      "shareButton": "🌍 커뮤니티 케이스 공유하기",
       "shareButtonLoading": "AI 비식별화 처리 중..."
     },
     "community": {

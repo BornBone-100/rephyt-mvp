@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useInView } from "react-intersection-observer";
 import { formatDistanceToNow } from "date-fns";
@@ -8,6 +8,7 @@ import { enUS, ko } from "date-fns/locale";
 import { ChevronDown, ChevronUp, Heart, MessageCircle, Eye } from "lucide-react";
 import type { Tables } from "@/types/supabase";
 import type { getDictionary } from "@/dictionaries/getDictionary";
+import { createClient as createSupabaseClient } from "@/utils/supabase/client";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -64,6 +65,9 @@ function FeedPostCard({
   expanded,
   onToggleExpand,
   detailHref,
+  canDelete,
+  deleting,
+  onDelete,
 }: {
   post: CommunityPost;
   body: string;
@@ -72,6 +76,9 @@ function FeedPostCard({
   expanded: boolean;
   onToggleExpand: () => void;
   detailHref: string;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: () => void;
 }) {
   const display = body.trim() || "—";
   const canExpand = display.length > READ_MORE_THRESHOLD;
@@ -166,7 +173,17 @@ function FeedPostCard({
             <span className="truncate">{d.askAdvice}</span>
           </Link>
         </div>
-        <div className="flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-zinc-400">
+        <div className="flex shrink-0 items-center gap-2 text-xs font-medium tabular-nums text-zinc-400">
+          {canDelete ? (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={deleting}
+              className="text-xs font-medium text-zinc-400 transition hover:text-zinc-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              삭제
+            </button>
+          ) : null}
           <Eye className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
           <span>
             {post.views} {d.viewsLabel}
@@ -180,12 +197,15 @@ function FeedPostCard({
 export function CommunityFeedClient({ dict, lang }: Props) {
   const d = dict.dashboard.community;
   const dateLocale = lang === "en" ? enUS : ko;
+  const supabase = useMemo(() => createSupabaseClient(), []);
 
   const [posts, setPosts] = useState<CommunityPost[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [sort, setSort] = useState<"latest" | "popular">("latest");
   const [hasMore, setHasMore] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [expandedById, setExpandedById] = useState<Record<string, boolean>>({});
 
   const pageRef = useRef(1);
@@ -193,6 +213,25 @@ export function CommunityFeedClient({ dict, lang }: Props) {
   const initialReadyRef = useRef(false);
   const hasMoreRef = useRef(true);
   const prevInView = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!cancelled) {
+          setCurrentUserId(user?.id ?? null);
+        }
+      } catch {
+        if (!cancelled) setCurrentUserId(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   useEffect(() => {
     hasMoreRef.current = hasMore;
@@ -339,6 +378,31 @@ export function CommunityFeedClient({ dict, lang }: Props) {
                     [post.id]: !prev[post.id],
                   }))
                 }
+                canDelete={currentUserId != null && post.author_id === currentUserId}
+                deleting={deletingPostId === post.id}
+                onDelete={() => {
+                  if (!window.confirm("이 케이스를 커뮤니티에서 정말 삭제하시겠습니까?")) return;
+                  setDeletingPostId(post.id);
+                  void (async () => {
+                    try {
+                      const res = await fetch("/api/community/post", {
+                        method: "DELETE",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ postId: post.id }),
+                      });
+                      const data = (await res.json()) as { success?: boolean; message?: string };
+                      if (!res.ok || !data.success) {
+                        alert(data.message ?? "삭제 중 오류가 발생했습니다.");
+                        return;
+                      }
+                      setPosts((prev) => prev.filter((p) => p.id !== post.id));
+                    } catch {
+                      alert("삭제 중 오류가 발생했습니다.");
+                    } finally {
+                      setDeletingPostId(null);
+                    }
+                  })();
+                }}
                 detailHref={`/${lang}/community/${post.id}`}
               />
             </li>
