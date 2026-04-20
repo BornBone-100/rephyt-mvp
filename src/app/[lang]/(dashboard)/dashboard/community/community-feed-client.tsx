@@ -22,10 +22,30 @@ type Props = {
 const READ_MORE_THRESHOLD = 140;
 
 function previewText(content: CommunityPost["content"]): string {
-  if (content == null || typeof content !== "object" || Array.isArray(content)) return "";
-  const c = content as Record<string, unknown>;
-  const chunk = c.assessment ?? c.anonymized_subjective ?? c.objective;
-  return typeof chunk === "string" ? chunk : "";
+  const pickFromObject = (obj: Record<string, unknown>): string => {
+    const chunk = obj.assessment ?? obj.anonymized_subjective ?? obj.subjective ?? obj.objective ?? obj.plan;
+    return typeof chunk === "string" ? chunk.trim() : "";
+  };
+
+  if (content == null) return "";
+  if (typeof content === "string") {
+    const trimmed = content.trim();
+    if (!trimmed) return "";
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const extracted = pickFromObject(parsed as Record<string, unknown>);
+        return extracted || trimmed;
+      }
+    } catch {
+      // fall through: plain text content
+    }
+    return trimmed;
+  }
+  if (typeof content === "object" && !Array.isArray(content)) {
+    return pickFromObject(content as Record<string, unknown>);
+  }
+  return "";
 }
 
 function formatPostedAt(iso: string, locale: typeof ko | typeof enUS): string {
@@ -90,7 +110,7 @@ function FeedPostCard({
               >
                 <p
                   className={`whitespace-pre-wrap text-[15px] leading-relaxed tracking-[-0.01em] text-zinc-800 antialiased ${
-                    expanded ? "" : "line-clamp-5"
+                    expanded ? "" : "line-clamp-4"
                   }`}
                 >
                   {display}
@@ -143,7 +163,7 @@ function FeedPostCard({
             className="inline-flex min-w-0 max-w-[55%] items-center gap-1.5 rounded-full px-2 py-1.5 text-sm font-semibold text-zinc-500 transition hover:bg-sky-50 hover:text-sky-700 sm:max-w-none"
           >
             <MessageCircle className="h-[18px] w-[18px] shrink-0" strokeWidth={2} aria-hidden />
-            <span className="truncate">{d.ctaConsult}</span>
+            <span className="truncate">{d.askAdvice}</span>
           </Link>
         </div>
         <div className="flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-zinc-400">

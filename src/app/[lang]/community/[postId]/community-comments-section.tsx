@@ -60,7 +60,7 @@ export function CommunityCommentsSection({ postId, locale, dict, initialComments
     }
   }, [draft, postId, locale, router, d.commentEmptyError, d.commentSendError]);
 
-  const title = d.postDetailConsultTitle.replace("{count}", String(comments.length));
+  const title = `${d.clinicalAdvisory} (${comments.length})`;
 
   return (
     <div className="mt-10 space-y-6">
@@ -133,7 +133,7 @@ export function CommunityCommentsSection({ postId, locale, dict, initialComments
 
       <div className="rounded-3xl border border-zinc-200/90 bg-white p-4 shadow-sm sm:p-5">
         <label htmlFor="community-comment" className="mb-2 block text-sm font-semibold text-zinc-800">
-          {d.commentFormLabel}
+          {d.clinicalAdvisory}
         </label>
         <textarea
           id="community-comment"
@@ -144,7 +144,7 @@ export function CommunityCommentsSection({ postId, locale, dict, initialComments
           }}
           rows={4}
           disabled={submitting}
-          placeholder={d.commentPlaceholder}
+          placeholder={d.clinicalAdvisoryCommentPlaceholder}
           className="w-full resize-y rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 disabled:opacity-60"
         />
         {error ? (
