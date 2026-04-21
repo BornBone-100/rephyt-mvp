@@ -1,14 +1,21 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo } from "react";
-import { useRouter, useSearchParams, useParams } from "next/navigation";
-import { createClient } from "@/utils/supabase/client";
-import { ebpDatabase } from "@/constants/assessmentData";
-import RomMmtAssessment, { type RomMmtRecord } from "@/components/RomMmtAssessment";
+import { useState } from "react";
+import {
+  ShieldCheck,
+  ClipboardList,
+  Activity,
+  Target,
+  Stethoscope,
+  ChevronRight,
+  ChevronLeft,
+  AlertTriangle,
+  Stethoscope as MedicIcon,
+  Lock,
+  AlertOctagon,
+} from "lucide-react";
 import type { getDictionary } from "@/dictionaries/getDictionary";
-import type { Tables } from "@/types/supabase";
-
-type PatientOption = Pick<Tables<"patients">, "id" | "name" | "diagnosis">;
+import DashboardRightPanel from "./DashboardRightPanel";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -16,460 +23,349 @@ type Props = {
   dict: Dictionary;
 };
 
-type PlanTier = "basic" | "pro" | "enterprise";
+type FormData = {
+  examination: string;
+  evaluation: string;
+  prognosis: string;
+  intervention: string;
+};
 
-function normalizePlanTier(raw: string | null | undefined): PlanTier {
-  const t = (raw ?? "basic").toLowerCase();
-  if (t === "pro" || t === "trial") return "pro";
-  if (t === "enterprise") return "enterprise";
-  return "basic";
-}
+type RedFlagResult = {
+  hasRedFlag: boolean;
+  criticalAlert?: {
+    title: string;
+    suspectedCondition: string;
+    reason: string;
+    action: string;
+  } | null;
+  complianceScore: number;
+  status: string;
+  clinicalReasoning: string;
+  overallScore?: number;
+  trafficLightFeedback?: Array<{
+    level: "green" | "yellow" | "red";
+    title: string;
+    description: string;
+  }>;
+  evidenceBasedAlternatives?: Array<{
+    type: "special_test" | "intervention";
+    title: string;
+    description: string;
+    citation: string;
+  }>;
+  detectionMeta?: {
+    conditionId: string;
+    matchedAliases: string[];
+    scoreBreakdown: Record<string, number>;
+    tuningVersion: string;
+  };
+};
 
-function SoapContent({ dict }: Props) {
-  const d = dict.dashboard.soapNew;
-  const router = useRouter();
-  const routeParams = useParams();
-  const lang = routeParams.lang as string;
-  const base = `/${lang}`;
-  const searchParams = useSearchParams();
-  const patientIdFromUrl = searchParams.get("patientId");
-  const supabase = useMemo(() => createClient(), []);
+const STEP_FIELD_MAP: Record<number, keyof FormData> = {
+  1: "examination",
+  2: "evaluation",
+  3: "prognosis",
+  4: "intervention",
+};
 
-  const [patients, setPatients] = useState<PatientOption[]>([]);
-  const [patientsLoading, setPatientsLoading] = useState(true);
-  const [selectedPatientId, setSelectedPatientId] = useState("");
+function RedFlagMentor() {
+  const [step, setStep] = useState(1);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [result, setResult] = useState<RedFlagResult | null>(null);
 
-  const [selectedJoint, setSelectedJoint] = useState<keyof typeof ebpDatabase | "">("");
-  const [targetLanguage, setTargetLanguage] = useState("ko");
-  const [painScale, setPainScale] = useState<string>("5");
-  const [historyTaking, setHistoryTaking] = useState("");
-
-  const [treatmentDate, setTreatmentDate] = useState(() => {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    return now.toISOString().slice(0, 16);
+  const [formData, setFormData] = useState<FormData>({
+    examination: "",
+    evaluation: "",
+    prognosis: "",
+    intervention: "",
   });
 
-  const [romMmtRecords, setRomMmtRecords] = useState<RomMmtRecord[]>([]);
-  const [specialTests, setSpecialTests] = useState<Record<string, string>>({});
-
-  const [soapData, setSoapData] = useState({ subjective: "", objective: "", assessment: "", plan: "" });
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
-
-  const [planTier, setPlanTier] = useState<PlanTier>("basic");
-  const [planTierLoading, setPlanTierLoading] = useState(true);
-
-  const localeApi = lang === "en" ? "en" : "ko";
-
-  const soapFieldLabels = useMemo(
-    () =>
-      ({
-        subjective: d.soapFieldSubjective,
-        objective: d.soapFieldObjective,
-        assessment: d.soapFieldAssessment,
-        plan: d.soapFieldPlan,
-      }) as const,
-    [d.soapFieldSubjective, d.soapFieldObjective, d.soapFieldAssessment, d.soapFieldPlan],
-  );
-
-  const specialTestOptions = useMemo(
-    () => [d.specialTestPositive, d.specialTestNegative] as const,
-    [d.specialTestPositive, d.specialTestNegative],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user || cancelled) {
-          if (!cancelled) setPlanTierLoading(false);
-          return;
-        }
-        const { data, error } = await supabase.from("profiles").select("plan_tier").eq("id", user.id).maybeSingle();
-        if (cancelled) return;
-        setPlanTier(error ? "basic" : normalizePlanTier(data?.plan_tier));
-      } catch {
-        if (!cancelled) setPlanTier("basic");
-      } finally {
-        if (!cancelled) setPlanTierLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setPatientsLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from("patients")
-          .select("id, name, diagnosis")
-          .order("created_at", { ascending: false });
-        if (cancelled) return;
-        if (error) throw error;
-        setPatients(data ?? []);
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setPatients([]);
-      } finally {
-        if (!cancelled) setPatientsLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase]);
-
-  useEffect(() => {
-    if (!patientIdFromUrl) return;
-    setSelectedPatientId(patientIdFromUrl);
-  }, [patientIdFromUrl]);
-
-  const buildPromptData = () => {
-    let rawData = `${d.promptEvalHeader}\n${d.promptChiefJoint} ${selectedJoint.toUpperCase()}\n${d.promptHistory} ${historyTaking}\n${d.promptVas} ${painScale}/10\n\n${d.promptRomMmtSection}\n`;
-    romMmtRecords.forEach((r) => {
-      rawData += `${d.promptRomLine.replace("{movement}", r.movement).replace("{arom}", r.arom).replace("{prom}", r.prom).replace("{mmt}", r.mmt)}\n`;
-    });
-    rawData += `\n${d.promptSpecialTests}\n`;
-    ebpDatabase[selectedJoint as keyof typeof ebpDatabase]?.forEach((test) => {
-      if (specialTests[test.id]) {
-        rawData += `${d.promptSpecialLine.replace("{name}", test.name).replace("{result}", specialTests[test.id])}\n`;
-      }
-    });
-    return rawData;
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleSoapGeneration = async () => {
-    setIsGenerating(true);
+  const handleVerifyRedFlag = async () => {
+    setIsAnalyzing(true);
     try {
-      const requestBody = {
-        promptData: buildPromptData(),
-        language: targetLanguage,
-        locale: localeApi,
-      };
-
-      const response = await fetch("/api/ai-soap", {
+      const res = await fetch("/api/cdss-guardrail", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(formData),
       });
-      const aiResult = await response.json();
-      setSoapData({
-        subjective: aiResult.subjective,
-        objective: aiResult.objective,
-        assessment: aiResult.assessment,
-        plan: aiResult.plan,
-      });
-    } catch {
-      alert(d.alertAiFailed);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
 
-  const handleSaveSoap = async () => {
-    if (!selectedPatientId) {
-      alert(d.alertNoPatient);
-      return;
-    }
-    setIsSaving(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    const { data: inserted, error } = await supabase
-      .from("soap_notes")
-      .insert([
-        {
-          patient_id: selectedPatientId,
-          created_by: user?.id,
-          joint: selectedJoint,
-          pain_scale: parseInt(painScale, 10),
-          subjective: soapData.subjective,
-          objective: soapData.objective,
-          assessment: soapData.assessment,
-          plan: soapData.plan,
-          created_at: new Date(treatmentDate).toISOString(),
-        },
-      ])
-      .select("id")
-      .single();
-
-    if (error) alert(d.alertSaveFailed);
-    else {
-      alert(d.alertSaveOk);
-      if (inserted?.id) {
-        router.push(`${base}/dashboard/soap/${inserted.id}`);
-      } else {
-        router.push(`${base}/dashboard/patients/${selectedPatientId}`);
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? "Red Flag 분석 요청 실패");
       }
+
+      const data = (await res.json()) as RedFlagResult;
+      setResult(data);
+    } catch (error) {
+      console.error(error);
+      alert("Red Flag 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setIsAnalyzing(false);
     }
-    setIsSaving(false);
   };
 
-  const handleAiGenerateClick = () => {
-    if (planTier === "basic") {
-      alert(d.alertProOnly);
-      router.push(`${base}/dashboard/pricing`);
-      return;
-    }
-    void handleSoapGeneration();
-  };
-
-  const hasSoapContent =
-    soapData.subjective.trim() !== "" ||
-    soapData.objective.trim() !== "" ||
-    soapData.assessment.trim() !== "" ||
-    soapData.plan.trim() !== "";
-
-  const handleShareToCommunity = async () => {
-    if (!hasSoapContent) {
-      alert(d.shareEmptySoap);
-      return;
-    }
-    if (!window.confirm(d.shareConfirm)) return;
-
-    setIsSharing(true);
+  const sendFeedback = async (feedbackType: "true_positive" | "false_positive" | "false_negative") => {
+    if (!result?.detectionMeta) return;
     try {
-      const res = await fetch("/api/community/share", {
+      await fetch("/api/cdss-guardrail/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ originalSoap: soapData }),
+        body: JSON.stringify({
+          feedbackType,
+          detectedConditionId: result.detectionMeta.conditionId,
+          matchedAliases: result.detectionMeta.matchedAliases,
+        }),
       });
-      const result = (await res.json()) as { success?: boolean; message?: string };
-      if (result.success) {
-        alert(d.shareSuccess);
-      } else {
-        alert(result.message ?? d.shareError);
-      }
-    } catch {
-      alert(d.shareError);
-    } finally {
-      setIsSharing(false);
+    } catch (error) {
+      console.error(error);
     }
   };
+
+  const steps = [
+    { n: 1, label: "Exam", icon: <ClipboardList className="h-4 w-4" /> },
+    { n: 2, label: "Eval", icon: <Activity className="h-4 w-4" /> },
+    { n: 3, label: "Goal", icon: <Target className="h-4 w-4" /> },
+    { n: 4, label: "Plan", icon: <Stethoscope className="h-4 w-4" /> },
+  ];
+
+  const currentField = STEP_FIELD_MAP[step];
+  const currentValue = formData[currentField];
 
   return (
-    <div className="w-full min-h-screen bg-zinc-50 p-6 md:p-10 overflow-x-hidden">
-      <div className="max-w-[1700px] mx-auto w-full">
-        <header className="mb-8 border-b border-zinc-200 pb-6">
-          <h1 className="text-3xl font-bold text-blue-950">{d.pageTitle}</h1>
-          <p className="mt-1 text-sm text-zinc-600 font-medium">{d.pageSubtitle}</p>
-        </header>
+    <div className="flex h-full flex-col bg-slate-50 font-sans">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-4">
+        <div>
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-800">
+            <AlertTriangle className="h-6 w-6 text-rose-600" /> Re:PhyT Safety Net
+          </h1>
+          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">Medical Screening & Red Flag Detection</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+          <Lock className="h-3 w-3" /> PRO GLOBAL EDITION
+        </div>
+      </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-10 items-start w-full">
-          <div className="space-y-8 w-full">
-            <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
-              <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">{d.step1Title}</h2>
-
-              <div className="mb-6">
-                <label className="mb-2 block text-xs font-bold uppercase text-zinc-400" htmlFor="soap-new-patient">
-                  {d.labelPatientSelect}
-                </label>
-                <select
-                  id="soap-new-patient"
-                  className="h-12 w-full cursor-pointer appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-4 pr-10 font-bold text-zinc-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2371717a'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
-                    backgroundRepeat: "no-repeat",
-                    backgroundPosition: "right 0.75rem center",
-                    backgroundSize: "1.25rem",
-                  }}
-                  value={selectedPatientId}
-                  onChange={(e) => setSelectedPatientId(e.target.value)}
-                  disabled={patientsLoading}
-                >
-                  <option value="">{patientsLoading ? d.patientsLoading : d.patientPlaceholder}</option>
-                  {patients.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                      {p.diagnosis?.trim() ? ` — ${p.diagnosis.trim()}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 mb-2 uppercase">{d.labelJoint}</label>
-                  <select
-                    className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 font-bold"
-                    value={selectedJoint}
-                    onChange={(e) => setSelectedJoint(e.target.value as keyof typeof ebpDatabase | "")}
+      <div className="grid flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_520px]">
+        <div className="overflow-y-auto p-8">
+          <div className="mx-auto max-w-4xl">
+          {!result ? (
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex border-b border-slate-100">
+                {steps.map((s) => (
+                  <div
+                    key={s.n}
+                    className={`flex flex-1 flex-col items-center gap-1 py-4 transition-all ${
+                      step === s.n ? "border-b-2 border-rose-600 bg-rose-50" : "bg-white"
+                    }`}
                   >
-                    <option value="">{d.jointPlaceholder}</option>
-                    {Object.keys(ebpDatabase).map((k) => (
-                      <option key={k} value={k}>
-                        {k.toUpperCase()}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-orange-400 mb-2 uppercase">{d.labelTreatmentDate}</label>
-                  <input
-                    type="datetime-local"
-                    className="w-full h-12 rounded-xl bg-orange-50/50 border border-orange-200 px-4 font-bold text-orange-700 outline-none focus:ring-2 focus:ring-orange-200"
-                    value={treatmentDate}
-                    onChange={(e) => setTreatmentDate(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="mb-6">
-                <label className="block text-xs font-bold text-zinc-400 mb-2 uppercase">{d.labelOutputLanguage}</label>
-                <select
-                  value={targetLanguage}
-                  onChange={(e) => setTargetLanguage(e.target.value)}
-                  className="w-full h-12 rounded-xl bg-zinc-50 border border-zinc-200 px-4 font-bold"
-                >
-                  <option value="ko">{d.langOptionKo}</option>
-                  <option value="en">{d.langOptionEn}</option>
-                  <option value="ja">{d.langOptionJa}</option>
-                  <option value="zh">{d.langOptionZh}</option>
-                  <option value="ru">{d.langOptionRu}</option>
-                </select>
-              </div>
-
-              <label className="block text-sm font-bold mb-2">{d.labelHistoryTaking}</label>
-              <textarea
-                className="w-full h-24 bg-zinc-50 rounded-xl p-3 text-sm border border-zinc-100"
-                value={historyTaking}
-                onChange={(e) => setHistoryTaking(e.target.value)}
-              />
-
-              <label className="block text-sm font-bold mt-4 mb-2">{d.labelVas.replace("{value}", painScale)}</label>
-              <input
-                type="range"
-                min="0"
-                max="10"
-                value={painScale}
-                onChange={(e) => setPainScale(e.target.value)}
-                className="w-full accent-orange-500"
-              />
-            </section>
-
-            {selectedJoint && (
-              <>
-                <RomMmtAssessment
-                  title={d.step2Title}
-                  labels={dict.step2}
-                  records={romMmtRecords}
-                  onRecordsChange={setRomMmtRecords}
-                />
-                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
-                  <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">{d.step3Title}</h2>
-                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                    {ebpDatabase[selectedJoint]?.map((test) => (
-                      <div key={test.id} className="p-4 bg-zinc-50 rounded-xl border border-zinc-100">
-                        <p className="text-sm font-bold">
-                          {test.name}{" "}
-                          <span className="text-[10px] text-blue-500 font-normal">
-                            {d.refLabel} {test.paper}
-                          </span>
-                        </p>
-                        <div className="flex gap-2 mt-2">
-                          {specialTestOptions.map((res) => (
-                            <button
-                              key={res}
-                              type="button"
-                              onClick={() => setSpecialTests({ ...specialTests, [test.id]: res })}
-                              className={`flex-1 h-8 rounded-lg text-[10px] font-bold border transition ${
-                                specialTests[test.id] === res
-                                  ? "bg-orange-500 text-white border-orange-500"
-                                  : "bg-white border-zinc-200 text-zinc-600"
-                              }`}
-                            >
-                              {res}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                    <div className={step >= s.n ? "text-rose-600" : "text-slate-300"}>{s.icon}</div>
+                    <span className={`text-[10px] font-bold uppercase ${step >= s.n ? "text-rose-700" : "text-slate-300"}`}>
+                      {s.label}
+                    </span>
                   </div>
-                </section>
-              </>
-            )}
+                ))}
+              </div>
 
-            <button
-              type="button"
-              onClick={handleAiGenerateClick}
-              disabled={planTierLoading || isGenerating}
-              className={
-                planTier === "basic"
-                  ? "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-zinc-700 font-black text-white shadow-xl transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-                  : "flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 font-black text-white shadow-xl transition-all hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-              }
-            >
-              {planTierLoading ? (
-                <span className="animate-pulse text-sm">{d.planChecking}</span>
-              ) : planTier === "basic" ? (
-                d.aiProLocked
-              ) : isGenerating ? (
-                <span className="animate-pulse">{d.aiGenerating}</span>
-              ) : (
-                d.aiGenerateButton
-              )}
-            </button>
-          </div>
+              <div className="p-10">
+                <div className="mb-8">
+                  <h2 className="mb-2 text-2xl font-bold text-slate-800">
+                    {step === 1 ? "환자 검사 데이터" : step === 2 ? "임상 평가 및 진단" : step === 3 ? "예후 및 치료 목표" : "중재 전략 설정"}
+                  </h2>
+                  <p className="mb-6 text-sm text-slate-500">
+                    입력된 임상 논리를 분석하여 치명적인 Medical Red Flag를 스크리닝합니다.
+                  </p>
 
-          <div className="space-y-4 xl:sticky xl:top-10 w-full">
-            <h2 className="text-xl font-black text-blue-950 mb-4 flex items-center gap-2">
-              <span className="bg-orange-500 w-2 h-8 rounded-full" />
-              {d.resultHeading}
-            </h2>
-            {(["subjective", "objective", "assessment", "plan"] as const).map((key) => (
-              <div key={key}>
-                <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-                  <label className="mb-2 block text-xs font-black uppercase text-orange-500">{soapFieldLabels[key]}</label>
                   <textarea
-                    value={soapData[key]}
-                    onChange={(e) => setSoapData({ ...soapData, [key]: e.target.value })}
-                    className="h-32 w-full resize-none rounded-2xl border-none bg-zinc-50/50 p-4 text-sm text-zinc-800 focus:ring-2 focus:ring-orange-100"
+                    name={currentField}
+                    value={currentValue}
+                    onChange={handleChange}
+                    className="h-64 w-full rounded-2xl border-2 border-slate-100 bg-slate-50 p-6 leading-relaxed text-slate-700 outline-none transition-all focus:border-rose-500 focus:bg-white focus:ring-4 focus:ring-rose-50/50"
+                    placeholder="임상적 근거를 바탕으로 상세 내용을 입력하세요..."
                   />
                 </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <button
+                    type="button"
+                    onClick={() => step > 1 && setStep(step - 1)}
+                    className={`flex items-center gap-2 rounded-xl px-6 py-3 font-bold transition-all ${
+                      step === 1 ? "pointer-events-none opacity-0" : "text-slate-400 hover:bg-slate-100"
+                    }`}
+                  >
+                    <ChevronLeft className="h-5 w-5" /> Previous
+                  </button>
+
+                  {step < 4 ? (
+                    <button
+                      type="button"
+                      onClick={() => setStep(step + 1)}
+                      className="flex items-center gap-2 rounded-xl bg-rose-600 px-10 py-4 font-bold text-white shadow-lg shadow-rose-100 transition-all hover:bg-rose-700"
+                    >
+                      Next Step <ChevronRight className="h-5 w-5" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleVerifyRedFlag()}
+                      disabled={isAnalyzing}
+                      className="flex items-center gap-2 rounded-xl bg-slate-900 px-10 py-4 font-bold text-white shadow-lg shadow-slate-200 transition-all hover:bg-slate-800 disabled:bg-slate-300"
+                    >
+                      {isAnalyzing ? (
+                        <>
+                          <Activity className="h-5 w-5 animate-spin" /> Scanning for Red Flags...
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="h-5 w-5" /> Red Flag & 안전성 검증
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
-            ))}
-
-            <button
-              type="button"
-              onClick={handleSaveSoap}
-              disabled={isSaving}
-              className="w-full h-16 bg-blue-950 text-white rounded-2xl font-black shadow-xl hover:bg-blue-900 transition-all mt-6"
-            >
-              {isSaving ? d.saving : d.saveButton}
-            </button>
-
-            <div className="mt-8 flex justify-end border-t border-zinc-200 pt-6">
-              <button
-                type="button"
-                onClick={() => void handleShareToCommunity()}
-                disabled={isSharing}
-                className="flex items-center gap-2 rounded-md bg-green-600 px-6 py-3 font-bold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSharing ? d.shareButtonLoading : d.shareButton}
-              </button>
             </div>
+          ) : (
+            <div className="animate-in zoom-in-95 space-y-6 fade-in duration-500">
+              {result.hasRedFlag ? (
+                <div className="relative overflow-hidden rounded-3xl border-2 border-rose-500 bg-white shadow-2xl">
+                  <div className="absolute left-0 top-0 h-2 w-full animate-pulse bg-rose-600" />
+
+                  <div className="flex flex-col items-center border-b border-rose-100 bg-rose-50 p-8 text-center">
+                    <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-rose-100">
+                      <AlertOctagon className="h-12 w-12 text-rose-600" />
+                    </div>
+                    <h3 className="mb-2 text-sm font-black uppercase tracking-widest text-rose-600">
+                      {result.criticalAlert?.title ?? "MEDICAL REFERRAL REQUIRED"}
+                    </h3>
+                    <div className="text-3xl font-black text-slate-900">
+                      {result.criticalAlert?.suspectedCondition ?? "의학적 감별 필요 상태"}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6 p-8">
+                    <div className="rounded-2xl border border-rose-200 bg-rose-100/70 p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase tracking-wider text-rose-700">평가 상태</span>
+                        <span className="rounded-full bg-rose-600 px-3 py-1 text-xs font-black text-white">
+                          평가 중단 (Referral Priority)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                      <h4 className="mb-2 flex items-center gap-2 font-bold text-slate-800">
+                        <Activity className="h-5 w-5 text-rose-500" /> 감별 진단 근거 (Clinical Reasoning)
+                      </h4>
+                      <p className="text-sm leading-relaxed text-slate-600">
+                        {result.criticalAlert?.reason ?? result.clinicalReasoning}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-900 p-6 text-white shadow-inner">
+                      <h4 className="mb-2 flex items-center gap-2 font-bold text-rose-400">
+                        <MedicIcon className="h-5 w-5" /> 즉각적 행동 지침 (Action Required)
+                      </h4>
+                      <p className="text-sm font-medium leading-relaxed text-slate-200">
+                        {result.criticalAlert?.action ?? "물리치료를 보류하고 관련 진료과 의뢰를 우선 진행하세요."}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setResult(null)}
+                      className="mt-4 w-full rounded-xl bg-rose-100 py-4 font-bold text-rose-700 transition-all hover:bg-rose-200"
+                    >
+                      의뢰 완료 및 새 케이스 스크리닝
+                    </button>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void sendFeedback("true_positive")}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                      >
+                        판정 정확
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void sendFeedback("false_positive")}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                      >
+                        오탐
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void sendFeedback("false_negative")}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                      >
+                        미탐
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-3xl bg-white p-10 text-center shadow-xl">
+                  <ShieldCheck className="mx-auto mb-4 h-16 w-16 text-emerald-500" />
+                  <h3 className="text-2xl font-bold text-slate-800">No Critical Red Flags Detected</h3>
+                  <p className="mt-2 text-slate-500">입력하신 데이터에서 명확한 내과적 응급상황은 발견되지 않았습니다.</p>
+                  <button
+                    type="button"
+                    onClick={() => setResult(null)}
+                    className="mt-8 rounded-xl bg-slate-100 px-8 py-3 font-bold text-slate-600"
+                  >
+                    새로 검증하기
+                  </button>
+                  <div className="mx-auto mt-4 grid max-w-sm grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void sendFeedback("true_positive")}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                    >
+                      판정 정확
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void sendFeedback("false_positive")}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                    >
+                      오탐
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void sendFeedback("false_negative")}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                    >
+                      미탐
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           </div>
         </div>
+        <DashboardRightPanel
+          result={
+            result
+              ? {
+                  hasRedFlag: result.hasRedFlag,
+                  criticalAlert: result.criticalAlert ?? null,
+                  clinicalReasoning: result.clinicalReasoning,
+                  overallScore: result.overallScore ?? result.complianceScore ?? 0,
+                  trafficLightFeedback: result.trafficLightFeedback ?? [],
+                  evidenceBasedAlternatives: result.evidenceBasedAlternatives ?? [],
+                }
+              : null
+          }
+        />
       </div>
     </div>
   );
 }
 
-export function SoapNewPageClient({ dict }: Props) {
-  return (
-    <Suspense fallback={<div>{dict.dashboard.soapNew.suspenseLoading}</div>}>
-      <SoapContent dict={dict} />
-    </Suspense>
-  );
+export function SoapNewPageClient({ dict: _dict }: Props) {
+  return <RedFlagMentor />;
 }
