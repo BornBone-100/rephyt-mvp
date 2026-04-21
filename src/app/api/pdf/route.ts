@@ -34,8 +34,14 @@ export async function POST(req: Request) {
     const pdfDoc = await PDFDocument.create();
     pdfDoc.registerFontkit(fontkit);
     let page = pdfDoc.addPage([595.28, 841.89]); // A4 (pt)
-    const fontBytes = await getKoreanFontBytes();
-    const font = await pdfDoc.embedFont(fontBytes);
+    let font;
+    try {
+      const fontBytes = await getKoreanFontBytes();
+      font = await pdfDoc.embedFont(fontBytes);
+    } catch (fontErr) {
+      console.error("Korean font load failed, falling back to Helvetica:", fontErr);
+      font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    }
 
     const margin = 48;
     let y = 841.89 - margin;
@@ -120,6 +126,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (err) {
+    console.error("PDF 생성 상세 에러:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json(
       { error: "PDF_GENERATION_FAILED", message },

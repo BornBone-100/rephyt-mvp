@@ -5,14 +5,14 @@ interface Props {
   payload: {
     patient?: {
       patientId?: string;
-      name: string;
+      name?: string;
       visitDate?: string;
     };
     soap: {
-      subjective: string;
-      objective: string;
-      assessment: string;
-      plan: string;
+      subjective?: string;
+      objective?: string;
+      assessment?: string;
+      plan?: string;
     };
     title?: string;
   };
@@ -22,13 +22,37 @@ interface Props {
 export default function SOAPExportButton({ fileName, payload }: Props) {
   const handleDownloadPDF = async () => {
     try {
+      const requestPayload = {
+        patient: payload.patient
+          ? {
+              patientId: payload.patient.patientId,
+              name: payload.patient.name ?? "-",
+              visitDate: payload.patient.visitDate ?? new Date().toISOString(),
+            }
+          : undefined,
+        soap: {
+          subjective: payload.soap.subjective ?? "",
+          objective: payload.soap.objective ?? "",
+          assessment: payload.soap.assessment ?? "",
+          plan: payload.soap.plan ?? "",
+        },
+        title: payload.title ?? "Re:PhyT Pro Global Chart",
+      };
+
       const response = await fetch("/api/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(requestPayload),
       });
       if (!response.ok) {
-        throw new Error("PDF 생성 실패");
+        let details = "";
+        try {
+          const errorData = (await response.json()) as { message?: string };
+          details = errorData.message ?? "";
+        } catch {
+          details = await response.text();
+        }
+        throw new Error(details ? `PDF 생성 실패: ${details}` : "PDF 생성 실패");
       }
 
       const blob = await response.blob();
