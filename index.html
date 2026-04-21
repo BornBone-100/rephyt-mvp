@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Re:PhyT - 정밀 평가 리포트 생성</title>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        :root {
+            --primary-text: #1f2937;
+            --secondary-text: #6b7280;
+            --border-color: #e5e7eb;
+            --bg-white: #ffffff;
+            --bg-body: #ffffff;
+            --accent-navy: #1e3a8a;
+            --accent-blue: #2563eb;
+            --accent-orange: #f97316;
+            --accent-green: #10b981;
+            --accent-yellow: #eab308;
+            --accent-red: #ef4444;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Pretendard', sans-serif; }
+        body { background-color: var(--bg-body); color: var(--primary-text); display: flex; height: 100vh; overflow: hidden; }
+
+        aside { width: 260px; background-color: var(--bg-white); border-right: 1px solid var(--border-color); padding: 24px 0; display: flex; flex-direction: column; }
+        .logo { padding: 0 24px 40px; font-size: 20px; font-weight: 700; color: var(--accent-navy); }
+        .nav-menu { list-style: none; padding: 0 16px; display: flex; flex-direction: column; gap: 12px; }
+        .nav-item { padding: 13px 16px; border-radius: 10px; cursor: pointer; color: var(--secondary-text); font-weight: 500; display: flex; align-items: center; gap: 12px; }
+        .nav-item.active { background-color: var(--accent-navy); color: white; }
+        .nav-item:hover:not(.active) { background-color: #f3f4f6; }
+
+        main { flex: 1; overflow-y: auto; position: relative; }
+        .view-section { display: none; padding: 40px; height: 100%; }
+        .view-section.active { display: block; }
+        .global-slogan {
+            margin-bottom: 18px;
+            padding: 12px 14px;
+            border: 1px solid #e5e7eb;
+            border-left: 4px solid var(--accent-orange);
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-navy);
+            background: #fff;
+        }
+
+        .page-header { margin-bottom: 32px; display: flex; justify-content: space-between; align-items: flex-end; }
+        .page-title h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+        .page-title p { font-size: 14px; color: var(--secondary-text); font-weight: 500; }
+        .btn-orange { background-color: var(--accent-orange); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+
+        .data-table { width: 100%; background: white; border-radius: 12px; border: 1px solid var(--border-color); border-collapse: collapse; overflow: hidden; }
+        .data-table th, .data-table td { padding: 16px 24px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        .data-table th { background-color: #f8fafc; color: var(--secondary-text); font-weight: 500; font-size: 14px; }
+        .btn-outline { border: 1px solid var(--border-color); background: white; padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; margin-right: 4px; }
+        .btn-outline:hover { background: #f3f4f6; }
+        .text-red { color: var(--accent-red); font-weight: 500; }
+
+        .soap-layout { display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; height: calc(100% - 80px); }
+        .panel { background: white; border-radius: 12px; border: 1px solid var(--border-color); padding: 24px; display: flex; flex-direction: column; }
+
+        .tabs { display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 24px; }
+        .tab { flex: 1; text-align: center; padding: 12px; color: var(--secondary-text); font-weight: 600; cursor: pointer; }
+        .tab.active { color: var(--accent-red); border-bottom: 2px solid var(--accent-red); background-color: #fef2f2; }
+
+        .textarea-container { flex: 1; display: flex; flex-direction: column; background: #f9fafb; border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; }
+        textarea { flex: 1; border: none; background: transparent; resize: none; outline: none; font-size: 15px; line-height: 1.6; }
+        .submit-row { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
+        .btn-dark { background-color: var(--primary-text); color: white; padding: 12px 24px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
+        .btn-dark:hover { background-color: #000; }
+
+        .report-panel { background: #fff; overflow-y: auto; }
+        .report-card { background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+        .report-title { font-size: 14px; font-weight: 700; color: var(--primary-text); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+        .circle-chart { width: 120px; height: 120px; border-radius: 50%; border: 8px solid #e5e7eb; display: flex; align-items: center; justify-content: center; margin: 0 auto; transition: border-color 0.5s ease; }
+        .circle-chart.active { border-color: var(--accent-blue); }
+        .circle-value { font-size: 32px; font-weight: 800; color: var(--accent-blue); }
+        .circle-total { font-size: 14px; color: var(--secondary-text); }
+
+        .status-list { display: flex; flex-direction: column; gap: 12px; }
+        .status-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 500; }
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+        .badge.green { background: #d1fae5; color: #065f46; }
+        .badge.yellow { background: #fef08a; color: #854d0e; }
+        .badge.gray { background: #f3f4f6; color: var(--secondary-text); }
+
+        .progress-bar-bg { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+        .progress-bar-fill { height: 100%; width: 0%; background: var(--accent-green); transition: width 0.5s ease; }
+    </style>
+</head>
+<body>
+
+    <aside>
+        <div class="logo">Re:PhyT AI - SOAP</div>
+        <ul class="nav-menu">
+            <li class="nav-item" id="nav-dashboard" onclick="switchView('dashboard')">
+                <span class="icon">📊</span> 대시보드
+            </li>
+            <li class="nav-item active" id="nav-patient" onclick="switchView('patient')">
+                <span class="icon">👥</span> 환자 목록
+            </li>
+            <li class="nav-item" id="nav-assessment" onclick="switchView('assessment')">
+                <span class="icon">📝</span> 정밀 평가 리포트 생성
+            </li>
+            <li class="nav-item" id="nav-community" onclick="switchView('community')">
+                <span class="icon">💬</span> 커뮤니티 케이스 공유
+            </li>
+            <li class="nav-item" id="nav-settings" onclick="switchView('settings')">
+                <span class="icon">⚙️</span> 설정
+            </li>
+        </ul>
+    </aside>
+
+    <main>
+        <section id="view-dashboard" class="view-section">
+            <div class="global-slogan">데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</div>
+            <div class="page-header">
+                <div class="page-title">
+                    <h1>Re:PhyT 대시보드</h1>
+                    <p>환자 현황과 정밀 평가 리포트 진행률을 한눈에 확인합니다.</p>
+                </div>
+            </div>
+            <div class="panel">
+                <p style="font-size:14px; color:var(--secondary-text);">대시보드 요약 영역입니다. 환자 목록 또는 정밀 평가 리포트 생성 메뉴로 이동해 작업을 계속하세요.</p>
+            </div>
+        </section>
+
+        <section id="view-patient" class="view-section active">
+            <div class="global-slogan">데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</div>
+            <div class="page-header">
+                <div class="page-title">
+                    <h1>Re:PhyT 환자 관리</h1>
+                    <p>데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</p>
+                </div>
+                <button class="btn-orange">신규 환자 등록</button>
+            </div>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>환자 이름</th>
+                        <th>성별/나이</th>
+                        <th>주 진단명</th>
+                        <th>연락처</th>
+                        <th>관리</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="font-weight: 600;">커뮤스</td>
+                        <td>여성 / 33세</td>
+                        <td>산후 골반저근 약화 및 요통</td>
+                        <td>010-1234-5678</td>
+                        <td>
+                            <button class="btn-outline" onclick="goToSoapView('커뮤스')">차트 보기</button>
+                            <button class="btn-outline text-red">삭제</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="view-assessment" class="view-section">
+            <div class="global-slogan">데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</div>
+            <div class="page-header">
+                <div class="page-title">
+                    <h1 style="color:var(--accent-navy);">정밀 평가 리포트 생성</h1>
+                    <p>전문 물리치료사의 임상 추론을 AI 스크리닝으로 정교하게 검증합니다. - <span id="current-patient-name" style="font-weight:700;"></span> 님</p>
+                </div>
+            </div>
+
+            <div class="soap-layout">
+                <div class="panel">
+                    <div class="tabs">
+                        <div class="tab">SUBJECTIVE</div>
+                        <div class="tab">OBJECTIVE</div>
+                        <div class="tab">ASSESSMENT</div>
+                        <div class="tab active">PLAN</div>
+                    </div>
+
+                    <h3 style="margin-bottom: 8px;">중재 전략 설정</h3>
+                    <p style="color:var(--secondary-text); font-size:13px; margin-bottom:16px;">의학적 리스크 사슬을 분석하여 대상자의 Medical Red Flag를 스크리닝합니다.</p>
+
+                    <div class="textarea-container">
+                        <textarea id="plan-input" placeholder="중재 플랜을 입력해주세요... (예: TENS 적용 후 요추부 도수치료 및 코어 강화 운동 실시)"></textarea>
+                    </div>
+
+                    <div class="submit-row">
+                        <button class="btn-outline" onclick="goToList()">< 뒤로가기</button>
+                        <button class="btn-dark" onclick="generateReport()">
+                            ⚠ 스크리닝 리포트 생성
+                        </button>
+                    </div>
+                </div>
+
+                <div class="report-panel panel">
+                    <p style="font-size:13px; color:var(--secondary-text); margin-bottom:16px;">분석된 리포트가 표시됩니다.</p>
+
+                    <div class="report-card">
+                        <div class="report-title">종합 임상 논리 점수</div>
+                        <div class="circle-chart" id="score-circle">
+                            <div style="text-align: center;">
+                                <span class="circle-value" id="score-value">0</span><br>
+                                <span class="circle-total">/ 100</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="report-card" style="border-left: 4px solid var(--accent-yellow);">
+                        <div class="report-title">임상 추론 사슬 점검</div>
+                        <p style="font-size:13px; color:var(--secondary-text); line-height:1.5;" id="logic-text">
+                            데이터 대기 중... 플랜을 입력하고 리포트를 생성해 주세요.
+                        </p>
+                    </div>
+
+                    <div class="report-card">
+                        <div class="report-title">CPG 준수율 검증</div>
+                        <div class="status-list">
+                            <div class="status-item">
+                                <span>Progressive Loading Exercise</span>
+                                <span class="badge gray" id="badge-cpg1">대기</span>
+                            </div>
+                            <div class="status-item">
+                                <span>Passive Modality Only</span>
+                                <span class="badge gray" id="badge-cpg2">대기</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="report-card">
+                        <div class="report-title">삭감 방어력 (Audit Defense)</div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; margin-top:8px;">
+                            <span>Defense Score</span>
+                            <span id="defense-score-text" style="color:var(--accent-red);">0 / 100</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="defense-bar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-community" class="view-section">
+            <div class="global-slogan">데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</div>
+            <div class="page-header">
+                <div class="page-title">
+                    <h1>커뮤니티 케이스 공유</h1>
+                    <p>임상 사례를 공유하고 동료 물리치료사와 토론합니다.</p>
+                </div>
+            </div>
+            <div class="panel">
+                <p style="font-size:14px; color:var(--secondary-text);">커뮤니티 영역 준비 중입니다.</p>
+            </div>
+        </section>
+
+        <section id="view-settings" class="view-section">
+            <div class="global-slogan">데이터는 정직하고 케어는 전문 물리치료사와 함께 정교하게 실행합니다.</div>
+            <div class="page-header">
+                <div class="page-title">
+                    <h1>설정</h1>
+                    <p>계정, 알림, 리포트 기본값을 관리합니다.</p>
+                </div>
+            </div>
+            <div class="panel">
+                <p style="font-size:14px; color:var(--secondary-text);">설정 영역 준비 중입니다.</p>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const patientNameSpan = document.getElementById('current-patient-name');
+
+        const scoreCircle = document.getElementById('score-circle');
+        const scoreValue = document.getElementById('score-value');
+        const logicText = document.getElementById('logic-text');
+        const badgeCpg1 = document.getElementById('badge-cpg1');
+        const badgeCpg2 = document.getElementById('badge-cpg2');
+        const defenseBar = document.getElementById('defense-bar');
+        const defenseScoreText = document.getElementById('defense-score-text');
+        const planInput = document.getElementById('plan-input');
+
+        function switchView(viewName) {
+            document.querySelectorAll('.view-section').forEach(section => {
+                section.style.display = 'none';
+                section.classList.remove('active');
+            });
+
+            const targetSection = document.getElementById('view-' + viewName);
+            if (targetSection) {
+                targetSection.style.display = 'block';
+                targetSection.classList.add('active');
+            }
+
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+            const activeNav = document.getElementById('nav-' + viewName);
+            if (activeNav) activeNav.classList.add('active');
+        }
+
+        function goToSoapView(patientName) {
+            patientNameSpan.textContent = patientName;
+            switchView('assessment');
+            resetReport();
+        }
+
+        function goToList() {
+            switchView('patient');
+        }
+
+        function resetReport() {
+            planInput.value = '';
+            scoreCircle.classList.remove('active');
+            scoreValue.textContent = '0';
+            logicText.textContent = '데이터 대기 중... 플랜을 입력하고 리포트를 생성해 주세요.';
+            badgeCpg1.className = 'badge gray'; badgeCpg1.textContent = '대기';
+            badgeCpg2.className = 'badge gray'; badgeCpg2.textContent = '대기';
+            defenseBar.style.width = '0%';
+            defenseScoreText.textContent = '0 / 100';
+            defenseScoreText.style.color = 'var(--secondary-text)';
+        }
+
+        function generateReport() {
+            const input = planInput.value.trim();
+            if(input.length < 10) {
+                alert("정확한 분석을 위해 중재 플랜을 상세히 입력해 주세요.");
+                return;
+            }
+
+            scoreCircle.classList.add('active');
+            setTimeout(() => {
+                scoreValue.textContent = '86';
+                logicText.innerHTML = "<span style='color:var(--accent-red); font-weight:600;'>주요 호소 통증은 요통이나, 타겟 중재는 골반저근에 집중되어 연결 근거가 일부 부족합니다.</span><br>→ Outcome 측정 기준 보완 권장";
+
+                badgeCpg1.className = 'badge green'; badgeCpg1.textContent = 'GREEN';
+                badgeCpg2.className = 'badge yellow'; badgeCpg2.textContent = 'YELLOW';
+
+                defenseBar.style.width = '78%';
+                defenseScoreText.textContent = '78 / 100';
+                defenseScoreText.style.color = 'var(--accent-green)';
+            }, 300);
+        }
+
+        switchView('patient');
+    </script>
+</body>
+</html>
