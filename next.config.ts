@@ -10,11 +10,8 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "base-uri 'self'",
-              "object-src 'none'",
-              "frame-ancestors 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.nicepay.co.kr https://*.supabase.co",
-              "connect-src 'self' https://*.nicepay.co.kr https://*.supabase.co wss://*.supabase.co",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.nicepay.co.kr",
+              "connect-src 'self' https://*.supabase.co https://*.nicepay.co.kr wss://*.supabase.co",
               "frame-src https://*.nicepay.co.kr",
               "img-src 'self' data: https:",
               "style-src 'self' 'unsafe-inline'",
