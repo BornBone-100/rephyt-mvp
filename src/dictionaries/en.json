@@ -50,7 +50,7 @@
   "dashboard": {
     "title": "Dashboard",
     "welcome": "Welcome, Doctor!",
-    "newChart": "Create New SOAP Chart",
+    "newChart": "Create Screening Report",
     "patientList": "Patient List",
     "settingsNav": "Settings",
     "settingsFooterLink": "Settings & account",

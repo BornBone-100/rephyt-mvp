@@ -4,14 +4,14 @@ const patients = [
     name: "김도윤",
     birth: "1989-05-14",
     area: "Lumbar",
-    soap: { subjective: "요통 3주", objective: "SLR 양성", assessment: "비특이성 요통", plan: "" },
+    soap: { subjective: "", objective: "", assessment: "", plan: "" },
   },
   {
     id: "p2",
     name: "이서연",
     birth: "1994-11-02",
     area: "Shoulder",
-    soap: { subjective: "우측 어깨 통증", objective: "외전 제한", assessment: "SAPS 의심", plan: "" },
+    soap: { subjective: "", objective: "", assessment: "", plan: "" },
   },
 ];
 

@@ -47,39 +47,6 @@ type Props = {
   isLoading?: boolean;
 };
 
-const MOCK_REPORT: FinalReportResult = {
-  overallScore: 86,
-  logicChainAudit: {
-    status: "warning",
-    feedback: "S/O/A/P의 주요 흐름은 연결되나, 단기 목표와 중재 강도 간 정량적 연결 근거가 일부 부족합니다.",
-    missingLinks: ["STG와 Outcome 재측정 기준의 수치 연결", "중재 빈도와 재평가 시점 근거 문장"],
-  },
-  cpgCompliance: [
-    {
-      intervention: "Progressive Loading Exercise",
-      level: "green",
-      reasoning: "JOSPT CPG의 Level A 권고와 일치하며 기능 회복 목표와 직접 연결됩니다.",
-      alternative: null,
-    },
-    {
-      intervention: "Passive Modality Only",
-      level: "yellow",
-      reasoning: "단독 적용 시 장기 예후 개선 근거가 제한적입니다.",
-      alternative: "능동 운동치료와 환자교육을 병행하여 치료효율을 높이세요.",
-    },
-  ],
-  auditDefense: {
-    riskLevel: "Medium",
-    defenseScore: 78,
-    feedback: "차트 구조는 양호하나 재평가 지표와 기능 복귀 기준을 명확히 남기면 삭감 방어력이 상승합니다.",
-    improvementTip: "목표마다 측정 시점(2주/4주)과 기준값(예: ODI 12점 개선)을 명시하세요.",
-  },
-  predictiveTrajectory: {
-    estimatedWeeks: 8,
-    trajectoryText: "현재 기능 제한과 초기 점수를 기준으로 8주 내 일상 기능 회복, 10주 내 고부하 활동 복귀가 예상됩니다.",
-  },
-};
-
 function levelBadge(level: "green" | "yellow" | "red") {
   if (level === "green") return "bg-emerald-100 text-emerald-700 border-emerald-200";
   if (level === "yellow") return "bg-amber-100 text-amber-700 border-amber-200";
@@ -230,15 +197,14 @@ export default function FinalReportDashboard({ result, isLoading = false }: Prop
       <div className="h-full w-full overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans lg:p-10">
         <div className="mb-4 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-slate-600 shadow-sm">
           <Sparkles className="h-4 w-4 text-blue-500" />
-          <p className="text-sm font-semibold">분석 전 미리보기 리포트를 표시합니다.</p>
+          <p className="text-sm font-semibold">AI 분석 대기 중입니다. 좌측 폼 입력 후 분석을 요청해 주세요.</p>
         </div>
-        <ReportBody data={MOCK_REPORT} />
       </div>
     );
   }
 
   return (
-    <div className="h-full w-full overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans lg:p-10">
+    <div className="h-full w-full animate-in fade-in overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans duration-300 lg:p-10">
       <ReportBody data={result} />
     </div>
   );

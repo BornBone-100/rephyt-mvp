@@ -50,7 +50,7 @@
   "dashboard": {
     "title": "대시보드",
     "welcome": "원장님, 환영합니다!",
-    "newChart": "새 SOAP 차트 작성",
+    "newChart": "스크리닝 리포트 생성",
     "patientList": "환자 목록",
     "settingsNav": "설정",
     "settingsFooterLink": "설정 및 계정 관리",

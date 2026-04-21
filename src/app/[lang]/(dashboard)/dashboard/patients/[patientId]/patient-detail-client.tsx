@@ -149,7 +149,7 @@ export function PatientDetailClient({ dict }: Props) {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <h1 className="text-3xl font-black text-blue-950">{patient.name} 환자 차트</h1>
           <Link href={`${base}/dashboard/soap/new?patientId=${patient.id}`}>
-            <button className="h-12 rounded-xl bg-orange-500 px-6 font-bold text-white shadow-lg transition hover:bg-orange-600">+ 새 SOAP 차트 작성</button>
+            <button className="h-12 rounded-xl bg-orange-500 px-6 font-bold text-white shadow-lg transition hover:bg-orange-600">+ 스크리닝 리포트 생성</button>
           </Link>
         </div>
       </div>

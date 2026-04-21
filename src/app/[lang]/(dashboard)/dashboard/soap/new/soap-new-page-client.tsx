@@ -424,7 +424,8 @@ const STEP_FIELD_MAP: Record<number, keyof FormData> = {
 function RedFlagMentor() {
   const supabase = useMemo(() => createClient(), []);
   const [step, setStep] = useState(1);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [reportResult, setReportResult] = useState<RedFlagResult | null>(null);
   const [evaluationResult, setEvaluationResult] = useState<RedFlagResult | null>(null);
   const [patients, setPatients] = useState<Patient[]>(MOCK_PATIENTS);
   const [patientsLoading, setPatientsLoading] = useState(true);
@@ -592,7 +593,7 @@ function RedFlagMentor() {
   };
 
   const handleVerifyRedFlag = async () => {
-    setIsAnalyzing(true);
+    setIsLoading(true);
     try {
       const res = await fetch("/api/cdss-guardrail", {
         method: "POST",
@@ -606,12 +607,13 @@ function RedFlagMentor() {
       }
 
       const data = (await res.json()) as RedFlagResult;
+      setReportResult(data);
       setEvaluationResult(data);
     } catch (error) {
       console.error(error);
       alert("Red Flag 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
-      setIsAnalyzing(false);
+      setIsLoading(false);
     }
   };
 
@@ -1323,16 +1325,16 @@ function RedFlagMentor() {
                     <button
                       type="button"
                       onClick={() => void handleVerifyRedFlag()}
-                      disabled={isAnalyzing}
+                      disabled={isLoading}
                       className="flex items-center gap-2 rounded-xl bg-slate-900 px-10 py-4 font-bold text-white shadow-lg shadow-slate-200 transition-all hover:bg-slate-800 disabled:bg-slate-300"
                     >
-                      {isAnalyzing ? (
+                      {isLoading ? (
                         <>
                           <Activity className="h-5 w-5 animate-spin" /> Scanning for Red Flags...
                         </>
                       ) : (
                         <>
-                          <AlertTriangle className="h-5 w-5" /> Red Flag & 안전성 검증
+                          <AlertTriangle className="h-5 w-5" /> AI 분석 요청
                         </>
                       )}
                     </button>
@@ -1461,38 +1463,38 @@ function RedFlagMentor() {
         </div>
         <DashboardRightPanel
           result={
-            evaluationResult
+            reportResult
               ? {
-                  hasRedFlag: evaluationResult.hasRedFlag,
-                  criticalAlert: evaluationResult.criticalAlert ?? null,
-                  overallScore: evaluationResult.overallScore ?? evaluationResult.complianceScore ?? 0,
-                  logicChainAudit: evaluationResult.logicChainAudit ?? {
+                  hasRedFlag: reportResult.hasRedFlag,
+                  criticalAlert: reportResult.criticalAlert ?? null,
+                  overallScore: reportResult.overallScore ?? reportResult.complianceScore ?? 0,
+                  logicChainAudit: reportResult.logicChainAudit ?? {
                     status: "warning",
-                    feedback: evaluationResult.clinicalReasoning ?? "논리 사슬 검증 데이터가 충분하지 않습니다.",
+                    feedback: reportResult.clinicalReasoning ?? "논리 사슬 검증 데이터가 충분하지 않습니다.",
                     missingLinks: [],
                   },
                   cpgCompliance:
-                    evaluationResult.cpgCompliance ??
-                    (evaluationResult.trafficLightFeedback ?? []).map((item) => ({
+                    reportResult.cpgCompliance ??
+                    (reportResult.trafficLightFeedback ?? []).map((item) => ({
                       intervention: item.title,
                       level: item.level,
                       reasoning: item.description,
                       alternative: item.level === "green" ? null : "근거 기반 대체 중재를 병행하세요.",
                     })),
-                  auditDefense: evaluationResult.auditDefense ?? {
+                  auditDefense: reportResult.auditDefense ?? {
                     riskLevel: "Medium",
-                    defenseScore: evaluationResult.overallScore ?? evaluationResult.complianceScore ?? 0,
+                    defenseScore: reportResult.overallScore ?? reportResult.complianceScore ?? 0,
                     feedback: "삭감 방어력 기본 데이터가 생성되었습니다. 목표-중재-재평가 링크를 강화하세요.",
                     improvementTip: "Outcome 재평가 시점과 수치 목표를 명시해 문서 방어력을 높이세요.",
                   },
-                  predictiveTrajectory: evaluationResult.predictiveTrajectory ?? {
+                  predictiveTrajectory: reportResult.predictiveTrajectory ?? {
                     estimatedWeeks: 8,
                     trajectoryText: "현재 데이터 기준 평균 8주 회복 경로가 예상됩니다.",
                   },
                 }
               : null
           }
-          isLoading={isAnalyzing}
+          isLoading={isLoading}
         />
       </div>
     </div>
