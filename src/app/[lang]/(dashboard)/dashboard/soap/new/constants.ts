@@ -1,3 +1,80 @@
+// JOSPT 임상진료지침(CPG) 기반 치료 기반 분류(TBC) 마스터 데이터
+export const JOSPT_TBC_DB: Record<string, string[]> = {
+  neck: [
+    "가동성 결함 (Mobility Deficits)",
+    "운동 조절 결함 (Movement Coordination Impairments / WAD)",
+    "경성 두통 (Cervicogenic Headache)",
+    "방사통 (Radiating Pain)",
+  ],
+  shoulder: [
+    "점액낭/회전근개 병변 (Subacromial Pain Syndrome)",
+    "유착성 관절낭염 (Adhesive Capsulitis)",
+    "관절 불안정성 (Shoulder Instability)",
+    "견갑골 운동이상증 (Scapular Dyskinesia)",
+  ],
+  elbow: [
+    "외측 상과염 (Lateral Epicondylalgia / Tennis Elbow)",
+    "내측 상과염 (Medial Epicondylalgia)",
+    "인대 불안정성 (Ligament Instability)",
+  ],
+  wrist: [
+    "수근관 증후군 (Carpal Tunnel Syndrome)",
+    "건병증 및 건막염 (Tendinopathy / De Quervain's)",
+    "삼각섬유연골 복합체 손상 (TFCC Lesion)",
+  ],
+  hand: ["수지 관절염 (Hand Osteoarthritis)", "방아쇠 수지 (Trigger Finger)", "수지 인대 손상 (Digit Sprain)"],
+  lumbar: [
+    "가동성 결함 / 도수치료 카테고리 (Manipulation Category)",
+    "운동 조절 결함 / 안정화 카테고리 (Stabilization Category)",
+    "방향 특이성 / 특정 운동 카테고리 (Directional Preference)",
+    "방사통 / 견인 카테고리 (Traction Category)",
+  ],
+  hip: [
+    "고관절 관절염 (Hip Osteoarthritis)",
+    "비관절성 고관절 통증 (Nonarthritic Hip Pain / FAI)",
+    "대전자 통증 증후군 (Greater Trochanteric Pain Syndrome)",
+  ],
+  knee: [
+    "반월상 및 관절 연골 병변 (Meniscal / Articular Cartilage)",
+    "인대 손상 및 불안정성 (Ligament Sprain / ACL, PCL, MCL)",
+    "슬개대퇴 통증 증후군 (Patellofemoral Pain)",
+    "무릎 관절염 (Knee Osteoarthritis)",
+  ],
+  ankle: [
+    "급성 발목 염좌 (Acute Ankle Sprain / Ligamentous)",
+    "만성 발목 불안정성 (Chronic Ankle Instability)",
+    "아킬레스 건병증 (Achilles Tendinopathy)",
+  ],
+  foot: [
+    "족저근막염 / 발뒤꿈치 통증 (Plantar Fasciitis / Heel Pain)",
+    "후경골근 기능 부전 (Posterior Tibial Tendon Dysfunction)",
+    "지간 신경종 (Morton's Neuroma)",
+  ],
+};
+
+// JOSPT 기준 부위별 핵심 기능 평가 척도 (Outcome Measures)
+export const JOSPT_OUTCOME_DB: Record<string, { id: string; name: string; max: number; unit: string }[]> = {
+  neck: [{ id: "ndi", name: "NDI (경추 장애 지수)", max: 100, unit: "%" }],
+  shoulder: [
+    { id: "spadi", name: "SPADI (어깨 통증/장애 지수)", max: 100, unit: "점" },
+    { id: "quickdash", name: "QuickDASH (상지 기능 평가)", max: 100, unit: "점" },
+  ],
+  elbow: [{ id: "prtee", name: "PRTEE (테니스 엘보우 평가)", max: 100, unit: "점" }],
+  wrist: [{ id: "prwe", name: "PRWE (손목 평가)", max: 100, unit: "점" }],
+  hand: [{ id: "mhq", name: "MHQ (미시간 수부 평가)", max: 100, unit: "점" }],
+  lumbar: [{ id: "odi", name: "ODI (요추 장애 지수)", max: 100, unit: "%" }],
+  hip: [
+    { id: "hoos", name: "HOOS (고관절 기능 평가)", max: 100, unit: "점" },
+    { id: "lefs", name: "LEFS (하지 기능 척도)", max: 80, unit: "점" },
+  ],
+  knee: [
+    { id: "koos", name: "KOOS (슬관절 기능 평가)", max: 100, unit: "점" },
+    { id: "lysholm", name: "Lysholm Score (인대/반월상 평가)", max: 100, unit: "점" },
+  ],
+  ankle: [{ id: "faam", name: "FAAM (발목 기능 평가)", max: 100, unit: "%" }],
+  foot: [{ id: "ffi", name: "FFI (족부 기능 지수)", max: 100, unit: "점" }],
+};
+
 export const JOSPT_ICF_DB: Record<string, { impairment: string[]; activity: string[]; participation: string[] }> = {
   neck: {
     impairment: ["경추 ROM(가동범위) 제한", "심부굴곡근 약화", "경추-흉추 연쇄 움직임 손상", "상지 방사통 및 감각 저하"],

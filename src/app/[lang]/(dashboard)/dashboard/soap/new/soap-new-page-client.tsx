@@ -17,7 +17,7 @@ import {
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import DashboardRightPanel from "./DashboardRightPanel";
 import { createClient } from "@/utils/supabase/client";
-import { JOSPT_ICF_DB } from "./constants";
+import { JOSPT_ICF_DB, JOSPT_OUTCOME_DB, JOSPT_TBC_DB } from "./constants";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -56,87 +56,6 @@ type ExamDraft = {
 };
 
 const PAIN_QUALITY_OPTIONS: PainQuality[] = ["날카로운", "쑤시는", "저리는", "타는듯한", "뻐근한", "묵직한"];
-
-// JOSPT 임상진료지침(CPG) 기반 치료 기반 분류(TBC) 마스터 데이터
-export const JOSPT_TBC_DB: Record<string, string[]> = {
-  neck: [
-    "가동성 결함 (Mobility Deficits)",
-    "운동 조절 결함 (Movement Coordination Impairments / WAD)",
-    "경성 두통 (Cervicogenic Headache)",
-    "방사통 (Radiating Pain)",
-  ],
-  shoulder: [
-    "점액낭/회전근개 병변 (Subacromial Pain Syndrome)",
-    "유착성 관절낭염 (Adhesive Capsulitis)",
-    "관절 불안정성 (Shoulder Instability)",
-    "견갑골 운동이상증 (Scapular Dyskinesia)",
-  ],
-  elbow: [
-    "외측 상과염 (Lateral Epicondylalgia / Tennis Elbow)",
-    "내측 상과염 (Medial Epicondylalgia)",
-    "인대 불안정성 (Ligament Instability)",
-  ],
-  wrist: [
-    "수근관 증후군 (Carpal Tunnel Syndrome)",
-    "건병증 및 건막염 (Tendinopathy / De Quervain's)",
-    "삼각섬유연골 복합체 손상 (TFCC Lesion)",
-  ],
-  hand: [
-    "수지 관절염 (Hand Osteoarthritis)",
-    "방아쇠 수지 (Trigger Finger)",
-    "수지 인대 손상 (Digit Sprain)",
-  ],
-  lumbar: [
-    "가동성 결함 / 도수치료 카테고리 (Manipulation Category)",
-    "운동 조절 결함 / 안정화 카테고리 (Stabilization Category)",
-    "방향 특이성 / 특정 운동 카테고리 (Directional Preference)",
-    "방사통 / 견인 카테고리 (Traction Category)",
-  ],
-  hip: [
-    "고관절 관절염 (Hip Osteoarthritis)",
-    "비관절성 고관절 통증 (Nonarthritic Hip Pain / FAI)",
-    "대전자 통증 증후군 (Greater Trochanteric Pain Syndrome)",
-  ],
-  knee: [
-    "반월상 및 관절 연골 병변 (Meniscal / Articular Cartilage)",
-    "인대 손상 및 불안정성 (Ligament Sprain / ACL, PCL, MCL)",
-    "슬개대퇴 통증 증후군 (Patellofemoral Pain)",
-    "무릎 관절염 (Knee Osteoarthritis)",
-  ],
-  ankle: [
-    "급성 발목 염좌 (Acute Ankle Sprain / Ligamentous)",
-    "만성 발목 불안정성 (Chronic Ankle Instability)",
-    "아킬레스 건병증 (Achilles Tendinopathy)",
-  ],
-  foot: [
-    "족저근막염 / 발뒤꿈치 통증 (Plantar Fasciitis / Heel Pain)",
-    "후경골근 기능 부전 (Posterior Tibial Tendon Dysfunction)",
-    "지간 신경종 (Morton's Neuroma)",
-  ],
-};
-
-// JOSPT 기준 부위별 핵심 기능 평가 척도 (Outcome Measures)
-export const JOSPT_OUTCOME_DB: Record<string, { id: string; name: string; max: number; unit: string }[]> = {
-  neck: [{ id: "ndi", name: "NDI (경추 장애 지수)", max: 100, unit: "%" }],
-  shoulder: [
-    { id: "spadi", name: "SPADI (어깨 통증/장애 지수)", max: 100, unit: "점" },
-    { id: "quickdash", name: "QuickDASH (상지 기능 평가)", max: 100, unit: "점" },
-  ],
-  elbow: [{ id: "prtee", name: "PRTEE (테니스 엘보우 평가)", max: 100, unit: "점" }],
-  wrist: [{ id: "prwe", name: "PRWE (손목 평가)", max: 100, unit: "점" }],
-  hand: [{ id: "mhq", name: "MHQ (미시간 수부 평가)", max: 100, unit: "점" }],
-  lumbar: [{ id: "odi", name: "ODI (요추 장애 지수)", max: 100, unit: "%" }],
-  hip: [
-    { id: "hoos", name: "HOOS (고관절 기능 평가)", max: 100, unit: "점" },
-    { id: "lefs", name: "LEFS (하지 기능 척도)", max: 80, unit: "점" },
-  ],
-  knee: [
-    { id: "koos", name: "KOOS (슬관절 기능 평가)", max: 100, unit: "점" },
-    { id: "lysholm", name: "Lysholm Score (인대/반월상 평가)", max: 100, unit: "점" },
-  ],
-  ankle: [{ id: "faam", name: "FAAM (발목 기능 평가)", max: 100, unit: "%" }],
-  foot: [{ id: "ffi", name: "FFI (족부 기능 지수)", max: 100, unit: "점" }],
-};
 
 interface Patient {
   id: string;
@@ -317,6 +236,30 @@ type RomMmtInput = {
   mmt: string;
 };
 
+type ManualTherapyEntry = {
+  name: string;
+  grade: "Grade I" | "Grade II" | "Grade III" | "Grade IV" | "Grade V" | "Soft Tissue" | "Neural";
+  minutes: string;
+};
+
+type TherapeuticExerciseEntry = {
+  name: string;
+  sets: string;
+  reps: string;
+  holdSec: string;
+};
+
+type ModalityEntry = {
+  modality: "Hot/Cold Pack" | "Ultrasound" | "TENS/ICT" | "Traction" | "ESWT" | "Laser";
+  target: string;
+};
+
+type IcfSelectionState = {
+  impairment: string[];
+  activity: string[];
+  participation: string[];
+};
+
 function resolveDiagnosisKey(raw: string): keyof typeof SPECIAL_TESTS_DB | null {
   const v = raw.trim().toLowerCase();
   if (!v) return null;
@@ -340,6 +283,27 @@ function appendUniqueLine(text: string, line: string) {
   const lines = trimmed.split("\n");
   if (lines.includes(line)) return trimmed;
   return `${trimmed}\n${line}`;
+}
+
+function removeExactLine(text: string, line: string) {
+  const lines = text
+    .split("\n")
+    .map((v) => v.trimEnd())
+    .filter((v) => v.trim() !== "");
+  const next = lines.filter((v) => v !== line);
+  return next.join("\n");
+}
+
+function upsertAutoObjectiveBlock(text: string, lines: string[]) {
+  const START = "[AUTO_OBJECTIVE_BLOCK_START]";
+  const END = "[AUTO_OBJECTIVE_BLOCK_END]";
+  const escapedStart = START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedEnd = END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const blockRegex = new RegExp(`${escapedStart}[\\s\\S]*?${escapedEnd}`, "g");
+  const base = text.replace(blockRegex, "").trim();
+  if (lines.length === 0) return base;
+  const block = [START, ...lines, END].join("\n");
+  return base ? `${base}\n${block}` : block;
 }
 
 function composeExaminationSummary(draft: ExamDraft) {
@@ -455,12 +419,37 @@ function RedFlagMentor() {
     otherNotes: "",
   });
   const [specialTestSelection, setSpecialTestSelection] = useState<Record<string, SpecialTestValue>>({});
+  const [selectedTbcTags, setSelectedTbcTags] = useState<string[]>([]);
   const [romMmtInputs, setRomMmtInputs] = useState<Record<string, RomMmtInput>>({});
   const [outcomeScores, setOutcomeScores] = useState<Record<string, string>>({});
+  const [icfSelection, setIcfSelection] = useState<IcfSelectionState>({
+    impairment: [],
+    activity: [],
+    participation: [],
+  });
   const [prognosisDuration, setPrognosisDuration] = useState("");
   const [rehabPotential, setRehabPotential] = useState("");
   const [shortTermGoal, setShortTermGoal] = useState("");
   const [longTermGoal, setLongTermGoal] = useState("");
+  const [manualDraft, setManualDraft] = useState<ManualTherapyEntry>({
+    name: "",
+    grade: "Grade III",
+    minutes: "",
+  });
+  const [manualEntries, setManualEntries] = useState<ManualTherapyEntry[]>([]);
+  const [exerciseDraft, setExerciseDraft] = useState<TherapeuticExerciseEntry>({
+    name: "",
+    sets: "",
+    reps: "",
+    holdSec: "",
+  });
+  const [exerciseEntries, setExerciseEntries] = useState<TherapeuticExerciseEntry[]>([]);
+  const [modalityDraft, setModalityDraft] = useState<ModalityEntry>({
+    modality: "Hot/Cold Pack",
+    target: "",
+  });
+  const [modalityEntries, setModalityEntries] = useState<ModalityEntry[]>([]);
+  const [educationHep, setEducationHep] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -570,6 +559,18 @@ function RedFlagMentor() {
     setOutcomeScores((prev) => ({ ...prev, [outcome.id]: "" }));
   };
 
+  const handleTbcToggle = (tbcTag: string) => {
+    setSelectedTbcTags((prev) => {
+      const exists = prev.includes(tbcTag);
+      const line = `[TBC 분류] ${tbcTag}`;
+      setFormData((fd) => ({
+        ...fd,
+        evaluation: exists ? removeExactLine(fd.evaluation, line) : appendUniqueLine(fd.evaluation, line),
+      }));
+      return exists ? prev.filter((v) => v !== tbcTag) : [...prev, tbcTag];
+    });
+  };
+
   const handleAppendICF = (
     item: string,
     categoryLabel: "신체손상" | "활동제한" | "참여제약",
@@ -577,10 +578,17 @@ function RedFlagMentor() {
   ) => {
     event?.currentTarget.blur();
     const line = `[ICF - ${categoryLabel}] ${item}`;
-    setFormData((prev) => ({
-      ...prev,
-      evaluation: appendUniqueLine(prev.evaluation, line),
-    }));
+    const key =
+      categoryLabel === "신체손상" ? "impairment" : categoryLabel === "활동제한" ? "activity" : "participation";
+    setIcfSelection((prev) => {
+      const exists = prev[key].includes(item);
+      const nextBucket = exists ? prev[key].filter((v) => v !== item) : [...prev[key], item];
+      setFormData((fd) => ({
+        ...fd,
+        evaluation: exists ? removeExactLine(fd.evaluation, line) : appendUniqueLine(fd.evaluation, line),
+      }));
+      return { ...prev, [key]: nextBucket };
+    });
   };
 
   const appendGoalText = (target: "short" | "long", line: string) => {
@@ -590,6 +598,24 @@ function RedFlagMentor() {
       return;
     }
     setLongTermGoal((prev) => appendUniqueLine(prev, line));
+  };
+
+  const addManualEntry = () => {
+    if (!manualDraft.name.trim()) return;
+    setManualEntries((prev) => [...prev, { ...manualDraft, name: manualDraft.name.trim() }]);
+    setManualDraft((prev) => ({ ...prev, name: "", minutes: "" }));
+  };
+
+  const addExerciseEntry = () => {
+    if (!exerciseDraft.name.trim()) return;
+    setExerciseEntries((prev) => [...prev, { ...exerciseDraft, name: exerciseDraft.name.trim() }]);
+    setExerciseDraft({ name: "", sets: "", reps: "", holdSec: "" });
+  };
+
+  const addModalityEntry = () => {
+    if (!modalityDraft.target.trim()) return;
+    setModalityEntries((prev) => [...prev, { ...modalityDraft, target: modalityDraft.target.trim() }]);
+    setModalityDraft((prev) => ({ ...prev, target: "" }));
   };
 
   const handleVerifyRedFlag = async () => {
@@ -661,6 +687,35 @@ function RedFlagMentor() {
     : null;
 
   useEffect(() => {
+    const autoRomLines = Object.entries(romMmtInputs)
+      .filter(([, row]) => row.arom || row.prom || row.mmt)
+      .map(
+        ([movement, row]) =>
+          `[ROM/MMT] ${movement} | AROM: ${row.arom || "-"} | PROM: ${row.prom || "-"} | End Feel: ${row.endFeel || "-"} | MMT: ${
+            row.mmt || "-"
+          }`,
+      );
+    const autoOutcomeLines = selectedOutcomeOptions
+      .map((o) => {
+        const score = (outcomeScores[o.id] ?? "").trim();
+        if (!score) return null;
+        return `[평가 척도] ${o.name} : ${score}/${o.max}${o.unit}`;
+      })
+      .filter((v): v is string => Boolean(v));
+    const autoTbcLines = selectedTbcTags.map((tbc) => `[TBC 분류] ${tbc}`);
+    const autoIcfLines = [
+      ...icfSelection.impairment.map((item) => `[ICF - 신체손상] ${item}`),
+      ...icfSelection.activity.map((item) => `[ICF - 활동제한] ${item}`),
+      ...icfSelection.participation.map((item) => `[ICF - 참여제약] ${item}`),
+    ];
+    const autoLines = [...autoRomLines, ...autoOutcomeLines, ...autoTbcLines, ...autoIcfLines];
+    setFormData((prev) => ({
+      ...prev,
+      evaluation: upsertAutoObjectiveBlock(prev.evaluation, autoLines),
+    }));
+  }, [icfSelection, outcomeScores, romMmtInputs, selectedOutcomeOptions, selectedTbcTags]);
+
+  useEffect(() => {
     const lines = [
       prognosisDuration ? `[예상 치료 기간] ${prognosisDuration}` : "",
       rehabPotential ? `[Rehab Potential] ${rehabPotential}` : "",
@@ -669,6 +724,30 @@ function RedFlagMentor() {
     ].filter(Boolean);
     setFormData((prev) => ({ ...prev, prognosis: lines.join("\n\n") }));
   }, [longTermGoal, prognosisDuration, rehabPotential, shortTermGoal]);
+
+  useEffect(() => {
+    const manualLines = manualEntries.map(
+      (m, i) => `${i + 1}. ${m.name} | ${m.grade} | ${m.minutes || "-"}분`,
+    );
+    const exerciseLines = exerciseEntries.map(
+      (e, i) => `${i + 1}. ${e.name} | ${e.sets || "-"} Sets x ${e.reps || "-"} Reps x Hold ${e.holdSec || "-"}초`,
+    );
+    const modalityLines = modalityEntries.map((m, i) => `${i + 1}. ${m.modality} | 적용 부위: ${m.target}`);
+    const blocks = [
+      "[Manual Therapy]",
+      ...(manualLines.length > 0 ? manualLines : ["- 없음"]),
+      "",
+      "[Therapeutic Exercise]",
+      ...(exerciseLines.length > 0 ? exerciseLines : ["- 없음"]),
+      "",
+      "[Modalities]",
+      ...(modalityLines.length > 0 ? modalityLines : ["- 없음"]),
+      "",
+      "[Education & HEP]",
+      educationHep.trim() || "- 없음",
+    ];
+    setFormData((prev) => ({ ...prev, intervention: blocks.join("\n") }));
+  }, [educationHep, exerciseEntries, manualEntries, modalityEntries]);
 
   return (
     <div className="flex h-full flex-col bg-slate-50 font-sans">
@@ -1032,13 +1111,12 @@ function RedFlagMentor() {
                               <button
                                 key={`${tbcTag}-${idx}`}
                                 type="button"
-                                onClick={() =>
-                                  setFormData((prev) => ({
-                                    ...prev,
-                                    evaluation: prev.evaluation ? `${prev.evaluation}\n[분류] ${tbcTag}` : `[분류] ${tbcTag}`,
-                                  }))
-                                }
-                                className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-left text-sm font-medium text-slate-700 transition-all hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                                onClick={() => handleTbcToggle(tbcTag)}
+                                className={`rounded-full border px-4 py-2 text-left text-sm font-medium transition-all ${
+                                  selectedTbcTags.includes(tbcTag)
+                                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                                    : "border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                                }`}
                               >
                                 {tbcTag}
                               </button>
@@ -1059,12 +1137,9 @@ function RedFlagMentor() {
                         </p>
 
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                          {selectedOutcomeOptions.length > 0 ? (
+                          {formData.diagnosisArea && selectedOutcomeOptions.length > 0 ? (
                             selectedOutcomeOptions.map((outcome) => (
-                              <div
-                                key={outcome.id}
-                                className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3"
-                              >
+                              <div key={outcome.id} className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3">
                                 <label className="text-xs font-bold text-slate-700">{outcome.name}</label>
                                 <div className="flex items-center gap-2">
                                   <input
@@ -1091,9 +1166,7 @@ function RedFlagMentor() {
                               </div>
                             ))
                           ) : (
-                            <span className="col-span-2 text-sm italic text-slate-400">
-                              먼저 Step 1에서 진단 부위를 선택해 주세요.
-                            </span>
+                            <span className="col-span-2 text-sm italic text-slate-400">먼저 Step 1에서 진단 부위를 선택해 주세요.</span>
                           )}
                         </div>
                       </div>
@@ -1291,7 +1364,150 @@ function RedFlagMentor() {
                     </div>
                   ) : null}
 
-                  {step !== 1 && step !== 3 ? (
+                  {step === 4 ? (
+                    <div className="mb-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Step 4 APTA 4-Category Intervention System</p>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <h3 className="mb-3 text-sm font-bold text-slate-800">1. 도수/수기 치료 (Manual Therapy)</h3>
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+                          <input
+                            value={manualDraft.name}
+                            onChange={(e) => setManualDraft((p) => ({ ...p, name: e.target.value }))}
+                            placeholder="중재명"
+                            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                          />
+                          <select
+                            value={manualDraft.grade}
+                            onChange={(e) => setManualDraft((p) => ({ ...p, grade: e.target.value as ManualTherapyEntry["grade"] }))}
+                            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                          >
+                            {["Grade I", "Grade II", "Grade III", "Grade IV", "Grade V", "Soft Tissue", "Neural"].map((g) => (
+                              <option key={g} value={g}>
+                                {g}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            value={manualDraft.minutes}
+                            onChange={(e) => setManualDraft((p) => ({ ...p, minutes: e.target.value }))}
+                            placeholder="적용 시간(분)"
+                            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                          />
+                          <button
+                            type="button"
+                            onClick={addManualEntry}
+                            className="h-10 rounded-lg bg-slate-900 px-3 text-sm font-bold text-white hover:bg-slate-800"
+                          >
+                            + 추가
+                          </button>
+                        </div>
+                        <div className="mt-2 space-y-1 text-xs text-slate-600">
+                          {manualEntries.map((m, idx) => (
+                            <p key={`${m.name}-${idx}`}>• {m.name} | {m.grade} | {m.minutes || "-"}분</p>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <h3 className="mb-3 text-sm font-bold text-slate-800">2. 치료적 운동 (Therapeutic Exercise)</h3>
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
+                          <input
+                            value={exerciseDraft.name}
+                            onChange={(e) => setExerciseDraft((p) => ({ ...p, name: e.target.value }))}
+                            placeholder="운동명"
+                            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                          />
+                          <input
+                            type="number"
+                            value={exerciseDraft.sets}
+                            onChange={(e) => setExerciseDraft((p) => ({ ...p, sets: e.target.value }))}
+                            placeholder="Sets"
+                            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                          />
+                          <input
+                            type="number"
+                            value={exerciseDraft.reps}
+                            onChange={(e) => setExerciseDraft((p) => ({ ...p, reps: e.target.value }))}
+                            placeholder="Reps"
+                            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                          />
+                          <input
+                            type="number"
+                            value={exerciseDraft.holdSec}
+                            onChange={(e) => setExerciseDraft((p) => ({ ...p, holdSec: e.target.value }))}
+                            placeholder="Hold(초)"
+                            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                          />
+                          <button
+                            type="button"
+                            onClick={addExerciseEntry}
+                            className="h-10 rounded-lg bg-slate-900 px-3 text-sm font-bold text-white hover:bg-slate-800"
+                          >
+                            + 추가
+                          </button>
+                        </div>
+                        <div className="mt-2 space-y-1 text-xs text-slate-600">
+                          {exerciseEntries.map((e, idx) => (
+                            <p key={`${e.name}-${idx}`}>• {e.name} | {e.sets || "-"}x{e.reps || "-"} | Hold {e.holdSec || "-"}초</p>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <h3 className="mb-3 text-sm font-bold text-slate-800">3. 기기 및 물리치료 (Modalities)</h3>
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                          <select
+                            value={modalityDraft.modality}
+                            onChange={(e) => setModalityDraft((p) => ({ ...p, modality: e.target.value as ModalityEntry["modality"] }))}
+                            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                          >
+                            {["Hot/Cold Pack", "Ultrasound", "TENS/ICT", "Traction", "ESWT", "Laser"].map((m) => (
+                              <option key={m} value={m}>
+                                {m}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            value={modalityDraft.target}
+                            onChange={(e) => setModalityDraft((p) => ({ ...p, target: e.target.value }))}
+                            placeholder="적용 부위"
+                            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                          />
+                          <button
+                            type="button"
+                            onClick={addModalityEntry}
+                            className="h-10 rounded-lg bg-slate-900 px-3 text-sm font-bold text-white hover:bg-slate-800"
+                          >
+                            + 추가
+                          </button>
+                        </div>
+                        <div className="mt-2 space-y-1 text-xs text-slate-600">
+                          {modalityEntries.map((m, idx) => (
+                            <p key={`${m.modality}-${idx}`}>• {m.modality} | 적용 부위: {m.target}</p>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <h3 className="mb-3 text-sm font-bold text-slate-800">4. 환자 교육 및 홈 프로그램 (Education & HEP)</h3>
+                        <textarea
+                          value={educationHep}
+                          onChange={(e) => setEducationHep(e.target.value)}
+                          className="h-28 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                          placeholder="자세 교정, 금기 동작, 자가 운동, 복약/생활 지도 내용을 상세 기록하세요."
+                        />
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="mb-1 text-xs font-bold uppercase text-slate-500">AI 입력용 자동 요약 (Intervention)</p>
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{formData.intervention}</p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {step !== 1 && step !== 3 && step !== 4 ? (
                     <textarea
                       name={currentField}
                       value={currentValue}
@@ -1334,7 +1550,7 @@ function RedFlagMentor() {
                         </>
                       ) : (
                         <>
-                          <AlertTriangle className="h-5 w-5" /> AI 분석 요청
+                          <AlertTriangle className="h-5 w-5" /> 🚀 AI 임상 스크리닝 리포트 생성
                         </>
                       )}
                     </button>
