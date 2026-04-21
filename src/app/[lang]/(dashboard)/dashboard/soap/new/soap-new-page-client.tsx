@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ShieldCheck,
   ClipboardList,
@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import DashboardRightPanel from "./DashboardRightPanel";
+import { createClient } from "@/utils/supabase/client";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -24,7 +25,7 @@ type Props = {
 };
 
 type FormData = {
-  patient: string;
+  patientId: string;
   diagnosisArea: string;
   language: string;
   examination: string;
@@ -32,6 +33,55 @@ type FormData = {
   prognosis: string;
   intervention: string;
 };
+
+interface Patient {
+  id: string;
+  name: string;
+  birthDate: string;
+}
+
+const MOCK_PATIENTS: Patient[] = [
+  { id: "mock-1", name: "김민수", birthDate: "1988-03-12" },
+  { id: "mock-2", name: "이서연", birthDate: "1992-11-05" },
+  { id: "mock-3", name: "박지훈", birthDate: "1979-07-21" },
+];
+
+const SPECIAL_TESTS_DB: Record<string, string[]> = {
+  neck: ["Spurling test", "Distraction test", "ULNT", "Cervical Rotation ROM"],
+  shoulder: ["Neer test", "Hawkins-Kennedy", "Empty Can", "Speed test"],
+  elbow: ["Cozen test", "Mill's test", "Tinel sign (Cubital tunnel)", "Valgus stress test"],
+  wrist: ["Finkelstein test", "Phalen test", "Tinel sign (Carpal tunnel)", "TFCC load test"],
+  hand: ["Froment sign", "Bunnell-Littler test", "Allen test", "Grind test (CMC)"],
+  lumbar: ["SLR test", "Slump test", "Prone instability test", "PAIVM"],
+  hip: ["FADIR test", "FABER test", "Scour test", "Trendelenburg sign"],
+  knee: ["Lachman test", "McMurray test", "Anterior Drawer", "Valgus stress test"],
+  ankle: ["Anterior Drawer (Ankle)", "Talar Tilt", "Squeeze test", "Thompson test"],
+  foot: ["Windlass test", "Navicular drop test", "Mulder click test", "Tinel sign (Tarsal tunnel)"],
+};
+
+type SpecialTestValue = "positive" | "negative" | "not_tested";
+
+const SPECIAL_TEST_LABEL: Record<SpecialTestValue, string> = {
+  positive: "양성(+)",
+  negative: "음성(-)",
+  not_tested: "미실시",
+};
+
+function resolveDiagnosisKey(raw: string): keyof typeof SPECIAL_TESTS_DB | null {
+  const v = raw.trim().toLowerCase();
+  if (!v) return null;
+  return (v in SPECIAL_TESTS_DB ? (v as keyof typeof SPECIAL_TESTS_DB) : null);
+}
+
+function upsertSpecialTestLine(text: string, testName: string, valueLabel: string) {
+  const line = `${testName}: ${valueLabel}`;
+  const escaped = testName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^${escaped}:.*$`, "m");
+  if (re.test(text)) {
+    return text.replace(re, line);
+  }
+  return text.trim() ? `${text.trim()}\n${line}` : line;
+}
 
 type RedFlagResult = {
   hasRedFlag: boolean;
@@ -72,12 +122,15 @@ const STEP_FIELD_MAP: Record<number, keyof FormData> = {
 };
 
 function RedFlagMentor() {
+  const supabase = useMemo(() => createClient(), []);
   const [step, setStep] = useState(1);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState<RedFlagResult | null>(null);
+  const [patients, setPatients] = useState<Patient[]>(MOCK_PATIENTS);
+  const [patientsLoading, setPatientsLoading] = useState(true);
 
   const [formData, setFormData] = useState<FormData>({
-    patient: "",
+    patientId: "",
     diagnosisArea: "",
     language: "한국어 + 영문 의학용어",
     examination: "",
@@ -85,6 +138,44 @@ function RedFlagMentor() {
     prognosis: "",
     intervention: "",
   });
+  const [specialTestSelection, setSpecialTestSelection] = useState<Record<string, SpecialTestValue>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setPatientsLoading(true);
+      try {
+        const { data, error } = await supabase.from("patients").select("*").order("created_at", { ascending: false }).limit(100);
+        if (cancelled) return;
+        if (error || !Array.isArray(data)) {
+          setPatients(MOCK_PATIENTS);
+          return;
+        }
+        const mapped = data
+          .map((row) => {
+            const r = row as Record<string, unknown>;
+            const id = typeof r.id === "string" ? r.id : "";
+            const name = typeof r.name === "string" ? r.name : "";
+            const birthDateRaw =
+              (typeof r.birth_date === "string" && r.birth_date) ||
+              (typeof r.date_of_birth === "string" && r.date_of_birth) ||
+              (typeof r.dob === "string" && r.dob) ||
+              null;
+            if (!id || !name) return null;
+            return { id, name, birthDate: birthDateRaw ?? "" };
+          })
+          .filter((p): p is Patient => Boolean(p));
+        setPatients(mapped.length > 0 ? mapped : MOCK_PATIENTS);
+      } catch {
+        if (!cancelled) setPatients(MOCK_PATIENTS);
+      } finally {
+        if (!cancelled) setPatientsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -92,6 +183,16 @@ function RedFlagMentor() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleSpecialTestToggle = (testName: string, value: SpecialTestValue) => {
+    if (step !== 1 && step !== 2) return;
+    const targetField: keyof Pick<FormData, "examination" | "evaluation"> = step === 1 ? "examination" : "evaluation";
+    setSpecialTestSelection((prev) => ({ ...prev, [testName]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [targetField]: upsertSpecialTestLine(prev[targetField], testName, SPECIAL_TEST_LABEL[value]),
+    }));
   };
 
   const handleVerifyRedFlag = async () => {
@@ -144,6 +245,8 @@ function RedFlagMentor() {
 
   const currentField = STEP_FIELD_MAP[step];
   const currentValue = formData[currentField];
+  const selectedDiagnosisKey = resolveDiagnosisKey(formData.diagnosisArea);
+  const recommendedTests = selectedDiagnosisKey ? SPECIAL_TESTS_DB[selectedDiagnosisKey] : [];
 
   return (
     <div className="flex h-full flex-col bg-slate-50 font-sans">
@@ -194,26 +297,39 @@ function RedFlagMentor() {
                       <div>
                         <label className="mb-1 block text-xs font-bold uppercase text-slate-500">환자 선택</label>
                         <select
-                          name="patient"
-                          value={formData.patient}
+                          name="patientId"
+                          value={formData.patientId}
                           onChange={handleInputChange}
                           className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
                         >
-                          <option value="">환자를 선택하세요</option>
-                          <option value="patient-a">환자 A</option>
-                          <option value="patient-b">환자 B</option>
-                          <option value="patient-c">환자 C</option>
+                          <option value="">{patientsLoading ? "환자 목록 로딩 중..." : "환자를 선택하세요"}</option>
+                          {patients.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.birthDate || "생년월일 미등록"})
+                            </option>
+                          ))}
                         </select>
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-bold uppercase text-slate-500">진단 부위</label>
-                        <input
+                        <select
                           name="diagnosisArea"
                           value={formData.diagnosisArea}
                           onChange={handleInputChange}
-                          placeholder="예: 우측 견갑부"
                           className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
-                        />
+                        >
+                          <option value="">부위를 선택하세요</option>
+                          <option value="neck">Neck (경추)</option>
+                          <option value="shoulder">Shoulder (견관절)</option>
+                          <option value="elbow">Elbow (주관절)</option>
+                          <option value="wrist">Wrist (수관절)</option>
+                          <option value="hand">Hand (수부)</option>
+                          <option value="lumbar">Lumbar (요추)</option>
+                          <option value="hip">Hip (고관절)</option>
+                          <option value="knee">Knee (슬관절)</option>
+                          <option value="ankle">Ankle (족관절)</option>
+                          <option value="foot">Foot (족부)</option>
+                        </select>
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-bold uppercase text-slate-500">출력 언어</label>
@@ -227,6 +343,57 @@ function RedFlagMentor() {
                           <option value="한국어">한국어</option>
                           <option value="영어">영어</option>
                         </select>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(step === 1 || step === 2) && selectedDiagnosisKey ? (
+                    <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">추천 이학적 검사 (Special Tests)</p>
+                      <div className="space-y-3">
+                        {recommendedTests.map((test) => {
+                          const selected = specialTestSelection[test];
+                          return (
+                            <div key={test} className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3 md:flex-row md:items-center md:justify-between">
+                              <p className="text-sm font-semibold text-slate-700">{test}</p>
+                              <div className="grid grid-cols-3 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSpecialTestToggle(test, "positive")}
+                                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                                    selected === "positive"
+                                      ? "border border-rose-200 bg-rose-100 text-rose-700"
+                                      : "border border-slate-200 bg-white text-slate-600 hover:bg-rose-50"
+                                  }`}
+                                >
+                                  양성(+)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSpecialTestToggle(test, "negative")}
+                                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                                    selected === "negative"
+                                      ? "border border-blue-200 bg-blue-100 text-blue-700"
+                                      : "border border-slate-200 bg-white text-slate-600 hover:bg-blue-50"
+                                  }`}
+                                >
+                                  음성(-)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSpecialTestToggle(test, "not_tested")}
+                                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                                    selected === "not_tested"
+                                      ? "border border-slate-300 bg-slate-200 text-slate-700"
+                                      : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  미실시
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ) : null}
