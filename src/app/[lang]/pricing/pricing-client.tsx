@@ -11,7 +11,7 @@ declare global {
 }
 
 const NICEPAY_PRIMARY_SDK_URL = "https://web.nicepay.co.kr/v3/v3.js";
-const NICEPAY_FALLBACK_SDK_URL = "https://pg-sdk.nicepay.co.kr/v1/js/nicepay.js";
+const NICEPAY_FALLBACK_SDK_URL = "https://pg-web.nicepay.co.kr/v3/common/js/nicepay-pgweb.js";
 
 type PricingDict = {
   pricing: {
