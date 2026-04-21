@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import type { Json } from "@/types/supabase-generated";
 
 type ShareBody = {
   mode?: "challenge" | "defense_tip";
@@ -37,11 +38,10 @@ export async function POST(request: Request) {
 
     const { error } = await supabase.from("community_posts").insert({
       author_id: user.id,
-      title: content.challengeTitle,
-      content,
+      content: content as unknown as Json,
       likes: 0,
       views: 0,
-    });
+    } as any);
     if (error) {
       console.error("community/report-share insert:", error);
       return NextResponse.json({ success: false, message: "커뮤니티 저장 실패" }, { status: 500 });
