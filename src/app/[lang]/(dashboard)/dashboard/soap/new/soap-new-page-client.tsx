@@ -642,15 +642,21 @@ function RedFlagMentor() {
   const currentField = STEP_FIELD_MAP[step];
   const currentValue = formData[currentField];
   const selectedDiagnosisKey = resolveDiagnosisKey(formData.diagnosisArea);
-  const recommendedTests = selectedDiagnosisKey ? SPECIAL_TESTS_DB[selectedDiagnosisKey] : [];
-  const selectedRegionEvidence = selectedDiagnosisKey ? REGION_EVIDENCE_DB[selectedDiagnosisKey] : null;
+  const recommendedTests = selectedDiagnosisKey
+    ? SPECIAL_TESTS_DB[selectedDiagnosisKey as keyof typeof SPECIAL_TESTS_DB]
+    : [];
+  const selectedRegionEvidence = selectedDiagnosisKey
+    ? REGION_EVIDENCE_DB[selectedDiagnosisKey as keyof typeof REGION_EVIDENCE_DB]
+    : null;
   const selectedTbcOptions = selectedDiagnosisKey
-    ? JOSPT_TBC_DB[selectedDiagnosisKey] ?? selectedRegionEvidence?.tbc ?? []
+    ? JOSPT_TBC_DB[selectedDiagnosisKey as keyof typeof JOSPT_TBC_DB] ?? selectedRegionEvidence?.tbc ?? []
     : [];
   const selectedOutcomeOptions = selectedDiagnosisKey
-    ? JOSPT_OUTCOME_DB[selectedDiagnosisKey] ?? []
+    ? JOSPT_OUTCOME_DB[selectedDiagnosisKey as keyof typeof JOSPT_OUTCOME_DB] ?? []
     : [];
-  const selectedIcfOptions = selectedDiagnosisKey ? JOSPT_ICF_DB[selectedDiagnosisKey] ?? null : null;
+  const selectedIcfOptions = selectedDiagnosisKey
+    ? JOSPT_ICF_DB[selectedDiagnosisKey as keyof typeof JOSPT_ICF_DB] ?? null
+    : null;
 
   useEffect(() => {
     const lines = [

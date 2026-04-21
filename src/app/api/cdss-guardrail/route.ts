@@ -472,7 +472,7 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
             status: item.level === "green" ? "pass" : "warning",
           };
         })
-        .filter((v): v is GuardrailResponse["cpgAlerts"][number] => Boolean(v))
+        .filter((v): v is { type: string; text: string; status: string } => Boolean(v))
     : [];
   const mappedReasoning = [
     typeof data.logicChainAudit?.feedback === "string" ? data.logicChainAudit.feedback : "",
