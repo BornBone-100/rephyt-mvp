@@ -21,7 +21,7 @@ type GuardrailResponse = {
   cpgAlerts: Array<{
     type: string;
     text: string;
-    status: "pass" | "warning";
+    status?: string | null;
   }>;
   clinicalReasoning: string;
   nextSteps: string[];
@@ -441,16 +441,17 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
     status: typeof data.status === "string" && data.status.trim() ? data.status : "Needs Review",
     cpgAlerts: Array.isArray(data.cpgAlerts ?? data.alerts)
       ? (data.cpgAlerts ?? data.alerts ?? [])
-          .map((item) => {
+          .flatMap((item) => {
             const alert = item as { type?: string; text?: string; status?: string };
-            if (!alert?.type || !alert?.text) return null;
-            return {
-              type: coerceAlertType(alert.type),
-              text: alert.text,
-              status: alert.status === "pass" ? "pass" : "warning",
-            };
+            if (!alert?.type || !alert?.text) return [];
+            return [
+              {
+                type: coerceAlertType(alert.type),
+                text: alert.text,
+                status: alert.status || "warning",
+              },
+            ];
           })
-          .filter((x): x is GuardrailResponse["cpgAlerts"][number] => Boolean(x))
       : [],
     clinicalReasoning:
       typeof (data.clinicalReasoning ?? data.reasoning) === "string" && (data.clinicalReasoning ?? data.reasoning)?.trim()
