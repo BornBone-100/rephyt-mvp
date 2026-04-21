@@ -95,7 +95,23 @@ export default async function SoapDetailPage({
 
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-zinc-900">{copy.title}</h1>
-          <SOAPExportButton targetId="soap-paper" fileName={pdfBaseName} />
+          <SOAPExportButton
+            fileName={pdfBaseName}
+            payload={{
+              patient: {
+                patientId: note.patient_id,
+                name: patientName,
+                visitDate: note.created_at,
+              },
+              soap: {
+                subjective: note.subjective?.trim() || "",
+                objective: note.objective?.trim() || "",
+                assessment: note.assessment?.trim() || "",
+                plan: note.plan?.trim() || "",
+              },
+              title: "Re:PhyT Pro Global Chart",
+            }}
+          />
         </div>
 
         <div

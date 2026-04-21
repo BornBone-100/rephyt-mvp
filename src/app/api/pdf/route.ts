@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import { z } from "zod";
 import { soapNoteSchema, patientSchema } from "@/features/soap/schema";
 
@@ -9,14 +10,32 @@ const requestSchema = z.object({
   title: z.string().optional(),
 });
 
+const KOREAN_FONT_URL =
+  "https://cdn.jsdelivr.net/gh/google/fonts/ofl/notosanskr/NotoSansKR-Regular.ttf";
+let koreanFontBytesPromise: Promise<ArrayBuffer> | null = null;
+
+async function getKoreanFontBytes() {
+  if (!koreanFontBytesPromise) {
+    koreanFontBytesPromise = fetch(KOREAN_FONT_URL).then(async (res) => {
+      if (!res.ok) {
+        throw new Error(`Failed to fetch Korean font: ${res.status}`);
+      }
+      return res.arrayBuffer();
+    });
+  }
+  return koreanFontBytesPromise;
+}
+
 export async function POST(req: Request) {
   try {
     const json = await req.json();
     const input = requestSchema.parse(json);
 
     const pdfDoc = await PDFDocument.create();
+    pdfDoc.registerFontkit(fontkit);
     let page = pdfDoc.addPage([595.28, 841.89]); // A4 (pt)
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBytes = await getKoreanFontBytes();
+    const font = await pdfDoc.embedFont(fontBytes);
 
     const margin = 48;
     let y = 841.89 - margin;
