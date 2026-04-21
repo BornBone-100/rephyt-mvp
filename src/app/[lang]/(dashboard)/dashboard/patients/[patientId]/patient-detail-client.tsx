@@ -92,6 +92,7 @@ export function PatientDetailClient({ dict }: Props) {
   const [newTreatment, setNewTreatment] = useState("");
   const [isSubmittingTreatment, setIsSubmittingTreatment] = useState(false);
   const [didTouchTreatmentInput, setDidTouchTreatmentInput] = useState(false);
+  const [draftFromScreening, setDraftFromScreening] = useState<string>("");
 
   const fetchPatientAndRecords = useCallback(async () => {
     if (!patientId || patientId === "null" || patientId === "undefined") {
@@ -133,10 +134,27 @@ export function PatientDetailClient({ dict }: Props) {
   const cautionFromLatestSoap = useMemo(() => extractCautionNote(latestSoap), [latestSoap]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !patientId) return;
+    try {
+      const raw = window.localStorage.getItem(`rephyt:treatment-draft:${patientId}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { content?: string; cautions?: string[] };
+      const cautionLines = (parsed.cautions ?? []).map((line) => `[주의사항] ${line}`);
+      const merged = [parsed.content ?? "", ...cautionLines].filter(Boolean).join("\n");
+      setDraftFromScreening(merged);
+    } catch (error) {
+      console.error("treatment draft parse error:", error);
+    }
+  }, [patientId]);
+
+  useEffect(() => {
     if (activeTab !== "treatment") return;
     if (didTouchTreatmentInput) return;
     if (newTreatment.trim()) return;
     const lines = [autoPlanPrefill];
+    if (draftFromScreening) {
+      lines.unshift(draftFromScreening);
+    }
     if (cautionFromLatestSoap) {
       lines.push(`[주의사항] ${cautionFromLatestSoap}`);
     }
@@ -144,7 +162,7 @@ export function PatientDetailClient({ dict }: Props) {
     if (prefill) {
       setNewTreatment(prefill);
     }
-  }, [activeTab, autoPlanPrefill, cautionFromLatestSoap, didTouchTreatmentInput, newTreatment]);
+  }, [activeTab, autoPlanPrefill, cautionFromLatestSoap, didTouchTreatmentInput, draftFromScreening, newTreatment]);
 
   const handleAddTreatment = async () => {
     if (!newTreatment.trim()) return;

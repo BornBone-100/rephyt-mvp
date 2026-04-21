@@ -33,6 +33,7 @@ type FormData = {
   evaluation: string;
   prognosis: string;
   intervention: string;
+  todayTreatment: string;
 };
 
 type ExamOnset = "급성(Acute)" | "아급성(Subacute)" | "만성(Chronic)";
@@ -260,6 +261,14 @@ type IcfSelectionState = {
   participation: string[];
 };
 
+type GuardrailPayload = {
+  examination: string;
+  evaluation: string;
+  prognosis: string;
+  intervention: string;
+  language: string;
+};
+
 function resolveDiagnosisKey(raw: string): keyof typeof SPECIAL_TESTS_DB | null {
   const v = raw.trim().split(" ")[0].toLowerCase();
   if (!v) return null;
@@ -284,6 +293,29 @@ function appendUniqueLine(text: string, line: string) {
   if (lines.includes(line)) return trimmed;
   return `${trimmed}\n${line}`;
 }
+
+const formatPlanToTreatment = (
+  manualEntries: ManualTherapyEntry[],
+  exerciseEntries: TherapeuticExerciseEntry[],
+  modalityEntries: ModalityEntry[],
+  educationHep: string,
+) => {
+  const manualLines = manualEntries.map(
+    (m) => `[Manual] ${m.name} ${m.grade} (${m.minutes || "-"}min)`,
+  );
+  const exerciseLines = exerciseEntries.map(
+    (e) => `[Exercise] ${e.name} ${e.sets || "-"}sets/${e.reps || "-"}reps${e.holdSec ? `/${e.holdSec}s` : ""}`,
+  );
+  const modalityLines = modalityEntries.map(
+    (m) => `[Modalities] ${m.modality} (${m.target || "-"})`,
+  );
+  const educationLines = educationHep
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `[Education] ${line}`);
+  return [...manualLines, ...exerciseLines, ...modalityLines, ...educationLines].join("\n");
+};
 
 function removeExactLine(text: string, line: string) {
   const lines = text
@@ -402,6 +434,7 @@ function RedFlagMentor() {
     evaluation: "",
     prognosis: "",
     intervention: "",
+    todayTreatment: "",
   });
   const [examDraft, setExamDraft] = useState<ExamDraft>({
     chiefComplaint: "",
@@ -618,13 +651,27 @@ function RedFlagMentor() {
     setModalityDraft((prev) => ({ ...prev, target: "" }));
   };
 
-  const handleVerifyRedFlag = async () => {
+  const handleAnalyze = async () => {
     setIsLoading(true);
     try {
+      const treatmentText = formatPlanToTreatment(
+        manualEntries,
+        exerciseEntries,
+        modalityEntries,
+        educationHep,
+      );
+      setFormData((prev) => ({ ...prev, todayTreatment: treatmentText }));
+      const payload: GuardrailPayload = {
+        examination: formData.examination.trim(),
+        evaluation: formData.evaluation.trim(),
+        prognosis: formData.prognosis.trim(),
+        intervention: treatmentText || formData.intervention.trim(),
+        language: formData.language,
+      };
       const res = await fetch("/api/cdss-guardrail", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -635,6 +682,20 @@ function RedFlagMentor() {
       const data = (await res.json()) as RedFlagResult;
       setReportResult(data);
       setEvaluationResult(data);
+      if (typeof window !== "undefined" && formData.patientId) {
+        const cautionLines =
+          data.cpgCompliance
+            ?.filter((item) => item.level === "yellow" || item.level === "red")
+            .map((item) => `${item.intervention}: ${item.reasoning}`) ?? [];
+        window.localStorage.setItem(
+          `rephyt:treatment-draft:${formData.patientId}`,
+          JSON.stringify({
+            content: treatmentText || formData.intervention.trim(),
+            cautions: cautionLines,
+            updatedAt: new Date().toISOString(),
+          }),
+        );
+      }
     } catch (error) {
       console.error(error);
       alert("Red Flag 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
@@ -1541,7 +1602,7 @@ function RedFlagMentor() {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => void handleVerifyRedFlag()}
+                      onClick={() => void handleAnalyze()}
                       disabled={isLoading}
                       className="flex items-center gap-2 rounded-xl bg-slate-900 px-10 py-4 font-bold text-white shadow-lg shadow-slate-200 transition-all hover:bg-slate-800 disabled:bg-slate-300"
                     >
