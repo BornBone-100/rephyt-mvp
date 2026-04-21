@@ -24,6 +24,9 @@ type Props = {
 };
 
 type FormData = {
+  patient: string;
+  diagnosisArea: string;
+  language: string;
   examination: string;
   evaluation: string;
   prognosis: string;
@@ -71,9 +74,12 @@ const STEP_FIELD_MAP: Record<number, keyof FormData> = {
 function RedFlagMentor() {
   const [step, setStep] = useState(1);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [result, setResult] = useState<RedFlagResult | null>(null);
+  const [evaluationResult, setEvaluationResult] = useState<RedFlagResult | null>(null);
 
   const [formData, setFormData] = useState<FormData>({
+    patient: "",
+    diagnosisArea: "",
+    language: "한국어 + 영문 의학용어",
     examination: "",
     evaluation: "",
     prognosis: "",
@@ -81,6 +87,10 @@ function RedFlagMentor() {
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
@@ -99,7 +109,7 @@ function RedFlagMentor() {
       }
 
       const data = (await res.json()) as RedFlagResult;
-      setResult(data);
+      setEvaluationResult(data);
     } catch (error) {
       console.error(error);
       alert("Red Flag 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
@@ -109,15 +119,15 @@ function RedFlagMentor() {
   };
 
   const sendFeedback = async (feedbackType: "true_positive" | "false_positive" | "false_negative") => {
-    if (!result?.detectionMeta) return;
+    if (!evaluationResult?.detectionMeta) return;
     try {
       await fetch("/api/cdss-guardrail/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           feedbackType,
-          detectedConditionId: result.detectionMeta.conditionId,
-          matchedAliases: result.detectionMeta.matchedAliases,
+          detectedConditionId: evaluationResult.detectionMeta.conditionId,
+          matchedAliases: evaluationResult.detectionMeta.matchedAliases,
         }),
       });
     } catch (error) {
@@ -152,7 +162,7 @@ function RedFlagMentor() {
       <div className="grid flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_520px]">
         <div className="overflow-y-auto p-8">
           <div className="mx-auto max-w-4xl">
-          {!result ? (
+          {!evaluationResult ? (
             <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
               <div className="flex border-b border-slate-100">
                 {steps.map((s) => (
@@ -178,6 +188,48 @@ function RedFlagMentor() {
                   <p className="mb-6 text-sm text-slate-500">
                     입력된 임상 논리를 분석하여 치명적인 Medical Red Flag를 스크리닝합니다.
                   </p>
+
+                  {step === 1 ? (
+                    <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-bold uppercase text-slate-500">환자 선택</label>
+                        <select
+                          name="patient"
+                          value={formData.patient}
+                          onChange={handleInputChange}
+                          className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                        >
+                          <option value="">환자를 선택하세요</option>
+                          <option value="patient-a">환자 A</option>
+                          <option value="patient-b">환자 B</option>
+                          <option value="patient-c">환자 C</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-bold uppercase text-slate-500">진단 부위</label>
+                        <input
+                          name="diagnosisArea"
+                          value={formData.diagnosisArea}
+                          onChange={handleInputChange}
+                          placeholder="예: 우측 견갑부"
+                          className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-bold uppercase text-slate-500">출력 언어</label>
+                        <select
+                          name="language"
+                          value={formData.language}
+                          onChange={handleInputChange}
+                          className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                        >
+                          <option value="한국어 + 영문 의학용어">한국어 + 영문 의학용어</option>
+                          <option value="한국어">한국어</option>
+                          <option value="영어">영어</option>
+                        </select>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <textarea
                     name={currentField}
@@ -230,7 +282,7 @@ function RedFlagMentor() {
             </div>
           ) : (
             <div className="animate-in zoom-in-95 space-y-6 fade-in duration-500">
-              {result.hasRedFlag ? (
+              {evaluationResult.hasRedFlag ? (
                 <div className="relative overflow-hidden rounded-3xl border-2 border-rose-500 bg-white shadow-2xl">
                   <div className="absolute left-0 top-0 h-2 w-full animate-pulse bg-rose-600" />
 
@@ -239,10 +291,10 @@ function RedFlagMentor() {
                       <AlertOctagon className="h-12 w-12 text-rose-600" />
                     </div>
                     <h3 className="mb-2 text-sm font-black uppercase tracking-widest text-rose-600">
-                      {result.criticalAlert?.title ?? "MEDICAL REFERRAL REQUIRED"}
+                      {evaluationResult.criticalAlert?.title ?? "MEDICAL REFERRAL REQUIRED"}
                     </h3>
                     <div className="text-3xl font-black text-slate-900">
-                      {result.criticalAlert?.suspectedCondition ?? "의학적 감별 필요 상태"}
+                      {evaluationResult.criticalAlert?.suspectedCondition ?? "의학적 감별 필요 상태"}
                     </div>
                   </div>
 
@@ -261,7 +313,7 @@ function RedFlagMentor() {
                         <Activity className="h-5 w-5 text-rose-500" /> 감별 진단 근거 (Clinical Reasoning)
                       </h4>
                       <p className="text-sm leading-relaxed text-slate-600">
-                        {result.criticalAlert?.reason ?? result.clinicalReasoning}
+                        {evaluationResult.criticalAlert?.reason ?? evaluationResult.clinicalReasoning}
                       </p>
                     </div>
 
@@ -270,13 +322,13 @@ function RedFlagMentor() {
                         <MedicIcon className="h-5 w-5" /> 즉각적 행동 지침 (Action Required)
                       </h4>
                       <p className="text-sm font-medium leading-relaxed text-slate-200">
-                        {result.criticalAlert?.action ?? "물리치료를 보류하고 관련 진료과 의뢰를 우선 진행하세요."}
+                        {evaluationResult.criticalAlert?.action ?? "물리치료를 보류하고 관련 진료과 의뢰를 우선 진행하세요."}
                       </p>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => setResult(null)}
+                      onClick={() => setEvaluationResult(null)}
                       className="mt-4 w-full rounded-xl bg-rose-100 py-4 font-bold text-rose-700 transition-all hover:bg-rose-200"
                     >
                       의뢰 완료 및 새 케이스 스크리닝
@@ -313,7 +365,7 @@ function RedFlagMentor() {
                   <p className="mt-2 text-slate-500">입력하신 데이터에서 명확한 내과적 응급상황은 발견되지 않았습니다.</p>
                   <button
                     type="button"
-                    onClick={() => setResult(null)}
+                    onClick={() => setEvaluationResult(null)}
                     className="mt-8 rounded-xl bg-slate-100 px-8 py-3 font-bold text-slate-600"
                   >
                     새로 검증하기
@@ -349,14 +401,14 @@ function RedFlagMentor() {
         </div>
         <DashboardRightPanel
           result={
-            result
+            evaluationResult
               ? {
-                  hasRedFlag: result.hasRedFlag,
-                  criticalAlert: result.criticalAlert ?? null,
-                  clinicalReasoning: result.clinicalReasoning,
-                  overallScore: result.overallScore ?? result.complianceScore ?? 0,
-                  trafficLightFeedback: result.trafficLightFeedback ?? [],
-                  evidenceBasedAlternatives: result.evidenceBasedAlternatives ?? [],
+                  hasRedFlag: evaluationResult.hasRedFlag,
+                  criticalAlert: evaluationResult.criticalAlert ?? null,
+                  clinicalReasoning: evaluationResult.clinicalReasoning,
+                  overallScore: evaluationResult.overallScore ?? evaluationResult.complianceScore ?? 0,
+                  trafficLightFeedback: evaluationResult.trafficLightFeedback ?? [],
+                  evidenceBasedAlternatives: evaluationResult.evidenceBasedAlternatives ?? [],
                 }
               : null
           }

@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle, AlertTriangle, Octagon, Lightbulb, BookOpen, Award, ChevronRight, Siren } from "lucide-react";
+import { CheckCircle, AlertTriangle, Octagon, Lightbulb, BookOpen, Award, ChevronRight, Siren, Sparkles } from "lucide-react";
 
 type TrafficLightItem = {
   level: "green" | "yellow" | "red";
@@ -33,42 +33,29 @@ type Props = {
   result?: DashboardResult | null;
 };
 
-const MOCK_RESULT: DashboardResult = {
-  overallScore: 85,
-  trafficLightFeedback: [
-    {
-      level: "green",
-      title: "High-Value Care (우수)",
-      description: "Windlass 검사와 발목 가동성 평가를 통해 족저근막염의 핵심 기능 장애를 정확히 타겟팅했습니다.",
-    },
-    {
-      level: "yellow",
-      title: "Low-Value Care Alert (주의)",
-      description: "계획하신 [초음파 치료 15분]은 JOSPT 가이드라인 상 족저근막염에 임상적 이득이 없습니다 (Level C).",
-    },
-  ],
-  evidenceBasedAlternatives: [
-    {
-      type: "intervention",
-      title: "초음파 치료 대신 [Low-Dye 테이핑] 적용",
-      description: "초기 통증 조절을 위해 초음파 대신 Low-Dye 테이핑을 1-2주간 적용하는 것이 단기 통증 감소에 훨씬 효과적입니다.",
-      citation: "JOSPT 2014 CPG: Heel Pain - Plantar Fasciitis (Level A)",
-    },
-    {
-      type: "intervention",
-      title: "[Heavy Slow Resistance] 운동 추가",
-      description: "단순 스트레칭을 넘어, 고부하의 점진적 저항 운동을 추가하여 근막의 구조적 적응을 유도하세요.",
-      citation: "Kongsgaard et al., 2009 (Level B)",
-    },
-  ],
-};
-
 export default function DashboardRightPanel({ result }: Props) {
-  const data = result ?? MOCK_RESULT;
+  if (!result) {
+    return (
+      <div className="h-full w-full overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans lg:p-10">
+        <div className="flex h-full min-h-[420px] items-center justify-center rounded-3xl border border-slate-200 bg-white px-8 text-center shadow-sm">
+          <div className="max-w-sm">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+              <Sparkles className="h-7 w-7 text-slate-400" />
+            </div>
+            <p className="text-sm font-semibold leading-relaxed text-slate-500">
+              좌측 폼에 환자 데이터를 입력하고 AI 분석을 요청해 주세요.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const data = result;
   const isReferralPriority = Boolean(data.hasRedFlag);
 
   return (
-    <div className="h-full w-full overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans lg:p-10">
+    <div className="h-full w-full animate-in fade-in overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans duration-300 lg:p-10">
       {isReferralPriority ? (
         <div className="mb-8 rounded-3xl border-2 border-rose-300 bg-rose-50 p-8 shadow-sm">
           <h2 className="flex items-center gap-2 text-xl font-black text-rose-700">
