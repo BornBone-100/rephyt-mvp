@@ -10,6 +10,8 @@ declare global {
   }
 }
 
+const NICEPAY_SDK_URL = "https://pg-sdk.nicepay.co.kr/v1/js/nicepay.js";
+
 type PricingDict = {
   pricing: {
     title: string;
@@ -34,8 +36,6 @@ export function PricingClient({ dict, lang }: Props) {
   const [finalAmount] = useState(5900);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isKoPayLoading, setIsKoPayLoading] = useState(false);
-  const [isNicepayReady, setIsNicepayReady] = useState(false);
-  const [nicepayLoadError, setNicepayLoadError] = useState<string | null>(null);
   const supabase = createClient();
   const envMid = process.env.NEXT_PUBLIC_NICEPAY_MID?.trim();
   const niceMid = envMid || "nictest00m";
@@ -52,22 +52,6 @@ export function PricingClient({ dict, lang }: Props) {
     void getUser();
   }, [supabase]);
 
-  useEffect(() => {
-    if (currentLang !== "ko") return;
-    setNicepayLoadError(null);
-    if (window.nicepayStart) {
-      setIsNicepayReady(true);
-      return;
-    }
-    const timer = window.setInterval(() => {
-      if (window.nicepayStart) {
-        setIsNicepayReady(true);
-        window.clearInterval(timer);
-      }
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [currentLang]);
-
   const getUser = async () => {
     const {
       data: { user },
@@ -78,22 +62,26 @@ export function PricingClient({ dict, lang }: Props) {
   const loadNicepayScript = () =>
     new Promise<boolean>((resolve) => {
       if (window.nicepayStart) {
-        setIsNicepayReady(true);
         resolve(true);
         return;
       }
 
       const existing = document.querySelector<HTMLScriptElement>(
-        'script[src="https://web.nicepay.co.kr/v3/v3.js"]',
+        `script[src="${NICEPAY_SDK_URL}"]`,
       );
       if (existing) {
+        // 이미 로드된 스크립트라면 즉시 성공 처리
+        if (window.nicepayStart) {
+          resolve(true);
+          return;
+        }
         existing.addEventListener("load", () => resolve(true), { once: true });
         existing.addEventListener("error", () => resolve(false), { once: true });
         return;
       }
 
       const script = document.createElement("script");
-      script.src = "https://web.nicepay.co.kr/v3/v3.js";
+      script.src = NICEPAY_SDK_URL;
       script.async = true;
       script.onload = () => resolve(true);
       script.onerror = () => resolve(false);
@@ -104,16 +92,12 @@ export function PricingClient({ dict, lang }: Props) {
     const loaded = await loadNicepayScript();
     if (!loaded) return false;
 
-    if (window.nicepayStart) {
-      setIsNicepayReady(true);
-      return true;
-    }
+    if (window.nicepayStart) return true;
 
     return new Promise<boolean>((resolve) => {
       const startedAt = Date.now();
       const timer = window.setInterval(() => {
         if (window.nicepayStart) {
-          setIsNicepayReady(true);
           window.clearInterval(timer);
           resolve(true);
           return;
@@ -124,14 +108,6 @@ export function PricingClient({ dict, lang }: Props) {
         }
       }, 100);
     });
-  };
-
-  const retryNicepayLoad = async () => {
-    setNicepayLoadError(null);
-    const ready = await waitForNicepay();
-    if (!ready) {
-      setNicepayLoadError("네트워크 환경을 확인해 주세요");
-    }
   };
 
   const handleSubscribe = async () => {
@@ -152,16 +128,13 @@ export function PricingClient({ dict, lang }: Props) {
 
     if (currentLang === "ko") {
       setIsKoPayLoading(true);
-      setNicepayLoadError(null);
       if (!envMid) {
         console.warn("NEXT_PUBLIC_NICEPAY_MID is missing. Falling back to test MID(nictest00m).");
       }
       const ready = await waitForNicepay();
       if (!ready || !window.nicepayStart) {
         setIsKoPayLoading(false);
-        setIsNicepayReady(false);
-        setNicepayLoadError("네트워크 환경을 확인해 주세요");
-        alert("네트워크 환경을 확인해 주세요");
+        alert("결제 모듈을 불러올 수 없습니다. 네트워크 설정을 확인해 주세요.");
         return;
       }
 
@@ -348,25 +321,6 @@ export function PricingClient({ dict, lang }: Props) {
             </div>
           ))}
         </div>
-
-        {currentLang === "ko" && !isNicepayReady ? (
-          <div className="mt-6 inline-flex flex-col items-start gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
-            <span className="inline-flex items-center gap-2">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-300 border-t-transparent" />
-              결제 모듈을 불러오는 중입니다
-            </span>
-            {nicepayLoadError ? (
-              <span className="text-rose-600">{nicepayLoadError}</span>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => void retryNicepayLoad()}
-              className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-900 transition hover:bg-blue-100"
-            >
-              다시 시도
-            </button>
-          </div>
-        ) : null}
 
         <div className="mt-20 text-left bg-white p-8 rounded-[2rem] border border-zinc-100 shadow-sm">
           <h4 className="text-zinc-800 text-sm font-bold mb-4">결제 및 환불 안내 (전자상거래법 기준)</h4>
