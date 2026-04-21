@@ -185,24 +185,32 @@ function SoapContent({ dict }: Props) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const { error } = await supabase.from("soap_notes").insert([
-      {
-        patient_id: selectedPatientId,
-        created_by: user?.id,
-        joint: selectedJoint,
-        pain_scale: parseInt(painScale, 10),
-        subjective: soapData.subjective,
-        objective: soapData.objective,
-        assessment: soapData.assessment,
-        plan: soapData.plan,
-        created_at: new Date(treatmentDate).toISOString(),
-      },
-    ]);
+    const { data: inserted, error } = await supabase
+      .from("soap_notes")
+      .insert([
+        {
+          patient_id: selectedPatientId,
+          created_by: user?.id,
+          joint: selectedJoint,
+          pain_scale: parseInt(painScale, 10),
+          subjective: soapData.subjective,
+          objective: soapData.objective,
+          assessment: soapData.assessment,
+          plan: soapData.plan,
+          created_at: new Date(treatmentDate).toISOString(),
+        },
+      ])
+      .select("id")
+      .single();
 
     if (error) alert(d.alertSaveFailed);
     else {
       alert(d.alertSaveOk);
-      router.push(`${base}/dashboard/patients/${selectedPatientId}`);
+      if (inserted?.id) {
+        router.push(`${base}/dashboard/soap/${inserted.id}`);
+      } else {
+        router.push(`${base}/dashboard/patients/${selectedPatientId}`);
+      }
     }
     setIsSaving(false);
   };
