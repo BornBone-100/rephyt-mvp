@@ -10,7 +10,8 @@ declare global {
   }
 }
 
-const NICEPAY_SDK_URL = "https://pg-sdk.nicepay.co.kr/v1/js/nicepay.js";
+const NICEPAY_PRIMARY_SDK_URL = "https://web.nicepay.co.kr/v3/v3.js";
+const NICEPAY_FALLBACK_SDK_URL = "https://pg-sdk.nicepay.co.kr/v1/js/nicepay.js";
 
 type PricingDict = {
   pricing: {
@@ -59,18 +60,10 @@ export function PricingClient({ dict, lang }: Props) {
     return user;
   };
 
-  const loadNicepayScript = () =>
+  const loadScriptByUrl = (url: string) =>
     new Promise<boolean>((resolve) => {
-      if (window.nicepayStart) {
-        resolve(true);
-        return;
-      }
-
-      const existing = document.querySelector<HTMLScriptElement>(
-        `script[src="${NICEPAY_SDK_URL}"]`,
-      );
+      const existing = document.querySelector<HTMLScriptElement>(`script[src="${url}"]`);
       if (existing) {
-        // 이미 로드된 스크립트라면 즉시 성공 처리
         if (window.nicepayStart) {
           resolve(true);
           return;
@@ -81,12 +74,22 @@ export function PricingClient({ dict, lang }: Props) {
       }
 
       const script = document.createElement("script");
-      script.src = NICEPAY_SDK_URL;
+      script.src = url;
       script.async = true;
       script.onload = () => resolve(true);
       script.onerror = () => resolve(false);
       document.head.appendChild(script);
     });
+
+  const loadNicepayScript = async () => {
+    if (window.nicepayStart) return true;
+
+    const loadedPrimary = await loadScriptByUrl(NICEPAY_PRIMARY_SDK_URL);
+    if (loadedPrimary && window.nicepayStart) return true;
+
+    const loadedFallback = await loadScriptByUrl(NICEPAY_FALLBACK_SDK_URL);
+    return loadedFallback && !!window.nicepayStart;
+  };
 
   const waitForNicepay = async () => {
     const loaded = await loadNicepayScript();
