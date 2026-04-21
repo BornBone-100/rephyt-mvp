@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import Script from "next/script";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
@@ -11,7 +12,6 @@ declare global {
 }
 
 const NICEPAY_PRIMARY_SDK_URL = "https://web.nicepay.co.kr/v3/v3.js";
-const NICEPAY_FALLBACK_SDK_URL = "https://pg-web.nicepay.co.kr/v3/common/js/nicepay-pgweb.js";
 
 type PricingDict = {
   pricing: {
@@ -37,6 +37,7 @@ export function PricingClient({ dict, lang }: Props) {
   const [finalAmount] = useState(5900);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isKoPayLoading, setIsKoPayLoading] = useState(false);
+  const [isNicepayLoaded, setIsNicepayLoaded] = useState(false);
   const supabase = createClient();
   const envMid = process.env.NEXT_PUBLIC_NICEPAY_MID?.trim();
   const niceMid = envMid || "nictest00m";
@@ -53,64 +54,17 @@ export function PricingClient({ dict, lang }: Props) {
     void getUser();
   }, [supabase]);
 
+  useEffect(() => {
+    if (typeof window !== "undefined" && typeof window.nicepayStart === "function") {
+      setIsNicepayLoaded(true);
+    }
+  }, []);
+
   const getUser = async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
     return user;
-  };
-
-  const loadScriptByUrl = (url: string) =>
-    new Promise<boolean>((resolve) => {
-      const existing = document.querySelector<HTMLScriptElement>(`script[src="${url}"]`);
-      if (existing) {
-        if (window.nicepayStart) {
-          resolve(true);
-          return;
-        }
-        existing.addEventListener("load", () => resolve(true), { once: true });
-        existing.addEventListener("error", () => resolve(false), { once: true });
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.src = url;
-      script.async = true;
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.head.appendChild(script);
-    });
-
-  const loadNicepayScript = async () => {
-    if (window.nicepayStart) return true;
-
-    const loadedPrimary = await loadScriptByUrl(NICEPAY_PRIMARY_SDK_URL);
-    if (loadedPrimary && window.nicepayStart) return true;
-
-    const loadedFallback = await loadScriptByUrl(NICEPAY_FALLBACK_SDK_URL);
-    return loadedFallback && !!window.nicepayStart;
-  };
-
-  const waitForNicepay = async () => {
-    const loaded = await loadNicepayScript();
-    if (!loaded) return false;
-
-    if (window.nicepayStart) return true;
-
-    return new Promise<boolean>((resolve) => {
-      const startedAt = Date.now();
-      const timer = window.setInterval(() => {
-        if (window.nicepayStart) {
-          window.clearInterval(timer);
-          resolve(true);
-          return;
-        }
-        if (Date.now() - startedAt >= 5000) {
-          window.clearInterval(timer);
-          resolve(false);
-        }
-      }, 100);
-    });
   };
 
   const handleSubscribe = async () => {
@@ -134,8 +88,7 @@ export function PricingClient({ dict, lang }: Props) {
       if (!envMid) {
         console.warn("NEXT_PUBLIC_NICEPAY_MID is missing. Falling back to test MID(nictest00m).");
       }
-      const ready = await waitForNicepay();
-      if (!ready || !window.nicepayStart) {
+      if (!isNicepayLoaded || !window.nicepayStart) {
         setIsKoPayLoading(false);
         alert("결제 모듈을 불러올 수 없습니다. 네트워크 설정을 확인해 주세요.");
         return;
@@ -268,6 +221,12 @@ export function PricingClient({ dict, lang }: Props) {
 
   return (
     <div className="min-h-screen bg-zinc-50 py-20 px-6 relative">
+      <Script
+        src={NICEPAY_PRIMARY_SDK_URL}
+        strategy="lazyOnload"
+        onLoad={() => setIsNicepayLoaded(true)}
+        onError={() => setIsNicepayLoaded(false)}
+      />
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16 space-y-4">
           <h1 className="text-4xl md:text-5xl font-black text-blue-950 tracking-tight">서비스 요금제 안내</h1>
