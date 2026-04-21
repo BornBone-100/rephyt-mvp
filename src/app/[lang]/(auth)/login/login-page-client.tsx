@@ -21,6 +21,7 @@ function LoginForm({ dict }: Props) {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState<"signin" | "signup" | null>(null);
+  const [resetLoading, setResetLoading] = useState(false);
   const [needsEmailConfirm, setNeedsEmailConfirm] = useState(false);
   const [cooldownSec, setCooldownSec] = useState(0);
 
@@ -116,6 +117,30 @@ function LoginForm({ dict }: Props) {
     setStatus(a.resendSuccess);
   };
 
+  const sendResetPasswordEmail = async () => {
+    if (resetLoading || loading !== null) return;
+    if (!email.trim()) {
+      setStatus(a.resetNeedEmail);
+      return;
+    }
+
+    setResetLoading(true);
+    setStatus(null);
+
+    const redirectTo =
+      typeof window !== "undefined" ? `${window.location.origin}/${lang}/reset-password` : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo,
+    });
+    setResetLoading(false);
+
+    if (error) {
+      setStatus(error.message || a.resetFailed);
+      return;
+    }
+    setStatus(a.resetSent);
+  };
+
   return (
     <main className="min-h-screen bg-zinc-50">
       <div className="mx-auto flex min-h-screen w-full max-w-md items-center px-6 py-12">
@@ -172,6 +197,15 @@ function LoginForm({ dict }: Props) {
                   : a.signupBtn}
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => void sendResetPasswordEmail()}
+            disabled={resetLoading || loading !== null}
+            className="mt-3 text-sm font-medium text-blue-900 underline-offset-2 transition hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {resetLoading ? a.resetSending : a.forgotPassword}
+          </button>
 
           {status ? (
             <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

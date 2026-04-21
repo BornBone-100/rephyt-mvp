@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import type { getDictionary } from "@/dictionaries/getDictionary";
+import ChangePassword from "@/components/auth/ChangePassword";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -164,6 +165,25 @@ export function SettingsPageClient({ dict }: Props) {
             {s.changePaymentButton}
           </Link>
         </div>
+      </div>
+
+      <div className="mb-12 rounded-lg border border-zinc-200 bg-gradient-to-br from-white to-zinc-50 p-6 shadow-sm">
+        <p className="mb-4 text-sm text-zinc-500">{s.securityDescription}</p>
+        <ChangePassword
+          copy={{
+            securityTitle: s.securityTitle,
+            newPasswordLabel: s.newPasswordLabel,
+            confirmPasswordLabel: s.confirmPasswordLabel,
+            passwordPlaceholder: s.passwordPlaceholder,
+            passwordConfirmPlaceholder: s.passwordConfirmPlaceholder,
+            passwordRuleHint: s.passwordRuleHint,
+            passwordMismatch: s.passwordMismatch,
+            passwordUpdateButton: s.passwordUpdateButton,
+            passwordUpdating: s.passwordUpdating,
+            passwordUpdated: s.passwordUpdated,
+            passwordUpdateFailedPrefix: s.passwordUpdateFailedPrefix,
+          }}
+        />
       </div>
 
       <div className="mt-16 border-t border-gray-200 pt-8">
