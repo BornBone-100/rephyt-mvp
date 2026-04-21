@@ -261,7 +261,7 @@ type IcfSelectionState = {
 };
 
 function resolveDiagnosisKey(raw: string): keyof typeof SPECIAL_TESTS_DB | null {
-  const v = raw.trim().toLowerCase();
+  const v = raw.trim().split(" ")[0].toLowerCase();
   if (!v) return null;
   return (v in SPECIAL_TESTS_DB ? (v as keyof typeof SPECIAL_TESTS_DB) : null);
 }
@@ -669,21 +669,22 @@ function RedFlagMentor() {
 
   const currentField = STEP_FIELD_MAP[step];
   const currentValue = formData[currentField];
+  const regionKey = formData.diagnosisArea.split(" ")[0].toLowerCase();
   const selectedDiagnosisKey = resolveDiagnosisKey(formData.diagnosisArea);
   const recommendedTests = selectedDiagnosisKey
-    ? SPECIAL_TESTS_DB[selectedDiagnosisKey as keyof typeof SPECIAL_TESTS_DB]
+    ? SPECIAL_TESTS_DB[regionKey as keyof typeof SPECIAL_TESTS_DB] ?? []
     : [];
   const selectedRegionEvidence = selectedDiagnosisKey
-    ? REGION_EVIDENCE_DB[selectedDiagnosisKey as keyof typeof REGION_EVIDENCE_DB]
+    ? REGION_EVIDENCE_DB[regionKey as keyof typeof REGION_EVIDENCE_DB] ?? null
     : null;
   const selectedTbcOptions = selectedDiagnosisKey
-    ? JOSPT_TBC_DB[selectedDiagnosisKey as keyof typeof JOSPT_TBC_DB] ?? selectedRegionEvidence?.tbc ?? []
+    ? JOSPT_TBC_DB[regionKey as keyof typeof JOSPT_TBC_DB] ?? selectedRegionEvidence?.tbc ?? []
     : [];
   const selectedOutcomeOptions = selectedDiagnosisKey
-    ? JOSPT_OUTCOME_DB[selectedDiagnosisKey as keyof typeof JOSPT_OUTCOME_DB] ?? []
+    ? JOSPT_OUTCOME_DB[regionKey as keyof typeof JOSPT_OUTCOME_DB] ?? []
     : [];
   const selectedIcfOptions = selectedDiagnosisKey
-    ? JOSPT_ICF_DB[selectedDiagnosisKey as keyof typeof JOSPT_ICF_DB] ?? null
+    ? JOSPT_ICF_DB[regionKey as keyof typeof JOSPT_ICF_DB] ?? null
     : null;
 
   useEffect(() => {
@@ -1106,8 +1107,8 @@ function RedFlagMentor() {
                         </p>
 
                         <div className="flex flex-wrap gap-2">
-                          {formData.diagnosisArea && JOSPT_TBC_DB[formData.diagnosisArea] ? (
-                            JOSPT_TBC_DB[formData.diagnosisArea].map((tbcTag, idx) => (
+                          {selectedTbcOptions.length > 0 ? (
+                            selectedTbcOptions.map((tbcTag, idx) => (
                               <button
                                 key={`${tbcTag}-${idx}`}
                                 type="button"

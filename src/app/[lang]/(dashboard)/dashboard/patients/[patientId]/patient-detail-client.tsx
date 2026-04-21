@@ -14,6 +14,63 @@ type Props = {
   dict: Dictionary;
 };
 
+function formatPlanToTreatmentLog(plan: string | null): string {
+  if (!plan) return "";
+  const lines = plan
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const formatted: string[] = [];
+
+  for (const line of lines) {
+    if (/^\d+\.\s/.test(line) && line.includes("|")) {
+      const body = line.replace(/^\d+\.\s*/, "");
+      if (body.includes("Grade")) {
+        const [name, grade, minutesRaw] = body.split("|").map((v) => v.trim());
+        const minutes = minutesRaw?.replace("분", "min") ?? "-";
+        formatted.push(`[Manual] ${name} ${grade} (${minutes})`);
+        continue;
+      }
+      if (body.includes("Sets x")) {
+        const [name, volumeRaw] = body.split("|").map((v) => v.trim());
+        const volume = volumeRaw
+          ?.replace(" Sets x ", "sets/")
+          .replace(" Reps", "reps")
+          .replace(/ x Hold .*$/, "")
+          .trim();
+        formatted.push(`[Exercise] ${name} ${volume ?? ""}`.trim());
+        continue;
+      }
+      if (body.includes("적용 부위:")) {
+        const [modality, targetRaw] = body.split("|").map((v) => v.trim());
+        const target = targetRaw?.replace("적용 부위:", "").trim() ?? "-";
+        formatted.push(`[Modalities] ${modality} (${target})`);
+      }
+    } else if (!line.startsWith("[") && line !== "- 없음") {
+      formatted.push(`[Education] ${line}`);
+    }
+  }
+
+  return formatted.join("\n");
+}
+
+function extractCautionNote(note: Tables<"soap_notes"> | null): string | null {
+  if (!note) return null;
+  const raw = [note.ai_generated_note, note.assessment, note.plan]
+    .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+    .join("\n");
+  if (!raw) return null;
+  const cautionLines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        /low-value|missing level a|safety concern|yellow|red|경고|주의|삭감|금기/i.test(line),
+    );
+  if (cautionLines.length === 0) return null;
+  return cautionLines[0];
+}
+
 export function PatientDetailClient({ dict }: Props) {
   const pd = dict.dashboard.patients;
   const params = useParams();
@@ -34,6 +91,7 @@ export function PatientDetailClient({ dict }: Props) {
   
   const [newTreatment, setNewTreatment] = useState("");
   const [isSubmittingTreatment, setIsSubmittingTreatment] = useState(false);
+  const [didTouchTreatmentInput, setDidTouchTreatmentInput] = useState(false);
 
   const fetchPatientAndRecords = useCallback(async () => {
     if (!patientId || patientId === "null" || patientId === "undefined") {
@@ -70,20 +128,47 @@ export function PatientDetailClient({ dict }: Props) {
     void fetchPatientAndRecords();
   }, [fetchPatientAndRecords]);
 
+  const latestSoap = soapNotes[0] ?? null;
+  const autoPlanPrefill = useMemo(() => formatPlanToTreatmentLog(latestSoap?.plan ?? null), [latestSoap?.plan]);
+  const cautionFromLatestSoap = useMemo(() => extractCautionNote(latestSoap), [latestSoap]);
+
+  useEffect(() => {
+    if (activeTab !== "treatment") return;
+    if (didTouchTreatmentInput) return;
+    if (newTreatment.trim()) return;
+    const lines = [autoPlanPrefill];
+    if (cautionFromLatestSoap) {
+      lines.push(`[주의사항] ${cautionFromLatestSoap}`);
+    }
+    const prefill = lines.filter(Boolean).join("\n");
+    if (prefill) {
+      setNewTreatment(prefill);
+    }
+  }, [activeTab, autoPlanPrefill, cautionFromLatestSoap, didTouchTreatmentInput, newTreatment]);
+
   const handleAddTreatment = async () => {
     if (!newTreatment.trim()) return;
     setIsSubmittingTreatment(true);
     const { data: { user } } = await supabase.auth.getUser();
+    const contentToSave = newTreatment.trim();
 
     const { error } = await supabase.from("treatments").insert([{
       patient_id: patientId,
-      content: newTreatment,
+      content: contentToSave,
       created_by: user?.id
     }]);
 
     if (!error) {
       setNewTreatment("");
-      fetchPatientAndRecords();
+      setDidTouchTreatmentInput(false);
+      const optimistic: Tables<"treatments"> = {
+        id: crypto.randomUUID(),
+        patient_id: patientId,
+        content: contentToSave,
+        created_by: user?.id ?? null,
+        created_at: new Date().toISOString(),
+      };
+      setTreatments((prev) => [optimistic, ...prev]);
     } else {
       alert("처치 기록 저장 실패: " + error.message);
     }
@@ -283,7 +368,10 @@ export function PatientDetailClient({ dict }: Props) {
             <div className="flex flex-col gap-4">
               <textarea
                 value={newTreatment}
-                onChange={(e) => setNewTreatment(e.target.value)}
+                onChange={(e) => {
+                  setDidTouchTreatmentInput(true);
+                  setNewTreatment(e.target.value);
+                }}
                 placeholder="오늘 진행한 도수치료 및 운동요법 내용을 상세히 기록하세요... (엔터키 줄바꿈 가능)"
                 className="w-full h-40 rounded-3xl bg-white border-none p-6 text-base shadow-inner focus:ring-2 focus:ring-orange-300 outline-none transition leading-relaxed text-zinc-800"
                 style={{ whiteSpace: "pre-wrap" }}
@@ -331,6 +419,11 @@ export function PatientDetailClient({ dict }: Props) {
                     <p className="text-base font-medium leading-relaxed text-zinc-700" style={{ whiteSpace: "pre-wrap" }}>
                       {treatment.content}
                     </p>
+                    {/\[주의사항\]/.test(treatment.content) ? (
+                      <div className="mt-3 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
+                        주의사항 포함
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* 🗑️ 선명한 버튼식 삭제 버튼 유지 */}

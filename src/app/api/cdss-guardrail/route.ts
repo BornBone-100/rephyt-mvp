@@ -406,10 +406,15 @@ function detectConditionRule(
 }
 
 function parseModelJson(content: string): unknown {
+  const cleaned = content
+    .replace(/^\s*```json\s*/i, "")
+    .replace(/^\s*```\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
   try {
-    return JSON.parse(content);
+    return JSON.parse(cleaned);
   } catch {
-    const matched = content.match(/\{[\s\S]*\}/);
+    const matched = cleaned.match(/\{[\s\S]*\}/);
     if (!matched) return {};
     try {
       return JSON.parse(matched[0]);
@@ -783,32 +788,51 @@ ${intervention}
 }
 `;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.2,
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.2,
+        }),
+      });
+    } catch (fetchError) {
+      console.error("CDSS guardrail fetch error:", {
+        message: fetchError instanceof Error ? fetchError.message : String(fetchError),
+      });
+      return NextResponse.json({ error: "CPG 분석 서버 통신에 실패했습니다." }, { status: 502 });
+    }
 
     if (!response.ok) {
       const text = await response.text();
-      console.error("CDSS guardrail upstream error:", text);
+      console.error("CDSS guardrail upstream error:", {
+        status: response.status,
+        body: text,
+      });
       return NextResponse.json({ error: "CPG 분석 호출에 실패했습니다." }, { status: 502 });
     }
 
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
+    const rawResponseText = await response.text();
+    let data: { choices?: Array<{ message?: { content?: string } }> };
+    try {
+      data = JSON.parse(rawResponseText) as { choices?: Array<{ message?: { content?: string } }> };
+    } catch (parseError) {
+      console.error("CDSS guardrail upstream JSON parse error:", {
+        message: parseError instanceof Error ? parseError.message : String(parseError),
+        body: rawResponseText,
+      });
+      return NextResponse.json({ error: "AI 응답 파싱에 실패했습니다." }, { status: 502 });
+    }
     const content = data.choices?.[0]?.message?.content ?? "{}";
     const parsed = parseModelJson(content);
 
