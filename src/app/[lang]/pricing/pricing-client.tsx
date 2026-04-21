@@ -35,8 +35,10 @@ export function PricingClient({ dict, lang }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isKoPayLoading, setIsKoPayLoading] = useState(false);
   const [isNicepayReady, setIsNicepayReady] = useState(false);
+  const [nicepayLoadError, setNicepayLoadError] = useState<string | null>(null);
   const supabase = createClient();
-  const niceMid = process.env.NEXT_PUBLIC_NICEPAY_MID || process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID || "nictest00m";
+  const envMid = process.env.NEXT_PUBLIC_NICEPAY_MID?.trim();
+  const niceMid = envMid || "nictest00m";
 
   useEffect(() => {
     const getUser = async () => {
@@ -52,6 +54,7 @@ export function PricingClient({ dict, lang }: Props) {
 
   useEffect(() => {
     if (currentLang !== "ko") return;
+    setNicepayLoadError(null);
     if (window.nicepayStart) {
       setIsNicepayReady(true);
       return;
@@ -115,12 +118,20 @@ export function PricingClient({ dict, lang }: Props) {
           resolve(true);
           return;
         }
-        if (Date.now() - startedAt >= 3000) {
+        if (Date.now() - startedAt >= 5000) {
           window.clearInterval(timer);
           resolve(false);
         }
       }, 100);
     });
+  };
+
+  const retryNicepayLoad = async () => {
+    setNicepayLoadError(null);
+    const ready = await waitForNicepay();
+    if (!ready) {
+      setNicepayLoadError("네트워크 환경을 확인해 주세요");
+    }
   };
 
   const handleSubscribe = async () => {
@@ -141,11 +152,16 @@ export function PricingClient({ dict, lang }: Props) {
 
     if (currentLang === "ko") {
       setIsKoPayLoading(true);
+      setNicepayLoadError(null);
+      if (!envMid) {
+        console.warn("NEXT_PUBLIC_NICEPAY_MID is missing. Falling back to test MID(nictest00m).");
+      }
       const ready = await waitForNicepay();
       if (!ready || !window.nicepayStart) {
         setIsKoPayLoading(false);
         setIsNicepayReady(false);
-        alert("결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.");
+        setNicepayLoadError("네트워크 환경을 확인해 주세요");
+        alert("네트워크 환경을 확인해 주세요");
         return;
       }
 
@@ -334,9 +350,21 @@ export function PricingClient({ dict, lang }: Props) {
         </div>
 
         {currentLang === "ko" && !isNicepayReady ? (
-          <div className="mt-6 inline-flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-900">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-300 border-t-transparent" />
-            결제 모듈을 불러오는 중입니다
+          <div className="mt-6 inline-flex flex-col items-start gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-300 border-t-transparent" />
+              결제 모듈을 불러오는 중입니다
+            </span>
+            {nicepayLoadError ? (
+              <span className="text-rose-600">{nicepayLoadError}</span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void retryNicepayLoad()}
+              className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-900 transition hover:bg-blue-100"
+            >
+              다시 시도
+            </button>
           </div>
         ) : null}
 
