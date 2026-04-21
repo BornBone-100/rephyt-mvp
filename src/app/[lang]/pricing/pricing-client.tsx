@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import Script from "next/script";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
@@ -35,6 +34,7 @@ export function PricingClient({ dict, lang }: Props) {
   const [finalAmount] = useState(5900);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isKoPayLoading, setIsKoPayLoading] = useState(false);
+  const [isNicepayReady, setIsNicepayReady] = useState(false);
   const supabase = createClient();
   const niceMid = process.env.NEXT_PUBLIC_NICEPAY_MID || process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID || "nictest00m";
 
@@ -49,6 +49,21 @@ export function PricingClient({ dict, lang }: Props) {
     };
     void getUser();
   }, [supabase]);
+
+  useEffect(() => {
+    if (currentLang !== "ko") return;
+    if (window.nicepayStart) {
+      setIsNicepayReady(true);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (window.nicepayStart) {
+        setIsNicepayReady(true);
+        window.clearInterval(timer);
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [currentLang]);
 
   const getUser = async () => {
     const {
@@ -74,8 +89,8 @@ export function PricingClient({ dict, lang }: Props) {
     setUserId(nextUserId);
 
     if (currentLang === "ko") {
-      if (!window.nicepayStart) {
-        alert("나이스페이 스크립트 로드에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+      if (!window.nicepayStart || !isNicepayReady) {
+        alert("결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.");
         return;
       }
 
@@ -207,7 +222,6 @@ export function PricingClient({ dict, lang }: Props) {
 
   return (
     <div className="min-h-screen bg-zinc-50 py-20 px-6 relative">
-      <Script src="https://web.nicepay.co.kr/v3/v3.js" strategy="afterInteractive" />
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16 space-y-4">
           <h1 className="text-4xl md:text-5xl font-black text-blue-950 tracking-tight">서비스 요금제 안내</h1>
@@ -264,6 +278,13 @@ export function PricingClient({ dict, lang }: Props) {
             </div>
           ))}
         </div>
+
+        {currentLang === "ko" && !isNicepayReady ? (
+          <div className="mt-6 inline-flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-900">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-300 border-t-transparent" />
+            결제 모듈을 불러오는 중입니다
+          </div>
+        ) : null}
 
         <div className="mt-20 text-left bg-white p-8 rounded-[2rem] border border-zinc-100 shadow-sm">
           <h4 className="text-zinc-800 text-sm font-bold mb-4">결제 및 환불 안내 (전자상거래법 기준)</h4>
