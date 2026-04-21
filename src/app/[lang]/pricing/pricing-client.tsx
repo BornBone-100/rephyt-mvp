@@ -1,8 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import Script from "next/script";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+
+declare global {
+  interface Window {
+    nicepayStart?: (authData: Record<string, string>) => void;
+  }
+}
 
 type PricingDict = {
   pricing: {
@@ -27,7 +34,9 @@ export function PricingClient({ dict, lang }: Props) {
   const [userId, setUserId] = useState<string | null>(null);
   const [finalAmount] = useState(5900);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isKoPayLoading, setIsKoPayLoading] = useState(false);
   const supabase = createClient();
+  const niceMid = process.env.NEXT_PUBLIC_NICEPAY_MID || process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID || "nictest00m";
 
   useEffect(() => {
     const getUser = async () => {
@@ -58,10 +67,49 @@ export function PricingClient({ dict, lang }: Props) {
 
     const userEmail = user.email ?? "";
     const nextUserId = user.id;
+    const buyerName =
+      typeof user.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()
+        ? user.user_metadata.full_name.trim()
+        : userEmail.split("@")[0] || "Re:PhyT User";
     setUserId(nextUserId);
 
     if (currentLang === "ko") {
-      alert("나이스페이 연동 준비 중입니다.");
+      if (!window.nicepayStart) {
+        alert("나이스페이 스크립트 로드에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+
+      setIsKoPayLoading(true);
+      const orderId = `rephyt_${Date.now()}`;
+      const amount = "15000";
+      const returnUrl = `${window.location.origin}/api/payments/nicepay/callback`;
+      const signRes = await fetch("/api/payments/nicepay/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          amount,
+          goodsName: "Re:PhyT Pro 구독",
+          userId: nextUserId,
+          buyerName,
+          buyerEmail: userEmail,
+          returnUrl,
+          mid: niceMid,
+        }),
+      });
+      const signData = (await signRes.json()) as {
+        success?: boolean;
+        message?: string;
+        authData?: Record<string, string>;
+      };
+      if (!signRes.ok || !signData.success || !signData.authData) {
+        setIsKoPayLoading(false);
+        alert(signData.message ?? "나이스페이 결제 준비에 실패했습니다.");
+        return;
+      }
+
+      window.nicepayStart(signData.authData);
+      setIsKoPayLoading(false);
       return;
     }
 
@@ -159,6 +207,7 @@ export function PricingClient({ dict, lang }: Props) {
 
   return (
     <div className="min-h-screen bg-zinc-50 py-20 px-6 relative">
+      <Script src="https://web.nicepay.co.kr/v3/v3.js" strategy="afterInteractive" />
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16 space-y-4">
           <h1 className="text-4xl md:text-5xl font-black text-blue-950 tracking-tight">서비스 요금제 안내</h1>
@@ -200,9 +249,17 @@ export function PricingClient({ dict, lang }: Props) {
               <button
                 type="button"
                 onClick={plan.id === "pro" ? () => void handleSubscribe() : undefined}
-                className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color}`}
+                disabled={plan.id === "pro" && isKoPayLoading}
+                className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg disabled:cursor-not-allowed disabled:opacity-70 ${plan.color}`}
               >
-                {plan.button}
+                {plan.id === "pro" && isKoPayLoading ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
+                    결제창 준비 중...
+                  </span>
+                ) : (
+                  plan.button
+                )}
               </button>
             </div>
           ))}
