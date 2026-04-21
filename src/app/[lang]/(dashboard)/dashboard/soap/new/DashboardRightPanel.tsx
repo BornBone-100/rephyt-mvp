@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, BookOpen, Link2, Shield, Siren, Sparkles, TrendingUp } from "lucide-react";
+import { useState } from "react";
 
 type LogicChainAudit = {
   status: "pass" | "fail" | "warning";
@@ -47,6 +48,31 @@ type Props = {
   isLoading?: boolean;
 };
 
+function sanitizeText(raw: string) {
+  return raw
+    .replace(/[가-힣]{2,4}\s?(님|씨)?/g, "***")
+    .replace(/\b\d{2,4}[-.\s]?\d{3,4}[-.\s]?\d{4}\b/g, "***-****-****")
+    .replace(/\b\d{2,4}[./-]\d{1,2}[./-]\d{1,2}\b/g, "****-**-**");
+}
+
+function buildCommunityPayload(data: FinalReportResult) {
+  return {
+    challengeTitle: `${Math.round(data.overallScore)}점 달성! 임상 추론 챌린지`,
+    defenseHighlight: sanitizeText(data.auditDefense.improvementTip),
+    anonymousData: {
+      logicChain: sanitizeText(data.logicChainAudit.feedback),
+      trajectory: sanitizeText(data.predictiveTrajectory.trajectoryText),
+      cpg: data.cpgCompliance.map((item) => ({
+        intervention: sanitizeText(item.intervention),
+        level: item.level,
+        reasoning: sanitizeText(item.reasoning),
+      })),
+    },
+    overallScore: data.overallScore,
+    defenseScore: data.auditDefense.defenseScore,
+  };
+}
+
 function levelBadge(level: "green" | "yellow" | "red") {
   if (level === "green") return "bg-emerald-100 text-emerald-700 border-emerald-200";
   if (level === "yellow") return "bg-amber-100 text-amber-700 border-amber-200";
@@ -54,6 +80,7 @@ function levelBadge(level: "green" | "yellow" | "red") {
 }
 
 function ReportBody({ data }: { data: FinalReportResult }) {
+  const [isSharing, setIsSharing] = useState(false);
   const score = Math.max(0, Math.min(100, data.overallScore));
   const defenseScore = Math.max(0, Math.min(100, data.auditDefense.defenseScore));
   const gaugeBg = { background: `conic-gradient(#2563eb ${score * 3.6}deg, #e2e8f0 0deg)` };
@@ -170,6 +197,78 @@ function ReportBody({ data }: { data: FinalReportResult }) {
             Red Flag 상태에서는 예측 해석보다 의학적 의뢰를 우선하세요.
           </div>
         ) : null}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="mb-3 text-sm font-black text-slate-700">커뮤니티 및 SNS 공유</h3>
+        <div className="grid grid-cols-1 gap-2">
+          <button
+            type="button"
+            disabled={isSharing}
+            onClick={async () => {
+              setIsSharing(true);
+              try {
+                const payload = buildCommunityPayload(data);
+                const res = await fetch("/api/community/report-share", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ mode: "challenge", payload }),
+                });
+                if (!res.ok) throw new Error("공유 실패");
+                alert("🏆 챌린지 참여 카드가 커뮤니티에 업로드되었습니다.");
+              } catch {
+                alert("커뮤니티 업로드 중 오류가 발생했습니다.");
+              } finally {
+                setIsSharing(false);
+              }
+            }}
+            className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-left text-xs font-bold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60"
+          >
+            🏆 챌린지 참여
+          </button>
+          <button
+            type="button"
+            disabled={isSharing}
+            onClick={async () => {
+              setIsSharing(true);
+              try {
+                const payload = buildCommunityPayload(data);
+                const res = await fetch("/api/community/report-share", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ mode: "defense_tip", payload }),
+                });
+                if (!res.ok) throw new Error("공유 실패");
+                alert("🛡️ 삭감 방어 팁이 익명 공유되었습니다.");
+              } catch {
+                alert("커뮤니티 업로드 중 오류가 발생했습니다.");
+              } finally {
+                setIsSharing(false);
+              }
+            }}
+            className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
+          >
+            🛡️ 삭감 방어 팁 공유
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0f172a"/><stop offset="100%" stop-color="#1e293b"/></linearGradient></defs><rect width="1080" height="1080" fill="url(#g)"/><text x="80" y="160" fill="#93c5fd" font-size="36" font-family="Arial">Re:PhyT Clinical Branding</text><text x="80" y="260" fill="#ffffff" font-size="72" font-weight="700" font-family="Arial">SCORE ${score}</text><text x="80" y="350" fill="#34d399" font-size="40" font-family="Arial">Defense ${defenseScore}/100</text><text x="80" y="450" fill="#cbd5e1" font-size="30" font-family="Arial">${sanitizeText(
+                data.predictiveTrajectory.trajectoryText,
+              ).slice(0, 60)}</text></svg>`;
+              const blob = new Blob([svg], { type: "image/svg+xml" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "rephyt-branding-card.svg";
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-left text-xs font-bold text-violet-700 transition hover:bg-violet-100"
+          >
+            📱 인스타 브랜딩
+          </button>
+        </div>
       </div>
     </div>
   );
