@@ -72,6 +72,57 @@ export function PricingClient({ dict, lang }: Props) {
     return user;
   };
 
+  const loadNicepayScript = () =>
+    new Promise<boolean>((resolve) => {
+      if (window.nicepayStart) {
+        setIsNicepayReady(true);
+        resolve(true);
+        return;
+      }
+
+      const existing = document.querySelector<HTMLScriptElement>(
+        'script[src="https://web.nicepay.co.kr/v3/v3.js"]',
+      );
+      if (existing) {
+        existing.addEventListener("load", () => resolve(true), { once: true });
+        existing.addEventListener("error", () => resolve(false), { once: true });
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://web.nicepay.co.kr/v3/v3.js";
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+
+  const waitForNicepay = async () => {
+    const loaded = await loadNicepayScript();
+    if (!loaded) return false;
+
+    if (window.nicepayStart) {
+      setIsNicepayReady(true);
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const startedAt = Date.now();
+      const timer = window.setInterval(() => {
+        if (window.nicepayStart) {
+          setIsNicepayReady(true);
+          window.clearInterval(timer);
+          resolve(true);
+          return;
+        }
+        if (Date.now() - startedAt >= 3000) {
+          window.clearInterval(timer);
+          resolve(false);
+        }
+      }, 100);
+    });
+  };
+
   const handleSubscribe = async () => {
     const user = await getUser();
 
@@ -89,12 +140,15 @@ export function PricingClient({ dict, lang }: Props) {
     setUserId(nextUserId);
 
     if (currentLang === "ko") {
-      if (!window.nicepayStart || !isNicepayReady) {
+      setIsKoPayLoading(true);
+      const ready = await waitForNicepay();
+      if (!ready || !window.nicepayStart) {
+        setIsKoPayLoading(false);
+        setIsNicepayReady(false);
         alert("결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.");
         return;
       }
 
-      setIsKoPayLoading(true);
       const orderId = `rephyt_${Date.now()}`;
       const amount = "15000";
       const returnUrl = `${window.location.origin}/api/payments/nicepay/callback`;
