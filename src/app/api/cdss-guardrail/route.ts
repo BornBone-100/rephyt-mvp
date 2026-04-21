@@ -6,6 +6,7 @@ type GuardrailRequest = {
   evaluation?: string;
   prognosis?: string;
   intervention?: string;
+  language?: string;
 };
 
 type GuardrailResponse = {
@@ -423,7 +424,71 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
     score?: number;
     alerts?: Array<{ type?: string; text?: string; status?: string }>;
     reasoning?: string;
+    logicChainAudit?: {
+      status?: "pass" | "fail" | "warning";
+      feedback?: string;
+      missingLinks?: string[];
+    };
+    cpgCompliance?: Array<{
+      intervention?: string;
+      level?: "green" | "yellow" | "red";
+      reasoning?: string;
+      alternative?: string | null;
+    }>;
+    auditDefense?: {
+      riskLevel?: "Low" | "Medium" | "High";
+      defenseScore?: number;
+      feedback?: string;
+      improvementTip?: string;
+    };
+    predictiveTrajectory?: {
+      estimatedWeeks?: number;
+      trajectoryText?: string;
+    };
   };
+  const mappedTraffic = Array.isArray(data.cpgCompliance)
+    ? data.cpgCompliance
+        .map((item) => {
+          if (!item?.intervention || !item?.level || !item?.reasoning) return null;
+          if (item.level !== "green" && item.level !== "yellow" && item.level !== "red") return null;
+          return {
+            level: item.level,
+            title: item.intervention,
+            description: item.reasoning,
+          };
+        })
+        .filter((v): v is NonNullable<GuardrailResponse["trafficLightFeedback"]>[number] => Boolean(v))
+    : [];
+  const mappedAlerts = Array.isArray(data.cpgCompliance)
+    ? data.cpgCompliance
+        .map((item) => {
+          if (!item?.intervention || !item?.level || !item?.reasoning) return null;
+          return {
+            type: item.level === "green" ? "Strong Recommendation" : "Low-Value Care Alert",
+            text:
+              item.level === "green"
+                ? `${item.intervention}: ${item.reasoning}`
+                : `${item.intervention}: ${item.reasoning}${item.alternative ? ` / 대안: ${item.alternative}` : ""}`,
+            status: item.level === "green" ? "pass" : "warning",
+          };
+        })
+        .filter((v): v is GuardrailResponse["cpgAlerts"][number] => Boolean(v))
+    : [];
+  const mappedReasoning = [
+    typeof data.logicChainAudit?.feedback === "string" ? data.logicChainAudit.feedback : "",
+    typeof data.auditDefense?.feedback === "string" ? data.auditDefense.feedback : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const mappedNextSteps = [
+    ...(Array.isArray(data.logicChainAudit?.missingLinks) ? data.logicChainAudit?.missingLinks : []),
+    ...(typeof data.auditDefense?.improvementTip === "string" && data.auditDefense.improvementTip.trim()
+      ? [data.auditDefense.improvementTip]
+      : []),
+    ...(typeof data.predictiveTrajectory?.trajectoryText === "string" && data.predictiveTrajectory.trajectoryText.trim()
+      ? [`예후 추정: ${data.predictiveTrajectory.trajectoryText}`]
+      : []),
+  ];
   return {
     hasRedFlag: Boolean(data.hasRedFlag),
     criticalAlert:
@@ -435,10 +500,18 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
         ? data.criticalAlert
         : null,
     complianceScore:
-      typeof (data.complianceScore ?? data.score) === "number" && Number.isFinite(data.complianceScore ?? data.score)
-        ? Math.max(0, Math.min(100, Math.round((data.complianceScore ?? data.score) as number)))
+      typeof (data.complianceScore ?? data.score ?? data.auditDefense?.defenseScore) === "number" &&
+      Number.isFinite(data.complianceScore ?? data.score ?? data.auditDefense?.defenseScore)
+        ? Math.max(0, Math.min(100, Math.round((data.complianceScore ?? data.score ?? data.auditDefense?.defenseScore) as number)))
         : 0,
-    status: typeof data.status === "string" && data.status.trim() ? data.status : "Needs Review",
+    status:
+      typeof data.status === "string" && data.status.trim()
+        ? data.status
+        : data.auditDefense?.riskLevel === "High"
+          ? "Caution"
+          : data.logicChainAudit?.status === "pass"
+            ? "High-Value Care"
+            : "Needs Review",
     cpgAlerts: Array.isArray(data.cpgAlerts ?? data.alerts)
       ? (data.cpgAlerts ?? data.alerts ?? [])
           .flatMap((item) => {
@@ -452,12 +525,15 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
               },
             ];
           })
-      : [],
+      : mappedAlerts,
     clinicalReasoning:
-      typeof (data.clinicalReasoning ?? data.reasoning) === "string" && (data.clinicalReasoning ?? data.reasoning)?.trim()
-        ? (data.clinicalReasoning ?? data.reasoning) as string
+      typeof (data.clinicalReasoning ?? data.reasoning ?? mappedReasoning) === "string" &&
+      (data.clinicalReasoning ?? data.reasoning ?? mappedReasoning)?.trim()
+        ? ((data.clinicalReasoning ?? data.reasoning ?? mappedReasoning) as string)
         : "입력된 임상 정보를 기반으로 추가 검토가 필요합니다.",
-    nextSteps: Array.isArray(data.nextSteps) ? data.nextSteps.filter((x): x is string => typeof x === "string") : [],
+    nextSteps: Array.isArray(data.nextSteps)
+      ? data.nextSteps.filter((x): x is string => typeof x === "string")
+      : mappedNextSteps,
     references: Array.isArray(data.references)
       ? data.references
           .map((item) => {
@@ -476,7 +552,9 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
     overallScore:
       typeof (data as { overallScore?: number }).overallScore === "number"
         ? Math.max(0, Math.min(100, Math.round((data as { overallScore?: number }).overallScore as number)))
-        : undefined,
+        : typeof data.auditDefense?.defenseScore === "number"
+          ? Math.max(0, Math.min(100, Math.round(data.auditDefense.defenseScore)))
+          : undefined,
     trafficLightFeedback: Array.isArray((data as { trafficLightFeedback?: unknown[] }).trafficLightFeedback)
       ? ((data as { trafficLightFeedback: unknown[] }).trafficLightFeedback
           .map((item) => {
@@ -489,7 +567,7 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
           .filter(
             (x): x is NonNullable<GuardrailResponse["trafficLightFeedback"]>[number] => Boolean(x),
           ))
-      : [],
+      : mappedTraffic,
     evidenceBasedAlternatives: Array.isArray((data as { evidenceBasedAlternatives?: unknown[] }).evidenceBasedAlternatives)
       ? ((data as { evidenceBasedAlternatives: unknown[] }).evidenceBasedAlternatives
           .map((item) => {
@@ -618,16 +696,43 @@ export async function POST(req: Request) {
     const detectedRule = detected.rule;
 
     const systemPrompt = `
-너는 전 세계에서 가장 정교한 물리치료 임상 의사결정 지원 엔진이자, 직접 접근(Direct Access) 환경에서 환자를 스크리닝하는 1차 의료 전문가야.
+You are a Chief Physical Therapy Clinical Evaluator and Medical Insurance Audit Specialist.
+Your task is to analyze the user's 4-step clinical reasoning data (Subjective History, Objective Evaluation, Goals, and Intervention) and evaluate it based on JOSPT Clinical Practice Guidelines (CPG) and insurance billing defense standards.
 
-[최우선 임무: Red Flag 스크리닝]
-유저가 입력한 4단계(특히 1단계 Examination의 주소증 및 통증 양상)를 분석하여, 해당 통증이 근골격계 문제가 아닐 가능성(예: 내장기 기원의 연관통, 종양, 감염, 골절 등)이 1%라도 의심된다면, 일반적인 CPG 평가를 중단하고 즉시 Medical Referral 경고를 발동하라.
+[CORE VALUES]
+Evaluate based on "Honest Data" and "Precise Execution" with professional involvement.
 
-[분석 지침]
-1) 통증이 역학적(기계적 움직임이나 자세)으로 재현되지 않는 경우.
-2) 야간통, 식후 통증, 원인 불명의 체중 감소 등 Systemic symptom이 동반된 경우.
-3) 위 조건에 해당하면 hasRedFlag를 true로 설정하고, 의심되는 내과적 질환명과 의뢰해야 할 진료과를 명시하라.
-4) 반드시 JSON만 출력하라.
+CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact schema below. Do not include markdown formatting like \`\`\`json or any conversational text.
+
+[JSON SCHEMA]
+{
+  "overallScore": number,
+  "logicChainAudit": {
+    "status": "pass" | "fail" | "warning",
+    "feedback": "Detailed feedback on whether S, O, A, and P logically connect.",
+    "missingLinks": ["List of missing logical connections or empty arrays"]
+  },
+  "cpgCompliance": [
+    {
+      "intervention": "Name of planned intervention",
+      "level": "green" | "yellow" | "red",
+      "reasoning": "Why it matches or violates CPG",
+      "alternative": "Suggested alternative if yellow/red (null if green)"
+    }
+  ],
+  "auditDefense": {
+    "riskLevel": "Low" | "Medium" | "High",
+    "defenseScore": number,
+    "feedback": "Feedback on whether the chart justifies insurance billing.",
+    "improvementTip": "Specific tip to prevent claim denial (삭감)."
+  },
+  "predictiveTrajectory": {
+    "estimatedWeeks": number,
+    "trajectoryText": "Clinical prediction of recovery timeline based on initial outcome measures and prognosis."
+  }
+}
+
+Ensure all generated text inside the JSON (feedback, reasoning, tips) is written entirely in Korean, maintaining a highly professional, mentoring tone.
 `;
 
     const prompt = `
