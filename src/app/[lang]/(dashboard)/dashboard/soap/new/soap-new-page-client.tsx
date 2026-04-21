@@ -266,6 +266,7 @@ type GuardrailPayload = {
   evaluation: string;
   prognosis: string;
   intervention: string;
+  step4: string;
   language: string;
 };
 
@@ -300,13 +301,16 @@ const formatPlanToTreatment = (
   modalityEntries: ModalityEntry[],
   educationHep: string,
 ) => {
-  const manualLines = manualEntries.map(
+  const safeManual = Array.isArray(manualEntries) ? manualEntries : [];
+  const safeExercise = Array.isArray(exerciseEntries) ? exerciseEntries : [];
+  const safeModality = Array.isArray(modalityEntries) ? modalityEntries : [];
+  const manualLines = safeManual.map(
     (m) => `[Manual] ${m.name} ${m.grade} (${m.minutes || "-"}min)`,
   );
-  const exerciseLines = exerciseEntries.map(
+  const exerciseLines = safeExercise.map(
     (e) => `[Exercise] ${e.name} ${e.sets || "-"}sets/${e.reps || "-"}reps${e.holdSec ? `/${e.holdSec}s` : ""}`,
   );
-  const modalityLines = modalityEntries.map(
+  const modalityLines = safeModality.map(
     (m) => `[Modalities] ${m.modality} (${m.target || "-"})`,
   );
   const educationLines = educationHep
@@ -314,7 +318,8 @@ const formatPlanToTreatment = (
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => `[Education] ${line}`);
-  return [...manualLines, ...exerciseLines, ...modalityLines, ...educationLines].join("\n");
+  const merged = [...manualLines, ...exerciseLines, ...modalityLines, ...educationLines].join("\n").trim();
+  return merged || "[]";
 };
 
 function removeExactLine(text: string, line: string) {
@@ -661,11 +666,18 @@ function RedFlagMentor() {
         educationHep,
       );
       setFormData((prev) => ({ ...prev, todayTreatment: treatmentText }));
+      const step4Structured = {
+        manual: manualEntries ?? [],
+        exercise: exerciseEntries ?? [],
+        modalities: modalityEntries ?? [],
+        education: educationHep?.trim() || "",
+      };
       const payload: GuardrailPayload = {
         examination: formData.examination.trim(),
         evaluation: formData.evaluation.trim(),
         prognosis: formData.prognosis.trim(),
         intervention: treatmentText || formData.intervention.trim(),
+        step4: JSON.stringify(step4Structured),
         language: formData.language,
       };
       const res = await fetch("/api/cdss-guardrail", {

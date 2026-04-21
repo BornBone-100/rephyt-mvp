@@ -6,6 +6,7 @@ type GuardrailRequest = {
   evaluation?: string;
   prognosis?: string;
   intervention?: string;
+  step4?: string;
   language?: string;
 };
 
@@ -405,27 +406,29 @@ function detectConditionRule(
   };
 }
 
-function parseModelJson(content: string): unknown {
+function parseModelJson(content: string): { ok: true; data: unknown } | { ok: false } {
   const cleaned = content
+    .replace(/^\s*```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
     .replace(/```json/gi, "")
     .replace(/```/g, "")
     .trim();
   try {
-    return JSON.parse(cleaned);
+    return { ok: true, data: JSON.parse(cleaned) };
   } catch {
     const matched = cleaned.match(/\{[\s\S]*\}/);
     if (!matched) {
       console.error("CDSS parseModelJson: JSON object block not found", { preview: cleaned.slice(0, 500) });
-      return {};
+      return { ok: false };
     }
     try {
-      return JSON.parse(matched[0]);
+      return { ok: true, data: JSON.parse(matched[0]) };
     } catch (fallbackError) {
       console.error("CDSS parseModelJson fallback parse failed", {
         message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
         preview: matched[0].slice(0, 500),
       });
-      return {};
+      return { ok: false };
     }
   }
 }
@@ -841,8 +844,11 @@ ${intervention}
     }
     const content = data.choices?.[0]?.message?.content ?? "{}";
     const parsed = parseModelJson(content);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: "Parsing Error" }, { status: 500 });
+    }
 
-    const normalized = normalizeGuardrailResponse(parsed);
+    const normalized = normalizeGuardrailResponse(parsed.data);
     const stabilized = enforceGuardrails(normalized, detectedRule);
     const finalResult: GuardrailResponse = {
       ...stabilized,
