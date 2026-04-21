@@ -6,6 +6,9 @@ import { createClient } from "@/utils/supabase/client";
 import { ebpDatabase } from "@/constants/assessmentData";
 import RomMmtAssessment, { type RomMmtRecord } from "@/components/RomMmtAssessment";
 import type { getDictionary } from "@/dictionaries/getDictionary";
+import type { Tables } from "@/types/supabase";
+
+type PatientOption = Pick<Tables<"patients">, "id" | "name" | "diagnosis">;
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -29,8 +32,12 @@ function SoapContent({ dict }: Props) {
   const lang = routeParams.lang as string;
   const base = `/${lang}`;
   const searchParams = useSearchParams();
-  const patientId = searchParams.get("patientId");
+  const patientIdFromUrl = searchParams.get("patientId");
   const supabase = useMemo(() => createClient(), []);
+
+  const [patients, setPatients] = useState<PatientOption[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [selectedPatientId, setSelectedPatientId] = useState("");
 
   const [selectedJoint, setSelectedJoint] = useState<keyof typeof ebpDatabase | "">("");
   const [targetLanguage, setTargetLanguage] = useState("ko");
@@ -97,6 +104,35 @@ function SoapContent({ dict }: Props) {
     };
   }, [supabase]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setPatientsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("patients")
+          .select("id, name, diagnosis")
+          .order("created_at", { ascending: false });
+        if (cancelled) return;
+        if (error) throw error;
+        setPatients(data ?? []);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setPatients([]);
+      } finally {
+        if (!cancelled) setPatientsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  useEffect(() => {
+    if (!patientIdFromUrl) return;
+    setSelectedPatientId(patientIdFromUrl);
+  }, [patientIdFromUrl]);
+
   const buildPromptData = () => {
     let rawData = `${d.promptEvalHeader}\n${d.promptChiefJoint} ${selectedJoint.toUpperCase()}\n${d.promptHistory} ${historyTaking}\n${d.promptVas} ${painScale}/10\n\n${d.promptRomMmtSection}\n`;
     romMmtRecords.forEach((r) => {
@@ -140,7 +176,7 @@ function SoapContent({ dict }: Props) {
   };
 
   const handleSaveSoap = async () => {
-    if (!patientId) {
+    if (!selectedPatientId) {
       alert(d.alertNoPatient);
       return;
     }
@@ -151,7 +187,7 @@ function SoapContent({ dict }: Props) {
 
     const { error } = await supabase.from("soap_notes").insert([
       {
-        patient_id: patientId,
+        patient_id: selectedPatientId,
         created_by: user?.id,
         joint: selectedJoint,
         pain_scale: parseInt(painScale, 10),
@@ -166,7 +202,7 @@ function SoapContent({ dict }: Props) {
     if (error) alert(d.alertSaveFailed);
     else {
       alert(d.alertSaveOk);
-      router.push(`${base}/dashboard/patients/${patientId}`);
+      router.push(`${base}/dashboard/patients/${selectedPatientId}`);
     }
     setIsSaving(false);
   };
@@ -225,6 +261,33 @@ function SoapContent({ dict }: Props) {
           <div className="space-y-8 w-full">
             <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
               <h2 className="text-lg font-bold text-blue-950 mb-6 border-b pb-2">{d.step1Title}</h2>
+
+              <div className="mb-6">
+                <label className="mb-2 block text-xs font-bold uppercase text-zinc-400" htmlFor="soap-new-patient">
+                  {d.labelPatientSelect}
+                </label>
+                <select
+                  id="soap-new-patient"
+                  className="h-12 w-full cursor-pointer appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-4 pr-10 font-bold text-zinc-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2371717a'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: "no-repeat",
+                    backgroundPosition: "right 0.75rem center",
+                    backgroundSize: "1.25rem",
+                  }}
+                  value={selectedPatientId}
+                  onChange={(e) => setSelectedPatientId(e.target.value)}
+                  disabled={patientsLoading}
+                >
+                  <option value="">{patientsLoading ? d.patientsLoading : d.patientPlaceholder}</option>
+                  {patients.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.diagnosis?.trim() ? ` — ${p.diagnosis.trim()}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div>
