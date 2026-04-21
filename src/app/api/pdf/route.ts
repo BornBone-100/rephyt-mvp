@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { z } from "zod";
 import { soapNoteSchema, patientSchema } from "@/features/soap/schema";
@@ -11,7 +11,7 @@ const requestSchema = z.object({
 });
 
 const KOREAN_FONT_URL =
-  "https://cdn.jsdelivr.net/gh/google/fonts/ofl/notosanskr/NotoSansKR-Regular.ttf";
+  "https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/public/static/Pretendard-Regular.ttf";
 let koreanFontBytesPromise: Promise<ArrayBuffer> | null = null;
 
 async function getKoreanFontBytes() {
@@ -34,14 +34,8 @@ export async function POST(req: Request) {
     const pdfDoc = await PDFDocument.create();
     pdfDoc.registerFontkit(fontkit);
     let page = pdfDoc.addPage([595.28, 841.89]); // A4 (pt)
-    let font;
-    try {
-      const fontBytes = await getKoreanFontBytes();
-      font = await pdfDoc.embedFont(fontBytes);
-    } catch (fontErr) {
-      console.error("Korean font load failed, falling back to Helvetica:", fontErr);
-      font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    }
+    const fontBytes = await getKoreanFontBytes();
+    const font = await pdfDoc.embedFont(fontBytes);
 
     const margin = 48;
     let y = 841.89 - margin;
