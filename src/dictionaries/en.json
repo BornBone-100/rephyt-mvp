@@ -203,7 +203,8 @@
       "soapSharePastEmpty": "There is no SOAP content to share.",
       "soapSharePastButton": "🌍 Share this case to community",
       "soapSharePastButtonLoading": "Anonymizing with AI...",
-      "soapSharePastAlreadyShared": "✨ Already shared to community"
+      "soapSharePastAlreadyShared": "✨ Already shared to community",
+      "soapDetailPdfLink": "Open detail & export PDF"
     }
   },
   "step2": {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import type { Tables } from "@/types/supabase";
 
 export type PastSoapShareCopy = {
@@ -11,6 +12,7 @@ export type PastSoapShareCopy = {
   soapSharePastButton: string;
   soapSharePastButtonLoading: string;
   soapSharePastAlreadyShared: string;
+  soapDetailPdfLink: string;
 };
 
 type Props = {
@@ -18,6 +20,8 @@ type Props = {
   visitNumber: number;
   localeApi: string;
   copy: PastSoapShareCopy;
+  /** SOAP 상세 페이지 (`/…/dashboard/soap/[uuid]`) — PDF 내보내기 포함 */
+  detailHref: string;
   onSharedSuccess: (noteId: string) => void;
 };
 
@@ -40,7 +44,7 @@ function getVasBadgeStyle(vas: number) {
   return "bg-green-50 text-green-600 border-green-200";
 }
 
-export function PastSoapCard({ pastSoapData, visitNumber, localeApi, copy, onSharedSuccess }: Props) {
+export function PastSoapCard({ pastSoapData, visitNumber, localeApi, copy, detailHref, onSharedSuccess }: Props) {
   const [isShared, setIsShared] = useState(() => pastSoapData.is_shared === true);
   const [isSharing, setIsSharing] = useState(false);
 
@@ -101,11 +105,19 @@ export function PastSoapCard({ pastSoapData, visitNumber, localeApi, copy, onSha
       <div className="absolute -left-4 md:-left-8 top-6 z-10 h-4 w-4 rounded-full bg-blue-500 shadow-sm ring-4 ring-white" />
       <div className="ml-6 md:ml-8 rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex flex-col gap-2 border-b border-zinc-100 pb-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-lg bg-blue-50 px-3 py-1.5 text-sm font-black text-blue-900">
-              {formatDateTime(pastSoapData.created_at)}
-            </span>
-            <span className="text-xs font-bold text-zinc-400">#{visitNumber}번째 평가</span>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-lg bg-blue-50 px-3 py-1.5 text-sm font-black text-blue-900">
+                {formatDateTime(pastSoapData.created_at)}
+              </span>
+              <span className="text-xs font-bold text-zinc-400">#{visitNumber}번째 평가</span>
+            </div>
+            <Link
+              href={detailHref}
+              className="inline-flex shrink-0 items-center rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-950 shadow-sm transition hover:bg-blue-50"
+            >
+              {copy.soapDetailPdfLink}
+            </Link>
           </div>
           <div className="mt-1 flex gap-2">
             <span className="rounded-md border border-zinc-200 bg-zinc-100 px-3 py-1 text-xs font-bold text-zinc-600">

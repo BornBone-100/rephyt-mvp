@@ -118,6 +118,7 @@ export function PatientDetailClient({ dict }: Props) {
       soapSharePastButton: pd.soapSharePastButton,
       soapSharePastButtonLoading: pd.soapSharePastButtonLoading,
       soapSharePastAlreadyShared: pd.soapSharePastAlreadyShared,
+      soapDetailPdfLink: pd.soapDetailPdfLink,
     }),
     [
       pd.soapSharePastConfirm,
@@ -127,6 +128,7 @@ export function PatientDetailClient({ dict }: Props) {
       pd.soapSharePastButton,
       pd.soapSharePastButtonLoading,
       pd.soapSharePastAlreadyShared,
+      pd.soapDetailPdfLink,
     ],
   );
 
@@ -257,6 +259,7 @@ export function PatientDetailClient({ dict }: Props) {
                       visitNumber={visitNumber}
                       localeApi={localeApi}
                       copy={pastSoapShareCopy}
+                      detailHref={`${base}/dashboard/soap/${note.id}`}
                       onSharedSuccess={handlePastSoapSharedSuccess}
                     />
                   );

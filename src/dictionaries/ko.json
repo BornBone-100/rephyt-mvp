@@ -203,7 +203,8 @@
       "soapSharePastEmpty": "공유할 SOAP 본문이 비어 있습니다.",
       "soapSharePastButton": "🌍 이 케이스 커뮤니티에 공유하기",
       "soapSharePastButtonLoading": "AI 비식별화 처리 중...",
-      "soapSharePastAlreadyShared": "✨ 이미 커뮤니티에 공유됨"
+      "soapSharePastAlreadyShared": "✨ 이미 커뮤니티에 공유됨",
+      "soapDetailPdfLink": "상세 보기 · PDF 내보내기"
     }
   },
   "step2": {
