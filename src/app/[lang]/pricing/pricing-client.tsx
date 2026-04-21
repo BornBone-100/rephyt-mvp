@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
 type PricingDict = {
@@ -18,7 +19,10 @@ type Props = {
 };
 
 export function PricingClient({ dict, lang }: Props) {
-  const base = `/${lang}`;
+  const params = useParams<{ lang?: string }>();
+  const router = useRouter();
+  const currentLang = params.lang === "en" || params.lang === "ko" ? params.lang : lang;
+  const base = `/${currentLang}`;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [finalAmount] = useState(5900);
@@ -37,8 +41,33 @@ export function PricingClient({ dict, lang }: Props) {
     void getUser();
   }, [supabase]);
 
-  const handleProPaymentClick = () => {
-    setIsModalOpen(true);
+  const getUser = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return user;
+  };
+
+  const handleSubscribe = async () => {
+    const user = await getUser();
+
+    if (!user) {
+      router.push(`${base}/login`);
+      return;
+    }
+
+    const userEmail = user.email ?? "";
+    const nextUserId = user.id;
+    setUserId(nextUserId);
+
+    if (currentLang === "ko") {
+      alert("나이스페이 연동 준비 중입니다.");
+      return;
+    }
+
+    const checkoutUrl = `https://rephyt.lemonsqueezy.com/checkout/buy/fe0a7082-3aa9-4a17-bbd2-c9cee85ae282?checkout[email]=${encodeURIComponent(userEmail)}&checkout[custom][user_id]=${encodeURIComponent(nextUserId)}`;
+
+    window.open(checkoutUrl, "_blank", "noopener,noreferrer");
   };
 
   const submitBillingInfo = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -106,7 +135,7 @@ export function PricingClient({ dict, lang }: Props) {
         priceFull: dict.pricing.price,
         price: "",
         description:
-          lang === "en"
+          currentLang === "en"
             ? "Unlimited AI for busy clinicians and clinics. Billed monthly."
             : "환자 데이터가 많은 프리랜서 및 병원 치료사에게 최적화된 무제한 AI 솔루션입니다. (1개월 단위 정기결제)",
         features: dict.pricing.features,
@@ -125,7 +154,7 @@ export function PricingClient({ dict, lang }: Props) {
         color: "bg-blue-950 text-white shadow-blue-200",
       },
     ],
-    [dict, lang],
+    [dict, currentLang],
   );
 
   return (
@@ -170,7 +199,7 @@ export function PricingClient({ dict, lang }: Props) {
               </div>
               <button
                 type="button"
-                onClick={plan.id === "pro" ? handleProPaymentClick : undefined}
+                onClick={plan.id === "pro" ? () => void handleSubscribe() : undefined}
                 className={`w-full h-14 rounded-2xl font-black text-lg transition shadow-lg ${plan.color}`}
               >
                 {plan.button}
