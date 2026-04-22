@@ -19,6 +19,8 @@ type SaveRequest = {
     cpgCompliance?: unknown;
     auditDefense?: unknown;
     predictiveTrajectory?: unknown;
+    differentialDiagnosis?: string;
+    differential_diagnosis?: string;
   };
 };
 
@@ -28,6 +30,7 @@ const ALLOWED_COLUMNS = [
   "diagnosis_area",
   "overall_score",
   "clinical_reasoning",
+  "differential_diagnosis",
   "logic_audit",
   "cpg_compliance",
   "audit_defense",
@@ -109,6 +112,13 @@ export async function POST(req: Request) {
           ? (result as { clinicalReasoning?: string }).clinicalReasoning
           : typeof (result as { clinical_reasoning?: unknown }).clinical_reasoning === "string"
             ? (result as { clinical_reasoning?: string }).clinical_reasoning
+            : "",
+      differential_diagnosis:
+        typeof (result as { differentialDiagnosis?: unknown; differential_diagnosis?: unknown }).differentialDiagnosis ===
+          "string"
+          ? (result as { differentialDiagnosis?: string }).differentialDiagnosis
+          : typeof (result as { differential_diagnosis?: unknown }).differential_diagnosis === "string"
+            ? (result as { differential_diagnosis?: string }).differential_diagnosis
             : "",
       logic_audit: result.logicChainAudit ?? null,
       cpg_compliance: result.cpgCompliance ?? null,

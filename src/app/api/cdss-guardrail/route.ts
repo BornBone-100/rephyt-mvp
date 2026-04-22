@@ -113,6 +113,7 @@ type GuardrailResponse = {
   }>;
   interventionStrategy?: string;
   professionalDiscussion?: string;
+  differentialDiagnosis?: string;
   detectionMeta?: {
     conditionId: string;
     matchedAliases: string[];
@@ -166,6 +167,7 @@ const ALLOWED_COLUMNS = [
   "diagnosis_area",
   "overall_score",
   "clinical_reasoning",
+  "differential_diagnosis",
   "logic_audit",
   "cpg_compliance",
   "audit_defense",
@@ -567,6 +569,7 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
     intervention_strategy?: string;
     professional_discussion?: string;
     clinical_reasoning?: string;
+    differential_diagnosis?: string;
   };
   const mappedTraffic = Array.isArray(data.cpgCompliance)
     ? data.cpgCompliance
@@ -726,6 +729,15 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
             ((data as { professional_discussion?: string }).professional_discussion ?? "").trim()
           ? (data as { professional_discussion: string }).professional_discussion
           : "",
+    differentialDiagnosis:
+      typeof (data as { differentialDiagnosis?: unknown; differential_diagnosis?: unknown }).differentialDiagnosis ===
+        "string" &&
+      ((data as { differentialDiagnosis?: string }).differentialDiagnosis ?? "").trim()
+        ? (data as { differentialDiagnosis: string }).differentialDiagnosis
+        : typeof (data as { differential_diagnosis?: unknown }).differential_diagnosis === "string" &&
+            ((data as { differential_diagnosis?: string }).differential_diagnosis ?? "").trim()
+          ? (data as { differential_diagnosis: string }).differential_diagnosis
+          : "",
   } satisfies GuardrailResponse;
 }
 
@@ -848,6 +860,7 @@ function buildGuardrailLogRow(params: {
     diagnosis_area: typeof params.request.diagnosisArea === "string" ? params.request.diagnosisArea : null,
     overall_score: overallScore,
     clinical_reasoning: params.result.clinicalReasoning ?? "",
+    differential_diagnosis: params.result.differentialDiagnosis ?? "",
     logic_audit: ex.logic_audit,
     cpg_compliance: ex.cpg_compliance,
     audit_defense: ex.audit_defense,
@@ -889,6 +902,7 @@ function buildGuardrailLogRowLegacy(params: {
     diagnosis_area: typeof params.request.diagnosisArea === "string" ? params.request.diagnosisArea : null,
     overall_score: overallScore,
     clinical_reasoning: params.result.clinicalReasoning ?? "",
+    differential_diagnosis: params.result.differentialDiagnosis ?? "",
     logic_audit: ex.logic_audit,
     cpg_compliance: ex.cpg_compliance,
     audit_defense: ex.audit_defense,
@@ -1106,6 +1120,7 @@ export async function POST(req: Request) {
 
     const systemPrompt = `
 You are a Clinical Director and professor-level orthopedic manual physical therapist (OCS) with over 20 years of experience in pain science and biomechanics.
+너는 20년 차 이상의 정형도수물리치료 전문의(OCS)이자 통증과학/생체역학 기반 임상 교수이며, 레지던트 교육 수준의 정밀한 감별 진단 논리를 제공해야 한다.
 Never provide generic advice or superficial summaries. Critique the clinician's input sharply and provide evidence-grounded, high-depth clinical insight.
 Your task is to analyze the user's 4-step clinical reasoning data (Subjective History, Objective Evaluation, Goals, and Intervention) and evaluate it based on JOSPT Clinical Practice Guidelines (CPG), APTA-aligned standards, and advanced clinical reasoning.
 
@@ -1133,6 +1148,17 @@ When writing clinical_reasoning, you MUST follow this 3-step reasoning flow and 
    - Pure symptom listing is forbidden.
 3) Compensation and deterioration warning:
    - Predict likely compensatory movement in adjacent joints and worsening scenario if Step 4 plan fails to resolve the mechanical driver.
+
+[DIFFERENTIAL_DIAGNOSIS TRIAGE & RULE-OUT LOGIC — REQUIRED OUTPUT SUMMARY]
+When writing differential_diagnosis, you MUST follow this 3-step triage flow and present concise conclusion text only (do not expose hidden reasoning process):
+1) Red Flag Triage:
+   - Step 1/2 데이터를 근거로 즉시 의학적 의뢰(Medical Referral)가 필요한 중증 병리(예: 골절, 감염, 종양, 마미증후군, 진행성 신경학적 결손)를 최우선 판정한다.
+2) Rule-Out:
+   - 주호소 부위에서 흔하지만 가능성이 낮은 질환 1~2개를 제시하고, 음성 이학적 검사(negative finding) 또는 발병 기전 불일치를 근거로 배제 사유를 명시한다.
+3) Rule-In:
+   - 남은 가능성 중 가장 유력한 1차 임상 패턴(primary clinical pattern) 1개를 도출하고, Step 1/2의 양성 소견과 기능저하 데이터를 맵핑해 근거를 제시한다.
+Formatting requirement:
+   - Include readable Korean subheadings such as "배제 진단(Rule-out):" and "유력 진단(Rule-in):".
 
 [CPG_COMPLIANCE WRITING RULES — STRICT]
 - Never write shallow statements like "guidelines are generally followed."
@@ -1179,6 +1205,7 @@ You MUST include all of the following in professional_discussion:
 - Prioritize analytic, logical, critique-oriented writing over creative style.
 - intervention_strategy, professional_discussion, logicChainAudit.feedback, auditDefense.feedback, auditDefense.improvementTip, predictiveTrajectory.trajectoryText, and each cpgCompliance reasoning/alternative must be paragraph-style with at least 3-4 sentences each.
 - clinical_reasoning must be paragraph-style with at least 3-4 sentences and must explicitly include the 3-step chain (tissue at fault -> pathomechanics -> compensation risk).
+- differential_diagnosis must be paragraph-style with at least 3-4 sentences, following triage -> rule-out -> rule-in logic with Korean subheadings.
 - For Korean locale, use professional Korean medical/physical-therapy and reimbursement-audit terminology consistently.
 - JSON 키는 반드시 영문 스키마 키를 그대로 유지하고(예: clinical_reasoning, intervention_strategy), 각 키의 값(value) 문자열은 100% 한국어로 작성하라.
 - CRITICAL REQUIREMENT: You MUST output all response values entirely in Korean. Do not use English for full sentences. Medical and anatomical terms should be written in Korean, with the English term in parentheses only if necessary for clarity (e.g., 심부경추굴곡근 (DCNF)).
@@ -1212,6 +1239,7 @@ CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact
     "trajectoryText": "Clinical prediction of recovery timeline based on initial outcome measures and prognosis."
   },
   "clinical_reasoning": "Concise conclusion paragraph based on the 3-step chain: tissue at fault -> pathomechanics -> compensation risk.",
+  "differential_diagnosis": "Korean triage summary with subheadings for Rule-out and Rule-in conclusions.",
   "intervention_strategy": "Detailed validity/completeness analysis of intervention strategy linking Step 1~4.",
   "professional_discussion": "Comprehensive expert discussion and prognosis for this case."
 }
@@ -1224,6 +1252,8 @@ CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact
 intervention_strategy와 professional_discussion은 반드시 교수급 임상 비평 수준으로 작성하고, 생체역학·조직치유단계·BPS 관점을 포함하라.
 cpgCompliance, auditDefense, predictiveTrajectory도 intervention_strategy와 동일한 깊이로 작성하라. 권고등급(Level A/B), HIRA 심사 관점의 medical necessity 검토, 조직 치유 단계별(염증기/증식기/재형성기) 타임라인, 기능지표 점수 변화 예측, 정체기·재발 위험 경고를 반드시 포함하라.
 clinical_reasoning은 반드시 3단계 사고 흐름을 따른다: (1) 손상 조직 특정, (2) 생체역학적 원인 분석, (3) 보상 작용/악화 시나리오 경고.
+differential_diagnosis는 반드시 3단계 감별 흐름을 따른다: (1) Red Flag Triage, (2) 배제 진단(Rule-out) 1~2개와 근거, (3) 유력 진단(Rule-in) 1개와 양성 데이터 근거.
+differential_diagnosis에는 "배제 진단(Rule-out):", "유력 진단(Rule-in):" 소제목을 포함해 가독성을 높여라.
 각 주요 항목값은 최소 3~4문장 이상의 깊이 있는 단락으로 작성하라.
 JSON 키는 영문으로 유지하고, 값(value)은 반드시 한국어로 작성하라.
 아래 추정 진단 컨텍스트를 우선 반영하라: ${detectedRule.id}
@@ -1264,6 +1294,7 @@ ${planSummary}
     { "type": "Strong Recommendation | Missing Level A Recommendation | Low-Value Care Alert | Safety Concern", "text": "...", "status": "pass|warning" }
   ],
   "clinical_reasoning": "...",
+  "differential_diagnosis": "...",
   "evidenceBasedAlternatives": [
     { "type": "special_test|intervention", "title": "...", "description": "...", "citation": "..." }
   ],

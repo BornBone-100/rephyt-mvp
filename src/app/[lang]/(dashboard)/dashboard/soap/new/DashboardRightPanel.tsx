@@ -1,13 +1,11 @@
 "use client";
 
 import {
-  AlertTriangle,
   BookOpen,
   CheckCircle2,
   Database,
   Link2,
   Shield,
-  Siren,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
@@ -41,6 +39,7 @@ type PredictiveTrajectory = {
 export type FinalReportResult = {
   overallScore: number;
   clinicalReasoning?: string;
+  differentialDiagnosis?: string;
   logicChainAudit: LogicChainAudit;
   cpgCompliance: CpgComplianceItem[];
   auditDefense: AuditDefense;
@@ -111,13 +110,81 @@ function ReportBody({
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
+            <h3 className="text-sm font-black text-sky-900">🔍 {ui.dashDifferentialDiagnosisTitle}</h3>
+            <div className="mt-3 space-y-2 text-sm leading-7 text-slate-700">
+              {data.differentialDiagnosis?.trim()
+                ? data.differentialDiagnosis.split("\n").map((line, idx) => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return null;
+                    const isRuleOut = trimmed.includes("배제 진단") || trimmed.toLowerCase().includes("rule-out");
+                    const isRuleIn = trimmed.includes("유력 진단") || trimmed.includes("확정 진단") || trimmed.toLowerCase().includes("rule-in");
+                    if (isRuleOut || isRuleIn) {
+                      return (
+                        <p key={`${trimmed}-${idx}`} className="flex items-center gap-2 font-bold text-slate-900">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] ${
+                              isRuleOut ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {isRuleOut ? "Rule-out" : "Rule-in"}
+                          </span>
+                          {trimmed}
+                        </p>
+                      );
+                    }
+                    return <p key={`${trimmed}-${idx}`} className="whitespace-pre-wrap">{trimmed}</p>;
+                  })
+                : (
+                  <p>
+                    감별 진단 결과가 생성되면 배제 진단(Rule-out)과 유력 진단(Rule-in) 근거가 여기에 표시됩니다.
+                  </p>
+                )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+            <h3 className="text-sm font-black text-blue-900">⚙️ {ui.dashClinicalReasoningTitle}</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+              {data.clinicalReasoning?.trim()
+                ? data.clinicalReasoning
+                : locale === "en"
+                  ? "Clinical reasoning summary will appear here after AI analysis."
+                  : "AI 분석 후 손상 조직, 병태역학, 보상 작용에 대한 임상 추론 요약이 여기에 표시됩니다."}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-5 shadow-sm">
+            <h3 className="text-sm font-black text-indigo-900">🎯 {ui.dashInterventionStrategyTitle}</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+              {data.interventionStrategy?.trim()
+                ? data.interventionStrategy
+                : locale === "en"
+                  ? "Detailed intervention strategy analysis will appear here."
+                  : "Step 1~4를 유기적으로 연결한 중재 전략 분석 결과가 여기에 표시됩니다."}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-teal-200 bg-teal-50/60 p-5 shadow-sm">
+            <h3 className="text-sm font-black text-teal-900">👨‍⚕️ {ui.dashProfessionalDiscussionTitle}</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+              {data.professionalDiscussion?.trim()
+                ? data.professionalDiscussion
+                : locale === "en"
+                  ? "Comprehensive professional discussion will appear here."
+                  : "케이스 전반에 대한 임상 전문가 고찰이 여기에 표시됩니다."}
+            </p>
+          </div>
+        </div>
+
+        <aside className="space-y-4 lg:col-span-1">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-sm font-bold text-slate-700">{ui.dashOverallScore}</h2>
             <div className="mt-4 flex items-center justify-center">
-              <div className="relative flex h-36 w-36 items-center justify-center rounded-full p-2" style={gaugeBg}>
+              <div className="relative flex h-32 w-32 items-center justify-center rounded-full p-2" style={gaugeBg}>
                 <div className="flex h-full w-full items-center justify-center rounded-full bg-white">
                   <div className="text-center">
-                    <p className="text-3xl font-black text-blue-700">{score}</p>
+                    <p className="text-2xl font-black text-blue-700">{score}</p>
                     <p className="text-xs font-semibold text-slate-400">/ 100</p>
                   </div>
                 </div>
@@ -196,70 +263,6 @@ function ReportBody({
               </div>
               <p className="text-sm leading-relaxed text-slate-600">{data.predictiveTrajectory.trajectoryText}</p>
             </div>
-            {data.hasRedFlag ? (
-              <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs font-semibold text-rose-700">
-                <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
-                {ui.dashRedFlagNote}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
-            <h3 className="text-sm font-black text-blue-900">⚙️ {ui.dashClinicalReasoningTitle}</h3>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-              {data.clinicalReasoning?.trim()
-                ? data.clinicalReasoning
-                : locale === "en"
-                  ? "Clinical reasoning summary will appear here after AI analysis."
-                  : "AI 분석 후 손상 조직, 병태역학, 보상 작용에 대한 임상 추론 요약이 여기에 표시됩니다."}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-5 shadow-sm">
-            <h3 className="text-sm font-black text-indigo-900">🎯 {ui.dashInterventionStrategyTitle}</h3>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-              {data.interventionStrategy?.trim()
-                ? data.interventionStrategy
-                : locale === "en"
-                  ? "Detailed intervention strategy analysis will appear here."
-                  : "Step 1~4를 유기적으로 연결한 중재 전략 분석 결과가 여기에 표시됩니다."}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-teal-200 bg-teal-50/60 p-5 shadow-sm">
-            <h3 className="text-sm font-black text-teal-900">👨‍⚕️ {ui.dashProfessionalDiscussionTitle}</h3>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-              {data.professionalDiscussion?.trim()
-                ? data.professionalDiscussion
-                : locale === "en"
-                  ? "Comprehensive professional discussion will appear here."
-                  : "케이스 전반에 대한 임상 전문가 고찰이 여기에 표시됩니다."}
-            </p>
-          </div>
-        </div>
-
-        <aside className="space-y-4 lg:col-span-1">
-          <div className={`rounded-2xl border-2 p-5 shadow-sm ${data.hasRedFlag ? "border-rose-300 bg-rose-50" : "border-emerald-300 bg-emerald-50"}`}>
-            <h3 className={`flex items-center gap-2 text-sm font-black ${data.hasRedFlag ? "text-rose-700" : "text-emerald-700"}`}>
-              <Siren className="h-4 w-4" /> {ui.dashRedFlagTitle}
-            </h3>
-            <p className="mt-2 text-sm font-bold text-slate-700">
-              {data.hasRedFlag
-                ? data.criticalAlert?.suspectedCondition ?? ui.dashReferralFallback
-                : ui.dashRedFlagBodyClear}
-            </p>
-            {data.hasRedFlag ? (
-              <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                {data.criticalAlert?.reason ?? ui.dashRedFlagBody}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-5 shadow-sm">
-            <h3 className="flex items-center gap-2 text-sm font-black text-yellow-800">
-              <AlertTriangle className="h-4 w-4" /> {ui.dashYellowFlagTitle}
-            </h3>
-            <p className="mt-2 text-xs leading-relaxed text-yellow-900">{ui.dashYellowFlagBody}</p>
           </div>
         </aside>
       </div>
