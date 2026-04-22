@@ -159,6 +159,21 @@ const TUNING_VERSION = "v1-feedback-weighted";
 
 /** Supabase public 스키마 테이블명 (오타 방지) */
 const CDSS_GUARDRAIL_LOGS_TABLE = "cdss_guardrail_logs" as const;
+const CDSS_GUARDRAIL_ALLOWED_KEYS = new Set<string>([
+  "patient_id",
+  "diagnosis_area",
+  "overall_score",
+  "logic_audit",
+  "cpg_compliance",
+  "audit_defense",
+  "predictive_trajectory",
+  "compliance_score",
+  "detected_condition_id",
+  "has_red_flag",
+  "matched_aliases",
+  "score_breakdown",
+  "raw_ai_response",
+]);
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -804,21 +819,16 @@ function buildGuardrailLogRow(params: {
   return {
     patient_id: typeof params.request.patientId === "string" ? params.request.patientId : null,
     diagnosis_area: typeof params.request.diagnosisArea === "string" ? params.request.diagnosisArea : null,
-    payload: params.request,
     overall_score: overallScore,
     logic_audit: ex.logic_audit,
     cpg_compliance: ex.cpg_compliance,
     audit_defense: ex.audit_defense,
     predictive_trajectory: ex.predictive_trajectory,
     has_red_flag: params.result.hasRedFlag,
-    status: params.result.status,
     compliance_score: params.result.complianceScore,
     detected_condition_id: params.detectedConditionId,
     matched_aliases: params.matchedAliases,
     score_breakdown: params.scoreBreakdown,
-    tuning_version: TUNING_VERSION,
-    /** 정규화·가드레일 적용 후 클라이언트와 동일 구조 */
-    result_snapshot: params.result,
   };
 }
 
@@ -847,17 +857,38 @@ function buildGuardrailLogRowLegacy(params: {
   return {
     patient_id: typeof params.request.patientId === "string" ? params.request.patientId : null,
     diagnosis_area: typeof params.request.diagnosisArea === "string" ? params.request.diagnosisArea : null,
-    payload: params.request,
     overall_score: overallScore,
     logic_audit: ex.logic_audit,
+    cpg_compliance: ex.cpg_compliance,
+    audit_defense: ex.audit_defense,
+    predictive_trajectory: ex.predictive_trajectory,
     detected_condition_id: params.detectedConditionId,
     matched_aliases: params.matchedAliases,
     score_breakdown: params.scoreBreakdown,
     has_red_flag: params.result.hasRedFlag,
-    status: params.result.status,
     compliance_score: params.result.complianceScore,
-    tuning_version: TUNING_VERSION,
   };
+}
+
+function sanitizeGuardrailInsertPayload(
+  row: Record<string, unknown>,
+  rawModelJson: unknown,
+  request: GuardrailRequest,
+  result: GuardrailResponse,
+): Record<string, unknown> {
+  const sanitizedPayload: Record<string, unknown> = {};
+  const droppedKeys: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (CDSS_GUARDRAIL_ALLOWED_KEYS.has(key)) sanitizedPayload[key] = value;
+    else droppedKeys[key] = value;
+  }
+  sanitizedPayload.raw_ai_response = {
+    model_response: rawModelJson,
+    dropped_top_level_keys: droppedKeys,
+    request_payload: request,
+    normalized_result: result,
+  };
+  return sanitizedPayload;
 }
 
 async function syncTreatmentLogIfPossible(
@@ -923,27 +954,7 @@ async function logGuardrailEvent(params: {
     if (!supabase) return { ok: true };
     const row = buildGuardrailLogRow(params);
     const legacy = buildGuardrailLogRowLegacy(params);
-
-    // 앱 코드에서 생성되는 "정상 후보 컬럼"만 먼저 허용한 뒤 insert.
-    const candidateColumns = new Set<string>([
-      ...Object.keys(legacy),
-      "cpg_compliance",
-      "audit_defense",
-      "predictive_trajectory",
-      "result_snapshot",
-      "extra_data",
-    ]);
-
-    const { known: filteredRow, unknown: preUnknown } = splitKnownAndUnknownColumns(row, candidateColumns);
-    let insertRow: Record<string, unknown> = { ...filteredRow };
-    if (Object.keys(preUnknown).length > 0) {
-      insertRow.extra_data = {
-        ...(typeof insertRow.extra_data === "object" && insertRow.extra_data !== null
-          ? (insertRow.extra_data as Record<string, unknown>)
-          : {}),
-        ...preUnknown,
-      };
-    }
+    let insertRow = sanitizeGuardrailInsertPayload(row, params.rawModelJson, params.request, params.result);
 
     // DB 스키마와 불일치하는 컬럼이 있으면 컬럼 단위로 제거/격리하며 최대 4회 재시도.
     for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -962,13 +973,13 @@ async function logGuardrailEvent(params: {
       const unknownValue = insertRow[unknownColumn];
       delete insertRow[unknownColumn];
 
-      // extra_data 컬럼이 존재하면 미지원 키를 보존, 없으면 조용히 드롭
-      if (unknownColumn !== "extra_data" && unknownValue !== undefined) {
-        insertRow.extra_data = {
-          ...(typeof insertRow.extra_data === "object" && insertRow.extra_data !== null
-            ? (insertRow.extra_data as Record<string, unknown>)
+      // raw_ai_response가 없거나 컬럼이 미지원이면 해당 키를 백업 객체에 병합 시도
+      if (unknownColumn !== "raw_ai_response" && unknownValue !== undefined) {
+        insertRow.raw_ai_response = {
+          ...(typeof insertRow.raw_ai_response === "object" && insertRow.raw_ai_response !== null
+            ? (insertRow.raw_ai_response as Record<string, unknown>)
             : {}),
-          [unknownColumn]: unknownValue,
+          [`removed_column_${unknownColumn}`]: unknownValue,
         };
       }
 
@@ -978,7 +989,8 @@ async function logGuardrailEvent(params: {
       });
     }
 
-    const fallback = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(legacy as never);
+    const legacyInsert = sanitizeGuardrailInsertPayload(legacy, params.rawModelJson, params.request, params.result);
+    const fallback = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(legacyInsert as never);
     if (fallback.error) {
       console.error(
         "CDSS logGuardrailEvent fallback legacy insert failed:",
