@@ -1109,16 +1109,18 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     setSaveStatus("saving");
     setSaveErrorMessage(null);
     try {
+      const payload = {
+        patientId: normalizedPatientId,
+        diagnosisArea: formData.diagnosisArea,
+        locale,
+        language: formData.language,
+        result: reportResult,
+      };
+      console.log("저장되는 payload:", payload);
       const res = await fetch("/api/cdss-guardrail/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          patientId: normalizedPatientId,
-          diagnosisArea: formData.diagnosisArea,
-          locale,
-          language: formData.language,
-          result: reportResult,
-        }),
+        body: JSON.stringify(payload),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {

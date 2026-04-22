@@ -274,7 +274,7 @@ export function PatientDetailClient({ dict }: Props) {
         .eq("patient_id", normalizedPatientId)
         .order("created_at", { ascending: false });
       if (error) {
-        console.error("fetchTimelineLogs by patient_id error:", error);
+        console.error("Fetch Error:", error);
         setTimelineLogs([]);
         return;
       }
@@ -283,10 +283,10 @@ export function PatientDetailClient({ dict }: Props) {
         ...row,
         payload: row.payload && typeof row.payload === "object" ? (row.payload as Record<string, unknown>) : null,
       }));
-      console.log("Fetched timeline data:", rows);
+      console.log("Fetched Timeline Data:", rows);
       setTimelineLogs(rows);
     } catch (error) {
-      console.error("timeline log fetch failed:", error);
+      console.error("Fetch Error:", error);
       setTimelineLogs([]);
     } finally {
       setIsTimelineLogsLoading(false);
