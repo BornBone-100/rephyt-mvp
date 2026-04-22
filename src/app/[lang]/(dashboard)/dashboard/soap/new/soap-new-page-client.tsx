@@ -995,6 +995,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
   const handleSaveDiagnosisRecord = async () => {
     if (!reportResult || !formData.patientId) return;
+    const normalizedPatientId = String(formData.patientId).trim();
+    console.log("[handleSaveDiagnosisRecord] patientId:", formData.patientId, "normalized:", normalizedPatientId);
     setIsSaving(true);
     setSaveStatus("saving");
     setSaveErrorMessage(null);
@@ -1003,26 +1005,21 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          patientId: formData.patientId,
+          patientId: normalizedPatientId,
           diagnosisArea: formData.diagnosisArea,
           locale,
           language: formData.language,
           result: reportResult,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; duplicated?: boolean };
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         throw new Error(body.error || t.dashSaveRecordError);
-      }
-      if (body.duplicated) {
-        setSaveStatus("duplicated");
-        alert(t.dashSaveRecordAlready);
-        return;
       }
       setSaveStatus("saved");
       alert(t.dashSaveRecordSaved);
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: formData.patientId } }));
+        window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: normalizedPatientId } }));
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : t.dashSaveRecordError;

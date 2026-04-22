@@ -268,35 +268,22 @@ export function PatientDetailClient({ dict }: Props) {
     if (!normalizedPatientId || normalizedPatientId === "null" || normalizedPatientId === "undefined") return;
     setIsTimelineLogsLoading(true);
     try {
-      const { data: byPatientId, error: byPatientIdError } = await supabase
+      const { data, error } = await supabase
         .from("cdss_guardrail_logs")
         .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, payload")
         .eq("patient_id", normalizedPatientId)
         .order("created_at", { ascending: false });
-      const { data: byPayloadPatientId, error: byPayloadPatientIdError } = await supabase
-        .from("cdss_guardrail_logs")
-        .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, payload")
-        .contains("payload", { patientId: normalizedPatientId })
-        .order("created_at", { ascending: false });
-
-      if (byPatientIdError) {
-        console.error("fetchTimelineLogs by patient_id error:", byPatientIdError);
+      if (error) {
+        console.error("fetchTimelineLogs by patient_id error:", error);
+        setTimelineLogs([]);
+        return;
       }
-      if (byPayloadPatientIdError) {
-        console.error("fetchTimelineLogs by payload.patientId error:", byPayloadPatientIdError);
-      }
-
-      const merged = [...(byPatientId ?? []), ...(byPayloadPatientId ?? [])] as TimelineLog[];
-      const deduped = new Map<string, TimelineLog>();
-      for (const row of merged) {
-        deduped.set(row.id, {
-          ...row,
-          payload: row.payload && typeof row.payload === "object" ? row.payload : null,
-        });
-      }
-      const sorted = [...deduped.values()].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
-      console.log("Fetched data:", sorted);
-      setTimelineLogs(sorted);
+      const rows = (data ?? []).map((row) => ({
+        ...row,
+        payload: row.payload && typeof row.payload === "object" ? row.payload : null,
+      })) as TimelineLog[];
+      console.log("Fetched timeline data:", rows);
+      setTimelineLogs(rows);
     } catch (error) {
       console.error("timeline log fetch failed:", error);
       setTimelineLogs([]);
@@ -350,12 +337,10 @@ export function PatientDetailClient({ dict }: Props) {
         { event: "INSERT", schema: "public", table: "cdss_guardrail_logs" },
         (payload) => {
           const row = payload.new as Partial<TimelineLog> & { payload?: Record<string, unknown> };
-          const payloadPatientId =
-            row.payload && typeof row.payload.patientId === "string" ? row.payload.patientId : null;
           const rowPatientId = typeof (row as { patient_id?: string }).patient_id === "string"
             ? (row as { patient_id?: string }).patient_id
             : null;
-          if (rowPatientId !== normalizedPatientId && payloadPatientId !== normalizedPatientId) return;
+          if (rowPatientId !== normalizedPatientId) return;
           void fetchTimelineLogs();
         },
       )
@@ -369,7 +354,8 @@ export function PatientDetailClient({ dict }: Props) {
     if (typeof window === "undefined") return;
     const handler = (event: Event) => {
       const custom = event as CustomEvent<{ patientId?: string }>;
-      if (custom.detail?.patientId && custom.detail.patientId !== normalizedPatientId) return;
+      const eventPatientId = custom.detail?.patientId ? String(custom.detail.patientId).trim() : "";
+      if (eventPatientId && eventPatientId !== normalizedPatientId) return;
       void fetchTimelineLogs();
     };
     window.addEventListener("rephyt:timeline-log-saved", handler);

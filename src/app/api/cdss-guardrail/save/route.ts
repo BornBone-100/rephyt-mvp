@@ -40,6 +40,7 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as SaveRequest;
     const patientId = String(body.patientId ?? "").trim();
+    console.log("[cdss-guardrail/save] incoming patientId:", body.patientId, "normalized:", patientId);
     if (!patientId) {
       return NextResponse.json({ error: "patientId is required" }, { status: 400 });
     }
@@ -52,27 +53,6 @@ export async function POST(req: Request) {
     const supabase = getSupabaseAdmin();
     if (!supabase) {
       return NextResponse.json({ error: "supabase admin not configured" }, { status: 500 });
-    }
-
-    const { data: latest } = await supabase
-      .from(TABLE)
-      .select("id, created_at, overall_score, has_red_flag, detected_condition_id")
-      .eq("patient_id", patientId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (latest) {
-      const createdAt = new Date(latest.created_at).getTime();
-      const now = Date.now();
-      const isRecent = Number.isFinite(createdAt) && now - createdAt < 2 * 60 * 1000;
-      const isSameCore =
-        latest.overall_score === overallScore &&
-        latest.has_red_flag === hasRedFlag &&
-        (latest.detected_condition_id ?? null) === detectedConditionId;
-      if (isRecent && isSameCore) {
-        return NextResponse.json({ ok: true, duplicated: true });
-      }
     }
 
     const row = {
@@ -99,11 +79,12 @@ export async function POST(req: Request) {
       },
     };
 
+    console.log("[cdss-guardrail/save] inserting row patient_id:", row.patient_id);
     const { error } = await supabase.from(TABLE).insert(row as never);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ ok: true, duplicated: false });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "unknown error" },
