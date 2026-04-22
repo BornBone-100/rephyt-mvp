@@ -32,6 +32,16 @@ type ModalityEntry = {
   target: string;
 };
 
+type GuardrailTimelineItem = {
+  id: string;
+  created_at: string;
+  overall_score: number | null;
+  has_red_flag: boolean | null;
+  detected_condition_id: string | null;
+  diagnosis_area: string | null;
+  payload: Record<string, unknown> | null;
+};
+
 const MANUAL_GRADE_OPTIONS: ManualTherapyEntry["grade"][] = [
   "Grade I",
   "Grade II",
@@ -220,6 +230,7 @@ export function PatientDetailClient({ dict }: Props) {
   const [patient, setPatient] = useState<Tables<"patients"> | null>(null);
   const [soapNotes, setSoapNotes] = useState<Tables<"soap_notes">[]>([]);
   const [treatments, setTreatments] = useState<Tables<"treatments">[]>([]);
+  const [guardrailTimeline, setGuardrailTimeline] = useState<GuardrailTimelineItem[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
   
@@ -272,6 +283,34 @@ export function PatientDetailClient({ dict }: Props) {
         .from("treatments").select("*").eq("patient_id", patientId).order("created_at", { ascending: false });
       if (treatmentData) setTreatments(treatmentData);
 
+      const { data: guardrailByColumn } = await supabase
+        .from("cdss_guardrail_logs")
+        .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, payload")
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      const { data: guardrailByPayload } = await supabase
+        .from("cdss_guardrail_logs")
+        .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, payload")
+        .contains("payload", { patientId })
+        .order("created_at", { ascending: false })
+        .limit(50);
+      const mergedGuardrail = [...(guardrailByColumn ?? []), ...(guardrailByPayload ?? [])];
+      const deduped = new Map<string, GuardrailTimelineItem>();
+      for (const row of mergedGuardrail as GuardrailTimelineItem[]) {
+        deduped.set(row.id, {
+          ...row,
+          payload: row.payload && typeof row.payload === "object" ? row.payload : null,
+        });
+      }
+      if (deduped.size > 0) {
+        setGuardrailTimeline(
+          [...deduped.values()].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
+        );
+      } else {
+        setGuardrailTimeline([]);
+      }
+
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "데이터베이스 오류가 발생했습니다.";
       console.error(message);
@@ -283,6 +322,39 @@ export function PatientDetailClient({ dict }: Props) {
   useEffect(() => {
     void fetchPatientAndRecords();
   }, [fetchPatientAndRecords]);
+
+  useEffect(() => {
+    if (!patientId || patientId === "null" || patientId === "undefined") return;
+    const channel = supabase
+      .channel(`cdss-guardrail-timeline-${patientId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "cdss_guardrail_logs" },
+        (payload) => {
+          const row = payload.new as Partial<GuardrailTimelineItem> & { payload?: Record<string, unknown> };
+          const payloadPatientId =
+            row.payload && typeof row.payload.patientId === "string" ? row.payload.patientId : null;
+          const rowPatientId = typeof (row as { patient_id?: string }).patient_id === "string"
+            ? (row as { patient_id?: string }).patient_id
+            : null;
+          if (rowPatientId !== patientId && payloadPatientId !== patientId) return;
+          const next: GuardrailTimelineItem = {
+            id: String(row.id ?? crypto.randomUUID()),
+            created_at: String(row.created_at ?? new Date().toISOString()),
+            overall_score: typeof row.overall_score === "number" ? row.overall_score : null,
+            has_red_flag: typeof row.has_red_flag === "boolean" ? row.has_red_flag : null,
+            detected_condition_id: typeof row.detected_condition_id === "string" ? row.detected_condition_id : null,
+            diagnosis_area: typeof row.diagnosis_area === "string" ? row.diagnosis_area : null,
+            payload: row.payload && typeof row.payload === "object" ? row.payload : null,
+          };
+          setGuardrailTimeline((prev) => [next, ...prev.filter((item) => item.id !== next.id)]);
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [patientId, supabase]);
 
   const latestSoap = soapNotes[0] ?? null;
   const autoPlanPrefill = useMemo(() => formatPlanToTreatmentLog(latestSoap?.plan ?? null), [latestSoap?.plan]);
@@ -414,6 +486,7 @@ export function PatientDetailClient({ dict }: Props) {
   };
 
   const sortedNotes = sortOrder === "desc" ? [...soapNotes] : [...soapNotes].reverse();
+  const timelineCount = soapNotes.length + guardrailTimeline.length;
 
   const pastSoapShareCopy = useMemo(
     () => ({
@@ -539,7 +612,7 @@ export function PatientDetailClient({ dict }: Props) {
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="flex justify-between items-center mb-8">
             <h2 className="text-xl font-black text-blue-950 flex items-center gap-2">
-              <span className="bg-blue-950 w-2 h-6 rounded-full"></span> 임상 타임라인 ({soapNotes.length}건)
+              <span className="bg-blue-950 w-2 h-6 rounded-full"></span> 임상 타임라인 ({timelineCount}건)
             </h2>
             {soapNotes.length > 0 && (
               <div className="bg-zinc-100 p-1 rounded-xl flex gap-1">
@@ -550,12 +623,58 @@ export function PatientDetailClient({ dict }: Props) {
             )}
           </div>
 
-          {soapNotes.length === 0 ? (
+          {timelineCount === 0 ? (
             <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 shadow-sm text-zinc-500 font-bold">아직 작성된 평가 기록이 없습니다.</div>
           ) : (
             <div className="relative pl-4 md:pl-8">
               <div className="absolute left-[11px] md:left-[27px] top-6 bottom-0 w-[2px] bg-blue-100"></div>
               <div className="space-y-10">
+                {guardrailTimeline.map((item) => {
+                  const diagnosisFromPayload =
+                    item.payload && typeof item.payload.diagnosisArea === "string"
+                      ? item.payload.diagnosisArea
+                      : null;
+                  const diagnosisLabel =
+                    item.diagnosis_area ||
+                    diagnosisFromPayload ||
+                    item.detected_condition_id ||
+                    "미분류";
+                  const scoreText =
+                    typeof item.overall_score === "number" ? `${Math.round(item.overall_score)}점` : "점수 미확정";
+                  const isRed = item.has_red_flag === true;
+                  return (
+                    <div key={`guardrail-${item.id}`} className="relative rounded-3xl border border-indigo-200 bg-indigo-50/70 p-6 shadow-sm">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <p className="text-xs font-black uppercase tracking-wide text-indigo-600">AI 분석 로그</p>
+                        <span className={`rounded-full border px-3 py-1 text-xs font-black ${isRed ? "border-rose-200 bg-rose-100 text-rose-700" : "border-emerald-200 bg-emerald-100 text-emerald-700"}`}>
+                          {isRed ? "Red Flag 감지" : "Red Flag 없음"}
+                        </span>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div className="rounded-xl border border-indigo-100 bg-white px-4 py-3">
+                          <p className="text-[11px] font-black text-zinc-400">분석 날짜</p>
+                          <p className="mt-1 text-sm font-bold text-zinc-700">
+                            {new Date(item.created_at).toLocaleString("ko-KR", {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-indigo-100 bg-white px-4 py-3">
+                          <p className="text-[11px] font-black text-zinc-400">진단 부위</p>
+                          <p className="mt-1 text-sm font-bold text-zinc-700">{diagnosisLabel}</p>
+                        </div>
+                        <div className="rounded-xl border border-indigo-100 bg-white px-4 py-3">
+                          <p className="text-[11px] font-black text-zinc-400">종합 방어력 점수</p>
+                          <p className="mt-1 text-sm font-bold text-zinc-700">{scoreText}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
                 {sortedNotes.map((note, index) => {
                   const visitNumber = sortOrder === "desc" ? soapNotes.length - index : index + 1;
                   return (

@@ -286,6 +286,9 @@ type IcfSelectionState = {
 };
 
 type GuardrailPayload = {
+  patientId: string;
+  diagnosisArea: string;
+  locale: SoapLocale;
   examination: string;
   evaluation: string;
   prognosis: string;
@@ -390,6 +393,9 @@ function buildGuardrailRequestPayload(payload: GuardrailPayload): string {
     return JSON.stringify(payload);
   } catch {
     const fallback: GuardrailPayload = {
+      patientId: String(payload.patientId ?? "").slice(0, 128),
+      diagnosisArea: String(payload.diagnosisArea ?? "").slice(0, 256),
+      locale: payload.locale === "en" ? "en" : "ko",
       examination: String(payload.examination ?? "").slice(0, 50000),
       evaluation: String(payload.evaluation ?? "").slice(0, 50000),
       prognosis: String(payload.prognosis ?? "").slice(0, 50000),
@@ -932,6 +938,9 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         ...patients.map((p) => p.name),
       ];
       const payload: GuardrailPayload = {
+        patientId: formData.patientId,
+        diagnosisArea: formData.diagnosisArea,
+        locale,
         examination: scrubClinicalTextForApi(formData.examination.trim(), nameHints),
         evaluation: scrubClinicalTextForApi(formData.evaluation.trim(), nameHints),
         prognosis: scrubClinicalTextForApi(formData.prognosis.trim(), nameHints),
@@ -2224,8 +2233,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
               ) : (
                 <div className="rounded-3xl bg-white p-10 text-center shadow-xl">
                   <ShieldCheck className="mx-auto mb-4 h-16 w-16 text-emerald-500" />
-                  <h3 className="text-2xl font-bold text-slate-800">No Critical Red Flags Detected</h3>
-                  <p className="mt-2 text-slate-500">입력하신 데이터에서 명확한 내과적 응급상황은 발견되지 않았습니다.</p>
+                  <h3 className="text-2xl font-bold text-slate-800">{t.noRedFlagTitle}</h3>
+                  <p className="mt-2 text-slate-500">{t.noRedFlagBody}</p>
                   <button
                     type="button"
                     onClick={() => setEvaluationResult(null)}

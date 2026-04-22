@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 type GuardrailRequest = {
+  patientId?: string;
+  diagnosisArea?: string;
+  locale?: "ko" | "en" | string;
   examination?: string;
   evaluation?: string;
   prognosis?: string;
@@ -799,6 +802,8 @@ function buildGuardrailLogRow(params: {
     ),
   );
   return {
+    patient_id: typeof params.request.patientId === "string" ? params.request.patientId : null,
+    diagnosis_area: typeof params.request.diagnosisArea === "string" ? params.request.diagnosisArea : null,
     payload: params.request,
     overall_score: overallScore,
     logic_audit: ex.logic_audit,
@@ -840,6 +845,8 @@ function buildGuardrailLogRowLegacy(params: {
     ),
   );
   return {
+    patient_id: typeof params.request.patientId === "string" ? params.request.patientId : null,
+    diagnosis_area: typeof params.request.diagnosisArea === "string" ? params.request.diagnosisArea : null,
     payload: params.request,
     overall_score: overallScore,
     logic_audit: ex.logic_audit,
@@ -851,6 +858,24 @@ function buildGuardrailLogRowLegacy(params: {
     compliance_score: params.result.complianceScore,
     tuning_version: TUNING_VERSION,
   };
+}
+
+async function syncTreatmentLogIfPossible(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  request: GuardrailRequest,
+): Promise<void> {
+  if (!supabase) return;
+  const patientId = typeof request.patientId === "string" ? request.patientId.trim() : "";
+  const content = typeof request.intervention === "string" ? request.intervention.trim() : "";
+  if (!patientId || !content) return;
+
+  const { error } = await supabase.from("treatments").insert({
+    patient_id: patientId,
+    content,
+  } as never);
+  if (error) {
+    console.warn("CDSS syncTreatmentLogIfPossible failed:", error.code, error.message);
+  }
 }
 
 function extractUnknownColumnFromInsertError(error: unknown): string | null {
@@ -923,7 +948,10 @@ async function logGuardrailEvent(params: {
     // DB 스키마와 불일치하는 컬럼이 있으면 컬럼 단위로 제거/격리하며 최대 4회 재시도.
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const { error } = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(insertRow as never);
-      if (!error) return { ok: true };
+      if (!error) {
+        await syncTreatmentLogIfPossible(supabase, params.request);
+        return { ok: true };
+      }
 
       const unknownColumn = extractUnknownColumnFromInsertError(error);
       if (!unknownColumn) {
@@ -960,6 +988,7 @@ async function logGuardrailEvent(params: {
       );
       return { ok: false, message: fallback.error.message };
     }
+    await syncTreatmentLogIfPossible(supabase, params.request);
     return { ok: true };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
@@ -997,7 +1026,8 @@ export async function POST(req: Request) {
     const tuningMap = await loadAliasTuningMap();
     const detected = detectConditionRule(evaluation, fullInput, tuningMap);
     const detectedRule = detected.rule;
-    const useEnglish = String(body.language ?? "ko").toLowerCase().startsWith("en");
+    const locale = String(body.locale ?? "").toLowerCase().startsWith("en") ? "en" : "ko";
+    const useEnglish = locale === "en" || String(body.language ?? "ko").toLowerCase().startsWith("en");
 
     const systemPrompt = `
 You are a Chief Physical Therapy Clinical Evaluator and Medical Insurance Audit Specialist.
@@ -1009,6 +1039,9 @@ Evaluate based on "Honest Data" and "Precise Execution" with professional involv
 [OUTPUT LANGUAGE — STRICT]
 The request includes a \`language\` field from the client. If it is "en" or starts with "en", the user is interacting in English: write EVERY narrative string inside the JSON (logicChainAudit.feedback; cpgCompliance reasoning/alternatives; auditDefense; predictiveTrajectory; etc.) in professional Medical English only. End each such narrative with an evidence suffix such as (Evidence: JOSPT Shoulder Pain CPG) or (Evidence: APTA Clinical Practice Guideline).
 If the language is not English, write those narratives in Korean and end with (근거: JOSPT …) or (근거: APTA …) as appropriate.
+${locale === "ko"
+  ? '사용자가 한국어로 요청했으니, 모든 분석 결과와 문장을 한국어 전문 물리치료/의학 용어로 작성해. (예: "방사통", "관절가동범위 제한")'
+  : "User requested English output. Keep all narrative fields strictly in professional Medical English."}
 
 [EVIDENCE CITATION — MANDATORY]
 Apply guideline citations to at least: logicChainAudit.feedback; each cpgCompliance[].reasoning and each non-null cpgCompliance[].alternative; auditDefense.feedback; auditDefense.improvementTip; predictiveTrajectory.trajectoryText.
@@ -1180,7 +1213,17 @@ ${planSummary}
     let auxiliaryError: { stage: "db_log"; message: string } | undefined;
     try {
       const logResult = await logGuardrailEvent({
-        request: { examination, evaluation, prognosis, intervention },
+        request: {
+          patientId: body.patientId,
+          diagnosisArea: body.diagnosisArea,
+          locale,
+          language: body.language,
+          step4: body.step4,
+          examination,
+          evaluation,
+          prognosis,
+          intervention,
+        },
         detectedConditionId: detectedRule.id,
         matchedAliases: detected.matchedAliases,
         scoreBreakdown: detected.scoreBreakdown,

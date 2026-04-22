@@ -1,7 +1,6 @@
 "use client";
 
 import { AlertTriangle, BookOpen, Link2, Shield, Siren, Sparkles, TrendingUp } from "lucide-react";
-import { useState } from "react";
 import { soapWizardCopy, type SoapLocale } from "./soap-copy";
 
 type LogicChainAudit = {
@@ -50,31 +49,6 @@ type Props = {
   locale?: SoapLocale;
 };
 
-function sanitizeText(raw: string) {
-  return raw
-    .replace(/[가-힣]{2,4}\s?(님|씨)?/g, "***")
-    .replace(/\b\d{2,4}[-.\s]?\d{3,4}[-.\s]?\d{4}\b/g, "***-****-****")
-    .replace(/\b\d{2,4}[./-]\d{1,2}[./-]\d{1,2}\b/g, "****-**-**");
-}
-
-function buildCommunityPayload(data: FinalReportResult) {
-  return {
-    challengeTitle: `${Math.round(data.overallScore)}점 달성! 임상 추론 챌린지`,
-    defenseHighlight: sanitizeText(data.auditDefense.improvementTip),
-    anonymousData: {
-      logicChain: sanitizeText(data.logicChainAudit.feedback),
-      trajectory: sanitizeText(data.predictiveTrajectory.trajectoryText),
-      cpg: data.cpgCompliance.map((item) => ({
-        intervention: sanitizeText(item.intervention),
-        level: item.level,
-        reasoning: sanitizeText(item.reasoning),
-      })),
-    },
-    overallScore: data.overallScore,
-    defenseScore: data.auditDefense.defenseScore,
-  };
-}
-
 function levelBadge(level: "green" | "yellow" | "red") {
   if (level === "green") return "bg-emerald-100 text-emerald-700 border-emerald-200";
   if (level === "yellow") return "bg-amber-100 text-amber-700 border-amber-200";
@@ -83,7 +57,6 @@ function levelBadge(level: "green" | "yellow" | "red") {
 
 function ReportBody({ data, locale }: { data: FinalReportResult; locale: SoapLocale }) {
   const ui = soapWizardCopy(locale);
-  const [isSharing, setIsSharing] = useState(false);
   const score = Math.max(0, Math.min(100, data.overallScore));
   const defenseScore = Math.max(0, Math.min(100, data.auditDefense.defenseScore));
   const gaugeBg = { background: `conic-gradient(#2563eb ${score * 3.6}deg, #e2e8f0 0deg)` };
@@ -105,7 +78,7 @@ function ReportBody({ data, locale }: { data: FinalReportResult; locale: SoapLoc
       {data.hasRedFlag ? (
         <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-5 shadow-sm">
           <h3 className="flex items-center gap-2 text-sm font-black text-rose-700">
-            <Siren className="h-4 w-4" /> Referral Priority
+            <Siren className="h-4 w-4" /> {ui.referralPriority}
           </h3>
           <p className="mt-2 text-sm font-bold text-slate-700">
             {data.criticalAlert?.suspectedCondition ?? ui.dashReferralFallback}
@@ -172,7 +145,7 @@ function ReportBody({ data, locale }: { data: FinalReportResult; locale: SoapLoc
         <p className="mt-2 text-sm">{data.auditDefense.feedback}</p>
         <div className="mt-3">
           <div className="mb-1 flex items-center justify-between text-xs font-bold">
-            <span>Defense Score</span>
+            <span>{ui.dashDefenseScore}</span>
             <span>{defenseScore}/100</span>
           </div>
           <div className="h-2.5 w-full rounded-full bg-white/70">
@@ -204,79 +177,7 @@ function ReportBody({ data, locale }: { data: FinalReportResult; locale: SoapLoc
         ) : null}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="mb-3 text-sm font-black text-slate-700">{ui.dashCommunity}</h3>
-        <div className="grid grid-cols-1 gap-2">
-          <button
-            type="button"
-            disabled={isSharing}
-            onClick={async () => {
-              setIsSharing(true);
-              try {
-                const payload = buildCommunityPayload(data);
-                const res = await fetch("/api/community/report-share", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ mode: "challenge", payload }),
-                });
-                if (!res.ok) throw new Error(ui.shareFail);
-                alert(ui.shareChallengeOk);
-              } catch {
-                alert(ui.shareError);
-              } finally {
-                setIsSharing(false);
-              }
-            }}
-            className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-left text-xs font-bold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60"
-          >
-            {ui.dashChallenge}
-          </button>
-          <button
-            type="button"
-            disabled={isSharing}
-            onClick={async () => {
-              setIsSharing(true);
-              try {
-                const payload = buildCommunityPayload(data);
-                const res = await fetch("/api/community/report-share", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ mode: "defense_tip", payload }),
-                });
-                if (!res.ok) throw new Error(ui.shareFail);
-                alert(ui.shareDefenseOk);
-              } catch {
-                alert(ui.shareError);
-              } finally {
-                setIsSharing(false);
-              }
-            }}
-            className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
-          >
-            {ui.dashDefenseShare}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0f172a"/><stop offset="100%" stop-color="#1e293b"/></linearGradient></defs><rect width="1080" height="1080" fill="url(#g)"/><text x="80" y="160" fill="#93c5fd" font-size="36" font-family="Arial">Re:PhyT Clinical Branding</text><text x="80" y="260" fill="#ffffff" font-size="72" font-weight="700" font-family="Arial">SCORE ${score}</text><text x="80" y="350" fill="#34d399" font-size="40" font-family="Arial">Defense ${defenseScore}/100</text><text x="80" y="450" fill="#cbd5e1" font-size="30" font-family="Arial">${sanitizeText(
-                data.predictiveTrajectory.trajectoryText,
-              ).slice(0, 60)}</text></svg>`;
-              const blob = new Blob([svg], { type: "image/svg+xml" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = "rephyt-branding-card.svg";
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
-            className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-left text-xs font-bold text-violet-700 transition hover:bg-violet-100"
-          >
-            {ui.dashInstagram}
-          </button>
-        </div>
-      </div>
-
-      <div className="sticky bottom-0 z-10 -mx-6 mt-6 border-t border-slate-200 bg-slate-50/95 px-6 pb-2 pt-4 backdrop-blur-sm lg:-mx-10 lg:px-10">
+      <div className="sticky bottom-0 z-10 -mx-6 mt-4 border-t border-slate-200 bg-slate-50/95 px-6 pb-2 pt-4 backdrop-blur-sm lg:-mx-10 lg:px-10">
         <p className="text-[11px] leading-relaxed text-slate-400">{ui.dashDisclaimer}</p>
       </div>
     </div>
