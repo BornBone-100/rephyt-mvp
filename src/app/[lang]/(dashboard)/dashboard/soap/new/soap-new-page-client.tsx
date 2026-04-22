@@ -257,6 +257,8 @@ type RomMmtInput = {
   endFeel: string;
   mmt: string;
 };
+type Side = "left" | "right";
+type RomMmtBySide = Record<Side, RomMmtInput>;
 
 type ManualTherapyEntry = {
   name: string;
@@ -621,7 +623,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   });
   const [specialTestSelection, setSpecialTestSelection] = useState<Record<string, SpecialTestValue>>({});
   const [selectedTbcTags, setSelectedTbcTags] = useState<string[]>([]);
-  const [romMmtInputs, setRomMmtInputs] = useState<Record<string, RomMmtInput>>({});
+  const [romMmtInputs, setRomMmtInputs] = useState<Record<string, RomMmtBySide>>({});
   const [outcomeScores, setOutcomeScores] = useState<Record<string, string>>({});
   const [icfSelection, setIcfSelection] = useState<IcfSelectionState>({
     impairment: [],
@@ -657,6 +659,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const [manualOutcomeScore, setManualOutcomeScore] = useState("");
   const [manualOutcomeMax, setManualOutcomeMax] = useState("");
   const [screeningAnswers, setScreeningAnswers] = useState<Record<string, boolean>>({});
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
 
   const specialTestLabel = useMemo(
     (): Record<SpecialTestValue, string> => ({
@@ -827,17 +830,54 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     }));
   };
 
-  const handleRomMmtChange = (movement: string, patch: Partial<RomMmtInput>) => {
+  const handleRomMmtChange = (movement: string, side: Side, patch: Partial<RomMmtInput>) => {
+    const defaultRow: RomMmtInput = { arom: "", prom: "", endFeel: "Normal", mmt: "" };
     setRomMmtInputs((prev) => ({
       ...prev,
       [movement]: {
-        arom: prev[movement]?.arom ?? "",
-        prom: prev[movement]?.prom ?? "",
-        endFeel: prev[movement]?.endFeel ?? "Normal",
-        mmt: prev[movement]?.mmt ?? "",
-        ...patch,
+        left: {
+          ...(prev[movement]?.left ?? defaultRow),
+          ...(side === "left" ? patch : {}),
+        },
+        right: {
+          ...(prev[movement]?.right ?? defaultRow),
+          ...(side === "right" ? patch : {}),
+        },
       },
     }));
+  };
+
+  const handleDraftSave = () => {
+    if (typeof window === "undefined") return;
+    const now = new Date();
+    const draftKey = `rephyt:soap-draft:${String(formData.patientId || "new").trim() || "new"}`;
+    const payload = {
+      savedAt: now.toISOString(),
+      locale,
+      step,
+      formData,
+      examDraft,
+      specialTestSelection,
+      selectedTbcTags,
+      romMmtInputs,
+      outcomeScores,
+      icfSelection,
+      prognosisDuration,
+      rehabPotential,
+      shortTermGoal,
+      longTermGoal,
+      manualEntries,
+      exerciseEntries,
+      modalityEntries,
+      educationHep,
+    };
+    window.localStorage.setItem(draftKey, JSON.stringify(payload));
+    const hhmm = now.toLocaleTimeString(locale === "en" ? "en-US" : "ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    setDraftSavedAt(hhmm);
   };
 
   const handleOutcomeScoreChange = (measureName: string, value: string) => {
@@ -1072,12 +1112,17 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
   useEffect(() => {
     const autoRomLines = Object.entries(romMmtInputs)
-      .filter(([, row]) => row.arom || row.prom || row.mmt)
+      .filter(([, row]) => {
+        const l = row.left;
+        const r = row.right;
+        return Boolean(l?.arom || l?.prom || l?.mmt || r?.arom || r?.prom || r?.mmt);
+      })
       .map(
-        ([movement, row]) =>
-          `${t.tagRomMmt} ${movement} | AROM: ${row.arom || "-"} | PROM: ${row.prom || "-"} | End Feel: ${row.endFeel || "-"} | MMT: ${
-            row.mmt || "-"
-          }`,
+        ([movement, row]) => {
+          const left = row.left ?? { arom: "", prom: "", endFeel: "Normal", mmt: "" };
+          const right = row.right ?? { arom: "", prom: "", endFeel: "Normal", mmt: "" };
+          return `${t.tagRomMmt} ${movement} | L-AROM: ${left.arom || "-"} | L-PROM: ${left.prom || "-"} | L-End Feel: ${left.endFeel || "-"} | L-MMT: ${left.mmt || "-"} | R-AROM: ${right.arom || "-"} | R-PROM: ${right.prom || "-"} | R-End Feel: ${right.endFeel || "-"} | R-MMT: ${right.mmt || "-"}`;
+        },
       );
     const autoOutcomeLines = selectedOutcomeOptions
       .map((o) => {
@@ -1549,48 +1594,95 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                       </div>
 
                       <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                        <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">ROM / PROM + End Feel + MMT</p>
+                        <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">ROM / PROM + End Feel + MMT (L / R)</p>
                         <div className="space-y-3">
                           {selectedRegionEvidence.rom.map((movement) => {
-                            const row = romMmtInputs[movement] ?? { arom: "", prom: "", endFeel: "Normal", mmt: "" };
+                            const row = romMmtInputs[movement] ?? {
+                              left: { arom: "", prom: "", endFeel: "Normal", mmt: "" },
+                              right: { arom: "", prom: "", endFeel: "Normal", mmt: "" },
+                            };
+                            const endFeelTooltip = locale === "en"
+                              ? [
+                                  "Soft: Soft feel from tissue approximation (e.g., knee flexion)",
+                                  "Firm: Elastic resistance from capsule/ligament stretch (e.g., hip rotation)",
+                                  "Hard: Solid bony stop from bone-to-bone contact (e.g., elbow extension)",
+                                  "Empty: Motion stopped by pain before end-range (clinical caution)",
+                                ]
+                              : [
+                                  "Soft: 조직의 근접(Tissue approximation)으로 인한 부드러운 느낌 (예: 무릎 굴곡)",
+                                  "Firm: 관절낭이나 인대의 신장으로 인한 탄력 있는 저항감 (예: 고관절 회전)",
+                                  "Hard: 뼈와 뼈의 접촉으로 인한 단단한 멈춤 (예: 주관절 신전)",
+                                  "Empty: 통증 때문에 끝범위에 도달하기 전 환자가 저지함 (임상적 주의 필요)",
+                                ];
+                            const sideLabel = (side: Side) => (side === "left" ? "Left (L)" : "Right (R)");
                             return (
-                              <div key={movement} className="grid grid-cols-1 gap-2 rounded-xl border border-slate-100 bg-white p-3 md:grid-cols-5">
-                                <p className="text-sm font-semibold text-slate-700">{movement}</p>
-                                <input
-                                  value={row.arom}
-                                  onChange={(e) => handleRomMmtChange(movement, { arom: e.target.value })}
-                                  placeholder="AROM"
-                                  className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
-                                />
-                                <input
-                                  value={row.prom}
-                                  onChange={(e) => handleRomMmtChange(movement, { prom: e.target.value })}
-                                  placeholder="PROM"
-                                  className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
-                                />
-                                <select
-                                  value={row.endFeel}
-                                  onChange={(e) => handleRomMmtChange(movement, { endFeel: e.target.value })}
-                                  className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
-                                >
-                                  {END_FEEL_OPTIONS.map((opt) => (
-                                    <option key={opt} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                </select>
-                                <select
-                                  value={row.mmt}
-                                  onChange={(e) => handleRomMmtChange(movement, { mmt: e.target.value })}
-                                  className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
-                                >
-                                  <option value="">MMT</option>
-                                  {MMT_OPTIONS.map((opt) => (
-                                    <option key={opt} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                </select>
+                              <div key={movement} className="rounded-xl border border-slate-100 bg-white p-3">
+                                <p className="mb-3 text-sm font-semibold text-slate-700">{movement}</p>
+                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                  {(["left", "right"] as Side[]).map((side) => {
+                                    const sideRow = row[side];
+                                    return (
+                                      <div key={`${movement}-${side}`} className="rounded-lg border border-slate-200 bg-white p-3">
+                                        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">{sideLabel(side)}</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <input
+                                            value={sideRow.arom}
+                                            onChange={(e) => handleRomMmtChange(movement, side, { arom: e.target.value })}
+                                            placeholder="AROM"
+                                            className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
+                                          />
+                                          <input
+                                            value={sideRow.prom}
+                                            onChange={(e) => handleRomMmtChange(movement, side, { prom: e.target.value })}
+                                            placeholder="PROM"
+                                            className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
+                                          />
+                                          <div className="group relative">
+                                            <select
+                                              value={sideRow.endFeel}
+                                              onChange={(e) => handleRomMmtChange(movement, side, { endFeel: e.target.value })}
+                                              className="h-9 w-full rounded-lg border border-slate-200 px-2 pr-8 text-sm outline-none focus:border-rose-300"
+                                            >
+                                              {END_FEEL_OPTIONS.map((opt) => (
+                                                <option key={opt} value={opt}>
+                                                  {opt}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <span
+                                              className="absolute right-2 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 cursor-help items-center justify-center rounded-full border border-slate-300 bg-white text-[11px] font-bold text-slate-500"
+                                              aria-label="End Feel guide"
+                                            >
+                                              !
+                                            </span>
+                                            <div
+                                              role="tooltip"
+                                              className="pointer-events-none absolute bottom-full right-0 z-50 mb-2 w-72 translate-y-1 rounded-lg bg-slate-800 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-all duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100"
+                                            >
+                                              {endFeelTooltip.map((line) => (
+                                                <p key={line} className="mb-1 last:mb-0">
+                                                  {line}
+                                                </p>
+                                              ))}
+                                            </div>
+                                          </div>
+                                          <select
+                                            value={sideRow.mmt}
+                                            onChange={(e) => handleRomMmtChange(movement, side, { mmt: e.target.value })}
+                                            className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
+                                          >
+                                            <option value="">MMT</option>
+                                            {MMT_OPTIONS.map((opt) => (
+                                              <option key={opt} value={opt}>
+                                                {opt}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             );
                           })}
@@ -2180,6 +2272,21 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                   >
                     <ChevronLeft className="h-5 w-5" /> Previous
                   </button>
+
+                  <div className="flex flex-col items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleDraftSave}
+                      className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {locale === "en" ? "Save Draft" : "임시 저장하기"}
+                    </button>
+                    {draftSavedAt ? (
+                      <p className="text-xs text-slate-500">
+                        {locale === "en" ? `Draft saved (${draftSavedAt})` : `임시 저장되었습니다 (${draftSavedAt})`}
+                      </p>
+                    ) : null}
+                  </div>
 
                   {step < 4 ? (
                     <button

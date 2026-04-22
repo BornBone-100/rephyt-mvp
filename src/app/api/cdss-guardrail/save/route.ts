@@ -23,6 +23,24 @@ type SaveRequest = {
 };
 
 const TABLE = "cdss_guardrail_logs";
+const ALLOWED_COLUMNS = [
+  "patient_id",
+  "diagnosis_area",
+  "overall_score",
+  "logic_audit",
+  "cpg_compliance",
+  "audit_defense",
+  "predictive_trajectory",
+  "compliance_score",
+  "detected_condition_id",
+  "has_red_flag",
+  "matched_aliases",
+  "intervention_strategy",
+  "professional_discussion",
+  "score_breakdown",
+  "raw_ai_response",
+] as const;
+const ALLOWED_COLUMN_SET = new Set<string>(ALLOWED_COLUMNS);
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -34,6 +52,32 @@ function getSupabaseAdmin() {
 function clampScore(v: unknown) {
   if (typeof v !== "number" || !Number.isFinite(v)) return 0;
   return Math.max(0, Math.min(100, Math.round(v)));
+}
+
+function sanitizeInsertPayload(row: Record<string, unknown>, aiResult: unknown) {
+  const sanitizedPayload: Record<string, unknown> = {};
+  const droppedRowKeys: Record<string, unknown> = {};
+  const aiUnknownFields: Record<string, unknown> = {};
+  const aiObj = aiResult && typeof aiResult === "object" ? (aiResult as Record<string, unknown>) : {};
+
+  for (const [key, value] of Object.entries(row)) {
+    if (ALLOWED_COLUMN_SET.has(key)) sanitizedPayload[key] = value;
+    else droppedRowKeys[key] = value;
+  }
+  for (const [key, value] of Object.entries(aiObj)) {
+    if (!ALLOWED_COLUMN_SET.has(key)) {
+      aiUnknownFields[key] = value;
+    }
+  }
+
+  sanitizedPayload.raw_ai_response = {
+    source: "manual_save_button",
+    allowed_columns: ALLOWED_COLUMNS,
+    dropped_row_keys: droppedRowKeys,
+    unknown_ai_fields: aiUnknownFields,
+    result: aiResult,
+  };
+  return sanitizedPayload;
 }
 
 export async function POST(req: Request) {
@@ -55,7 +99,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "supabase admin not configured" }, { status: 500 });
     }
 
-    const row = {
+    const row: Record<string, unknown> = {
       patient_id: patientId,
       diagnosis_area: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,
       overall_score: overallScore,
@@ -71,16 +115,28 @@ export async function POST(req: Request) {
         result.detectionMeta?.scoreBreakdown && typeof result.detectionMeta.scoreBreakdown === "object"
           ? result.detectionMeta.scoreBreakdown
           : {},
-      raw_ai_response: {
-        source: "manual_save_button",
-        locale: body.locale ?? null,
-        language: body.language ?? null,
-        result,
-      },
+      intervention_strategy:
+        typeof (result as { interventionStrategy?: unknown; intervention_strategy?: unknown }).interventionStrategy === "string"
+          ? (result as { interventionStrategy?: string }).interventionStrategy
+          : typeof (result as { intervention_strategy?: unknown }).intervention_strategy === "string"
+            ? (result as { intervention_strategy?: string }).intervention_strategy
+            : "",
+      professional_discussion:
+        typeof (result as { professionalDiscussion?: unknown; professional_discussion?: unknown }).professionalDiscussion === "string"
+          ? (result as { professionalDiscussion?: string }).professionalDiscussion
+          : typeof (result as { professional_discussion?: unknown }).professional_discussion === "string"
+            ? (result as { professional_discussion?: string }).professional_discussion
+            : "",
     };
 
+    const aiResultForBackup = {
+      ...result,
+      locale: body.locale ?? null,
+      language: body.language ?? null,
+    };
+    const sanitizedPayload = sanitizeInsertPayload(row, aiResultForBackup);
     console.log("[cdss-guardrail/save] inserting row patient_id:", row.patient_id);
-    const { error } = await supabase.from(TABLE).insert(row as never);
+    const { error } = await supabase.from(TABLE).insert(sanitizedPayload as never);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }

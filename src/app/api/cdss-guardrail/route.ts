@@ -161,7 +161,7 @@ const TUNING_VERSION = "v1-feedback-weighted";
 
 /** Supabase public 스키마 테이블명 (오타 방지) */
 const CDSS_GUARDRAIL_LOGS_TABLE = "cdss_guardrail_logs" as const;
-const CDSS_GUARDRAIL_ALLOWED_KEYS = new Set<string>([
+const ALLOWED_COLUMNS = [
   "patient_id",
   "diagnosis_area",
   "overall_score",
@@ -177,7 +177,8 @@ const CDSS_GUARDRAIL_ALLOWED_KEYS = new Set<string>([
   "intervention_strategy",
   "professional_discussion",
   "raw_ai_response",
-]);
+] as const;
+const CDSS_GUARDRAIL_ALLOWED_KEYS = new Set<string>(ALLOWED_COLUMNS);
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -904,15 +905,46 @@ function sanitizeGuardrailInsertPayload(
   request: GuardrailRequest,
   result: GuardrailResponse,
 ): Record<string, unknown> {
+  const aiResult = rawModelJson && typeof rawModelJson === "object" ? (rawModelJson as Record<string, unknown>) : {};
+  const aiCandidateToColumn: Record<string, string> = {
+    overallScore: "overall_score",
+    score: "overall_score",
+    logicChainAudit: "logic_audit",
+    cpgCompliance: "cpg_compliance",
+    auditDefense: "audit_defense",
+    predictiveTrajectory: "predictive_trajectory",
+    complianceScore: "compliance_score",
+    hasRedFlag: "has_red_flag",
+    intervention_strategy: "intervention_strategy",
+    interventionStrategy: "intervention_strategy",
+    professional_discussion: "professional_discussion",
+    professionalDiscussion: "professional_discussion",
+    score_breakdown: "score_breakdown",
+    scoreBreakdown: "score_breakdown",
+  };
+  const aiDerivedColumns: Record<string, unknown> = {};
+  const unknownAiFields: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(aiResult)) {
+    const mappedColumn = aiCandidateToColumn[key];
+    if (mappedColumn && CDSS_GUARDRAIL_ALLOWED_KEYS.has(mappedColumn)) {
+      aiDerivedColumns[mappedColumn] = value;
+      continue;
+    }
+    unknownAiFields[key] = value;
+  }
+
+  const mergedRow = { ...aiDerivedColumns, ...row };
   const sanitizedPayload: Record<string, unknown> = {};
-  const droppedKeys: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(row)) {
+  const droppedRowKeys: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(mergedRow)) {
     if (CDSS_GUARDRAIL_ALLOWED_KEYS.has(key)) sanitizedPayload[key] = value;
-    else droppedKeys[key] = value;
+    else droppedRowKeys[key] = value;
   }
   sanitizedPayload.raw_ai_response = {
     model_response: rawModelJson,
-    dropped_top_level_keys: droppedKeys,
+    dropped_row_keys: droppedRowKeys,
+    unknown_ai_fields: unknownAiFields,
+    allowed_columns: ALLOWED_COLUMNS,
     request_payload: request,
     normalized_result: result,
   };
@@ -1092,6 +1124,24 @@ Apply guideline citations to at least: logicChainAudit.feedback; each cpgComplia
 - Explain in concrete biomechanical and physiological terms why Step 4 interventions (manual therapy, exercise, modalities, education) are appropriate for Step 1/2 problems, and what is missing.
 - Return deep expert-level reasoning, not generic summaries.
 
+[CPG_COMPLIANCE WRITING RULES — STRICT]
+- Never write shallow statements like "guidelines are generally followed."
+- You MUST cite global PT guidelines concretely (JOSPT, APTA, NICE when applicable) and compare Step 2 functional findings against Step 4 interventions.
+- You MUST explicitly state recommendation strength/grade when judging omissions or mismatches, e.g., "According to JOSPT/APTA, intervention X is Level A recommendation in this phase but is currently missing."
+- For each major intervention block, provide critique-level reasoning: what is evidence-aligned, what is low-value care risk, and what should be replaced.
+
+[AUDIT_DEFENSE WRITING RULES — STRICT]
+- Assume the persona of the strictest HIRA reimbursement reviewer.
+- Aggressively audit chart defensibility by checking whether Step 1 chief complaints and Step 4 treatments (especially manual therapy and non-covered modality use) demonstrate clear medical necessity.
+- You MUST provide 2-3 concrete charting improvement tips to reduce denial risk, such as adding quantified Step 3 goals (ROM angle, specific MMT grade, disability index delta, measurable timeline).
+- Avoid generic statements; every recommendation must be operational and audit-ready.
+
+[PREDICTIVE_TRAJECTORY WRITING RULES — STRICT]
+- Never say vague phrases such as "patient will gradually improve."
+- You MUST split prognosis by tissue-healing phases and timeline windows (e.g., 0-2 weeks Inflammation, 2-6 weeks Proliferation, 6+ weeks Remodeling).
+- For each phase, predict expected functional metric changes (e.g., NDI/ODI or relevant scale trend) with concrete ranges or percentage improvement.
+- You MUST identify likely plateau windows and relapse-risk timing, and provide risk-control guidance.
+
 [INTERVENTION_STRATEGY WRITING RULES — STRICT]
 You MUST include all of the following in intervention_strategy:
 1) Biomechanical/physiological rationale:
@@ -1117,6 +1167,8 @@ You MUST include all of the following in professional_discussion:
 - Output language must be Korean for Korean locale, but use expert medical/physical-therapy terminology where appropriate (e.g., Arthrokinematics, Eccentric control, Central sensitization).
 - Do NOT parrot Step 1~4 content as a plain restatement.
 - Prioritize analytic, logical, critique-oriented writing over creative style.
+- intervention_strategy, professional_discussion, logicChainAudit.feedback, auditDefense.feedback, auditDefense.improvementTip, predictiveTrajectory.trajectoryText, and each cpgCompliance reasoning/alternative must be paragraph-style with at least 3-4 sentences each.
+- For Korean locale, use professional Korean medical/physical-therapy and reimbursement-audit terminology consistently.
 
 CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact schema below. Do not include markdown formatting like \`\`\`json or any conversational text.
 
@@ -1157,6 +1209,12 @@ ${useEnglish ? "User is interacting in English. Respond in professional Medical 
 유저가 입력한 4단계 임상 추론(검사, 평가, 목표, 중재)을 분석하고, 반드시 아래의 JSON 형식으로만 답변해.
 ${useEnglish ? "For English mode: every narrative field must be Medical English with (Evidence: …) citations. " : "각 한국어 서술 필드(피드백·근거·개선팁·예후 문장 등) 끝에는 반드시 참고한 가이드라인 명칭을 괄호로 명시하라. 예: (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline)."}
 ${useEnglish ? "For intervention_strategy and professional_discussion, provide professor-level critique with biomechanics, healing timeline, and BPS analysis." : "intervention_strategy와 professional_discussion은 반드시 교수급 임상 비평 수준으로 작성하고, 생체역학·조직치유단계·BPS 관점을 포함하라."}
+${useEnglish
+  ? "For cpgCompliance, auditDefense, and predictiveTrajectory, enforce the same depth: include recommendation levels, payer-defense logic, phase-based prognosis, and actionable charting tips."
+  : "cpgCompliance, auditDefense, predictiveTrajectory도 intervention_strategy와 동일한 깊이로 작성하라. 권고등급(Level A/B), HIRA 심사 관점의 medical necessity 검토, 조직 치유 단계별(염증기/증식기/재형성기) 타임라인, 기능지표 점수 변화 예측, 정체기·재발 위험 경고를 반드시 포함하라."}
+${useEnglish
+  ? "Each major narrative value must be a deep paragraph of at least 3-4 sentences."
+  : "각 주요 항목값은 최소 3~4문장 이상의 깊이 있는 단락으로 작성하라."}
 아래 추정 진단 컨텍스트를 우선 반영하라: ${detectedRule.id}
 
 [입력]
