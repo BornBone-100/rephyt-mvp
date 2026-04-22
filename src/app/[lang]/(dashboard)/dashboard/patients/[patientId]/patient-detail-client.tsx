@@ -14,6 +14,43 @@ type Props = {
   dict: Dictionary;
 };
 
+type ManualTherapyEntry = {
+  name: string;
+  grade: "Grade I" | "Grade II" | "Grade III" | "Grade IV" | "Grade V" | "Soft Tissue" | "Neural";
+  minutes: string;
+};
+
+type TherapeuticExerciseEntry = {
+  name: string;
+  sets: string;
+  reps: string;
+  holdSec: string;
+};
+
+type ModalityEntry = {
+  modality: "Hot/Cold Pack" | "Ultrasound" | "TENS/ICT" | "Traction" | "ESWT" | "Laser";
+  target: string;
+};
+
+const MANUAL_GRADE_OPTIONS: ManualTherapyEntry["grade"][] = [
+  "Grade I",
+  "Grade II",
+  "Grade III",
+  "Grade IV",
+  "Grade V",
+  "Soft Tissue",
+  "Neural",
+];
+
+const MODALITY_OPTIONS: ModalityEntry["modality"][] = [
+  "Hot/Cold Pack",
+  "Ultrasound",
+  "TENS/ICT",
+  "Traction",
+  "ESWT",
+  "Laser",
+];
+
 function formatPlanToTreatmentLog(plan: string | null): string {
   if (!plan) return "";
   const lines = plan
@@ -71,6 +108,106 @@ function extractCautionNote(note: Tables<"soap_notes"> | null): string | null {
   return cautionLines[0];
 }
 
+function formatStep4TreatmentText(
+  manualEntries: ManualTherapyEntry[],
+  exerciseEntries: TherapeuticExerciseEntry[],
+  modalityEntries: ModalityEntry[],
+  educationHep: string,
+): string {
+  const manualLines = manualEntries
+    .filter((m) => m.name.trim())
+    .map((m) => `[Manual] ${m.name.trim()} ${m.grade} (${(m.minutes || "-").trim()}분)`);
+  const exerciseLines = exerciseEntries
+    .filter((e) => e.name.trim())
+    .map((e) => {
+      const sets = (e.sets || "-").trim();
+      const reps = (e.reps || "-").trim();
+      const hold = e.holdSec.trim();
+      return `[Exercise] ${e.name.trim()} (${sets}set/${reps}rep${hold ? `/${hold}s` : ""})`;
+    });
+  const modalityLines = modalityEntries
+    .filter((m) => m.modality.trim())
+    .map((m) => `[Modalities] ${m.modality} (${m.target.trim() || "-"})`);
+  const educationLines = educationHep
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `[Education] ${line}`);
+  return [...manualLines, ...exerciseLines, ...modalityLines, ...educationLines].join("\n").trim();
+}
+
+function parseTreatmentTextToStep4(text: string): {
+  manual: ManualTherapyEntry[];
+  exercise: TherapeuticExerciseEntry[];
+  modalities: ModalityEntry[];
+  education: string;
+} {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const manual: ManualTherapyEntry[] = [];
+  const exercise: TherapeuticExerciseEntry[] = [];
+  const modalities: ModalityEntry[] = [];
+  const educationLines: string[] = [];
+
+  for (const line of lines) {
+    const manualMatch = line.match(
+      /^\[Manual\]\s*(.+?)\s(Grade I|Grade II|Grade III|Grade IV|Grade V|Soft Tissue|Neural)\s*\(([^)]+)\)\s*$/i,
+    );
+    if (manualMatch) {
+      manual.push({
+        name: manualMatch[1].trim(),
+        grade: manualMatch[2] as ManualTherapyEntry["grade"],
+        minutes: manualMatch[3].replace(/min|분/gi, "").trim(),
+      });
+      continue;
+    }
+
+    const exerciseMatch = line.match(/^\[Exercise\]\s*(.+?)\s*\((.+)\)\s*$/i);
+    if (exerciseMatch) {
+      const volume = exerciseMatch[2];
+      const setsMatch = volume.match(/(\d+)\s*set[s]?/i);
+      const repsMatch = volume.match(/(\d+)\s*rep[s]?/i);
+      const holdMatch = volume.match(/(?:\/|^)(\d+)\s*s(?:\/|$)/i);
+      exercise.push({
+        name: exerciseMatch[1].trim(),
+        sets: setsMatch?.[1] ?? "",
+        reps: repsMatch?.[1] ?? "",
+        holdSec: holdMatch?.[1] ?? "",
+      });
+      continue;
+    }
+
+    const modalityMatch = line.match(/^\[Modalities\]\s*(.+?)\s*\((.*)\)\s*$/i);
+    if (modalityMatch) {
+      const modality = modalityMatch[1].trim();
+      modalities.push({
+        modality: MODALITY_OPTIONS.includes(modality as ModalityEntry["modality"])
+          ? (modality as ModalityEntry["modality"])
+          : "TENS/ICT",
+        target: modalityMatch[2].trim(),
+      });
+      continue;
+    }
+
+    const educationMatch = line.match(/^\[Education\]\s*(.*)$/i);
+    if (educationMatch) {
+      educationLines.push(educationMatch[1].trim());
+      continue;
+    }
+
+    educationLines.push(line);
+  }
+
+  return {
+    manual,
+    exercise,
+    modalities,
+    education: educationLines.join("\n").trim(),
+  };
+}
+
 export function PatientDetailClient({ dict }: Props) {
   const pd = dict.dashboard.patients;
   const params = useParams();
@@ -89,10 +226,28 @@ export function PatientDetailClient({ dict }: Props) {
   const [activeTab, setActiveTab] = useState<"soap" | "treatment">("soap");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   
-  const [newTreatment, setNewTreatment] = useState("");
   const [isSubmittingTreatment, setIsSubmittingTreatment] = useState(false);
   const [didTouchTreatmentInput, setDidTouchTreatmentInput] = useState(false);
   const [draftFromScreening, setDraftFromScreening] = useState<string>("");
+  const [manualDraft, setManualDraft] = useState<ManualTherapyEntry>({
+    name: "",
+    grade: "Grade III",
+    minutes: "",
+  });
+  const [manualEntries, setManualEntries] = useState<ManualTherapyEntry[]>([]);
+  const [exerciseDraft, setExerciseDraft] = useState<TherapeuticExerciseEntry>({
+    name: "",
+    sets: "",
+    reps: "",
+    holdSec: "",
+  });
+  const [exerciseEntries, setExerciseEntries] = useState<TherapeuticExerciseEntry[]>([]);
+  const [modalityDraft, setModalityDraft] = useState<ModalityEntry>({
+    modality: "TENS/ICT",
+    target: "",
+  });
+  const [modalityEntries, setModalityEntries] = useState<ModalityEntry[]>([]);
+  const [educationHep, setEducationHep] = useState("");
 
   const fetchPatientAndRecords = useCallback(async () => {
     if (!patientId || patientId === "null" || patientId === "undefined") {
@@ -147,10 +302,21 @@ export function PatientDetailClient({ dict }: Props) {
     }
   }, [patientId]);
 
+  const isStep4InputEmpty =
+    manualEntries.length === 0 &&
+    exerciseEntries.length === 0 &&
+    modalityEntries.length === 0 &&
+    !educationHep.trim();
+
+  const formattedTreatment = useMemo(
+    () => formatStep4TreatmentText(manualEntries, exerciseEntries, modalityEntries, educationHep),
+    [educationHep, exerciseEntries, manualEntries, modalityEntries],
+  );
+
   useEffect(() => {
     if (activeTab !== "treatment") return;
     if (didTouchTreatmentInput) return;
-    if (newTreatment.trim()) return;
+    if (!isStep4InputEmpty) return;
     const lines = [autoPlanPrefill];
     if (draftFromScreening) {
       lines.unshift(draftFromScreening);
@@ -160,15 +326,46 @@ export function PatientDetailClient({ dict }: Props) {
     }
     const prefill = lines.filter(Boolean).join("\n");
     if (prefill) {
-      setNewTreatment(prefill);
+      const parsed = parseTreatmentTextToStep4(prefill);
+      setManualEntries(parsed.manual);
+      setExerciseEntries(parsed.exercise);
+      setModalityEntries(parsed.modalities);
+      setEducationHep(parsed.education);
     }
-  }, [activeTab, autoPlanPrefill, cautionFromLatestSoap, didTouchTreatmentInput, draftFromScreening, newTreatment]);
+  }, [
+    activeTab,
+    autoPlanPrefill,
+    cautionFromLatestSoap,
+    didTouchTreatmentInput,
+    draftFromScreening,
+    isStep4InputEmpty,
+  ]);
+
+  const addManualEntry = () => {
+    if (!manualDraft.name.trim()) return;
+    setDidTouchTreatmentInput(true);
+    setManualEntries((prev) => [...prev, { ...manualDraft, name: manualDraft.name.trim() }]);
+    setManualDraft((prev) => ({ ...prev, name: "", minutes: "" }));
+  };
+
+  const addExerciseEntry = () => {
+    if (!exerciseDraft.name.trim()) return;
+    setDidTouchTreatmentInput(true);
+    setExerciseEntries((prev) => [...prev, { ...exerciseDraft, name: exerciseDraft.name.trim() }]);
+    setExerciseDraft({ name: "", sets: "", reps: "", holdSec: "" });
+  };
+
+  const addModalityEntry = () => {
+    setDidTouchTreatmentInput(true);
+    setModalityEntries((prev) => [...prev, { ...modalityDraft, target: modalityDraft.target.trim() }]);
+    setModalityDraft((prev) => ({ ...prev, target: "" }));
+  };
 
   const handleAddTreatment = async () => {
-    if (!newTreatment.trim()) return;
+    if (!formattedTreatment.trim()) return;
     setIsSubmittingTreatment(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const contentToSave = newTreatment.trim();
+    const contentToSave = formattedTreatment.trim();
 
     const { error } = await supabase.from("treatments").insert([{
       patient_id: patientId,
@@ -177,7 +374,13 @@ export function PatientDetailClient({ dict }: Props) {
     }]);
 
     if (!error) {
-      setNewTreatment("");
+      setManualEntries([]);
+      setExerciseEntries([]);
+      setModalityEntries([]);
+      setEducationHep("");
+      setManualDraft({ name: "", grade: "Grade III", minutes: "" });
+      setExerciseDraft({ name: "", sets: "", reps: "", holdSec: "" });
+      setModalityDraft({ modality: "TENS/ICT", target: "" });
       setDidTouchTreatmentInput(false);
       const optimistic: Tables<"treatments"> = {
         id: crypto.randomUUID(),
@@ -384,19 +587,174 @@ export function PatientDetailClient({ dict }: Props) {
               오늘의 처치 기록 (Plan)
             </label>
             <div className="flex flex-col gap-4">
-              <textarea
-                value={newTreatment}
-                onChange={(e) => {
-                  setDidTouchTreatmentInput(true);
-                  setNewTreatment(e.target.value);
-                }}
-                placeholder="오늘 진행한 도수치료 및 운동요법 내용을 상세히 기록하세요... (엔터키 줄바꿈 가능)"
-                className="w-full h-40 rounded-3xl bg-white border-none p-6 text-base shadow-inner focus:ring-2 focus:ring-orange-300 outline-none transition leading-relaxed text-zinc-800"
-                style={{ whiteSpace: "pre-wrap" }}
-              />
+              <div className="space-y-4 rounded-2xl border border-orange-100 bg-white p-4 shadow-inner">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="mb-3 text-sm font-bold text-slate-800">1. 도수/수기 치료 (Manual Therapy)</h3>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+                    <input
+                      value={manualDraft.name}
+                      onChange={(e) => {
+                        setDidTouchTreatmentInput(true);
+                        setManualDraft((p) => ({ ...p, name: e.target.value }));
+                      }}
+                      placeholder="중재명"
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-300"
+                    />
+                    <select
+                      value={manualDraft.grade}
+                      onChange={(e) => {
+                        setDidTouchTreatmentInput(true);
+                        setManualDraft((p) => ({ ...p, grade: e.target.value as ManualTherapyEntry["grade"] }));
+                      }}
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-300"
+                    >
+                      {MANUAL_GRADE_OPTIONS.map((grade) => (
+                        <option key={grade} value={grade}>
+                          {grade}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      value={manualDraft.minutes}
+                      onChange={(e) => {
+                        setDidTouchTreatmentInput(true);
+                        setManualDraft((p) => ({ ...p, minutes: e.target.value }));
+                      }}
+                      placeholder="적용 시간(분)"
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={addManualEntry}
+                      className="h-10 rounded-lg bg-slate-900 px-3 text-sm font-bold text-white hover:bg-slate-800"
+                    >
+                      + 추가
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-1 text-xs text-slate-600">
+                    {manualEntries.map((entry, idx) => (
+                      <p key={`${entry.name}-${idx}`}>- {entry.name} | {entry.grade} | {entry.minutes || "-"}분</p>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="mb-3 text-sm font-bold text-slate-800">2. 치료적 운동 (Therapeutic Exercise)</h3>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
+                    <input
+                      value={exerciseDraft.name}
+                      onChange={(e) => {
+                        setDidTouchTreatmentInput(true);
+                        setExerciseDraft((p) => ({ ...p, name: e.target.value }));
+                      }}
+                      placeholder="운동명"
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-300"
+                    />
+                    <input
+                      type="number"
+                      value={exerciseDraft.sets}
+                      onChange={(e) => {
+                        setDidTouchTreatmentInput(true);
+                        setExerciseDraft((p) => ({ ...p, sets: e.target.value }));
+                      }}
+                      placeholder="Set"
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-300"
+                    />
+                    <input
+                      type="number"
+                      value={exerciseDraft.reps}
+                      onChange={(e) => {
+                        setDidTouchTreatmentInput(true);
+                        setExerciseDraft((p) => ({ ...p, reps: e.target.value }));
+                      }}
+                      placeholder="Rep"
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-300"
+                    />
+                    <input
+                      type="number"
+                      value={exerciseDraft.holdSec}
+                      onChange={(e) => {
+                        setDidTouchTreatmentInput(true);
+                        setExerciseDraft((p) => ({ ...p, holdSec: e.target.value }));
+                      }}
+                      placeholder="Hold(초)"
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={addExerciseEntry}
+                      className="h-10 rounded-lg bg-slate-900 px-3 text-sm font-bold text-white hover:bg-slate-800"
+                    >
+                      + 추가
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-1 text-xs text-slate-600">
+                    {exerciseEntries.map((entry, idx) => (
+                      <p key={`${entry.name}-${idx}`}>
+                        - {entry.name} | {entry.sets || "-"}set/{entry.reps || "-"}rep{entry.holdSec ? `/${entry.holdSec}s` : ""}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="mb-3 text-sm font-bold text-slate-800">3. 기기 및 물리치료 (Modalities)</h3>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                    <select
+                      value={modalityDraft.modality}
+                      onChange={(e) => {
+                        setDidTouchTreatmentInput(true);
+                        setModalityDraft((p) => ({ ...p, modality: e.target.value as ModalityEntry["modality"] }));
+                      }}
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-300"
+                    >
+                      {MODALITY_OPTIONS.map((modality) => (
+                        <option key={modality} value={modality}>
+                          {modality}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={modalityDraft.target}
+                      onChange={(e) => {
+                        setDidTouchTreatmentInput(true);
+                        setModalityDraft((p) => ({ ...p, target: e.target.value }));
+                      }}
+                      placeholder="적용 부위"
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={addModalityEntry}
+                      className="h-10 rounded-lg bg-slate-900 px-3 text-sm font-bold text-white hover:bg-slate-800"
+                    >
+                      + 추가
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-1 text-xs text-slate-600">
+                    {modalityEntries.map((entry, idx) => (
+                      <p key={`${entry.modality}-${idx}`}>- {entry.modality} | 적용 부위: {entry.target || "-"}</p>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="mb-3 text-sm font-bold text-slate-800">4. 환자 교육 및 홈 프로그램 (Education)</h3>
+                  <textarea
+                    value={educationHep}
+                    onChange={(e) => {
+                      setDidTouchTreatmentInput(true);
+                      setEducationHep(e.target.value);
+                    }}
+                    className="h-24 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                    placeholder="자가 운동, 금기 동작, 생활/통증 관리 교육을 기록하세요."
+                  />
+                </div>
+              </div>
               <button
                 onClick={handleAddTreatment}
-                disabled={isSubmittingTreatment || !newTreatment.trim()}
+                disabled={isSubmittingTreatment || !formattedTreatment.trim()}
                 className="h-16 rounded-2xl bg-orange-500 font-black text-white text-lg shadow-lg shadow-orange-200 transition hover:bg-orange-600 disabled:opacity-50 active:scale-[0.98]"
               >
                 {isSubmittingTreatment ? "기록 저장 중..." : "오늘의 P-노트 저장하기"}
