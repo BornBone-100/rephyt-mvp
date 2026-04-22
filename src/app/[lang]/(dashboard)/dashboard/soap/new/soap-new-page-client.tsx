@@ -543,6 +543,8 @@ type RedFlagResult = {
     estimatedWeeks: number;
     trajectoryText: string;
   };
+  interventionStrategy?: string;
+  professionalDiscussion?: string;
 };
 
 /** Step별 메인 텍스트 영역(SOAP 본문) — step2/step4 메타와 구분 */
@@ -1166,6 +1168,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
           estimatedWeeks: 8,
           trajectoryText: "현재 데이터 기준 평균 8주 회복 경로가 예상됩니다.",
         },
+        interventionStrategy: reportResult.interventionStrategy ?? "",
+        professionalDiscussion: reportResult.professionalDiscussion ?? "",
       }
     : null;
 

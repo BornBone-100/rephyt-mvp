@@ -51,6 +51,8 @@ export type FinalReportResult = {
     reason: string;
     action: string;
   } | null;
+  interventionStrategy?: string;
+  professionalDiscussion?: string;
 };
 
 type Props = {
@@ -199,6 +201,28 @@ function ReportBody({
                 {ui.dashRedFlagNote}
               </div>
             ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-5 shadow-sm">
+            <h3 className="text-sm font-black text-indigo-900">🎯 {ui.dashInterventionStrategyTitle}</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+              {data.interventionStrategy?.trim()
+                ? data.interventionStrategy
+                : locale === "en"
+                  ? "Detailed intervention strategy analysis will appear here."
+                  : "Step 1~4를 유기적으로 연결한 중재 전략 분석 결과가 여기에 표시됩니다."}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-teal-200 bg-teal-50/60 p-5 shadow-sm">
+            <h3 className="text-sm font-black text-teal-900">👨‍⚕️ {ui.dashProfessionalDiscussionTitle}</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+              {data.professionalDiscussion?.trim()
+                ? data.professionalDiscussion
+                : locale === "en"
+                  ? "Comprehensive professional discussion will appear here."
+                  : "케이스 전반에 대한 임상 전문가 고찰이 여기에 표시됩니다."}
+            </p>
           </div>
         </div>
 

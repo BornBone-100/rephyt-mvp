@@ -111,6 +111,8 @@ type GuardrailResponse = {
     description: string;
     citation: string;
   }>;
+  interventionStrategy?: string;
+  professionalDiscussion?: string;
   detectionMeta?: {
     conditionId: string;
     matchedAliases: string[];
@@ -172,6 +174,8 @@ const CDSS_GUARDRAIL_ALLOWED_KEYS = new Set<string>([
   "has_red_flag",
   "matched_aliases",
   "score_breakdown",
+  "intervention_strategy",
+  "professional_discussion",
   "raw_ai_response",
 ]);
 
@@ -558,6 +562,8 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
       estimatedWeeks?: number;
       trajectoryText?: string;
     };
+    intervention_strategy?: string;
+    professional_discussion?: string;
   };
   const mappedTraffic = Array.isArray(data.cpgCompliance)
     ? data.cpgCompliance
@@ -699,6 +705,24 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
             (x): x is NonNullable<GuardrailResponse["evidenceBasedAlternatives"]>[number] => Boolean(x),
           ))
       : [],
+    interventionStrategy:
+      typeof (data as { interventionStrategy?: unknown; intervention_strategy?: unknown }).interventionStrategy ===
+        "string" &&
+      ((data as { interventionStrategy?: string }).interventionStrategy ?? "").trim()
+        ? (data as { interventionStrategy: string }).interventionStrategy
+        : typeof (data as { intervention_strategy?: unknown }).intervention_strategy === "string" &&
+            ((data as { intervention_strategy?: string }).intervention_strategy ?? "").trim()
+          ? (data as { intervention_strategy: string }).intervention_strategy
+          : "",
+    professionalDiscussion:
+      typeof (data as { professionalDiscussion?: unknown; professional_discussion?: unknown }).professionalDiscussion ===
+        "string" &&
+      ((data as { professionalDiscussion?: string }).professionalDiscussion ?? "").trim()
+        ? (data as { professionalDiscussion: string }).professionalDiscussion
+        : typeof (data as { professional_discussion?: unknown }).professional_discussion === "string" &&
+            ((data as { professional_discussion?: string }).professional_discussion ?? "").trim()
+          ? (data as { professional_discussion: string }).professional_discussion
+          : "",
   } satisfies GuardrailResponse;
 }
 
@@ -829,6 +853,8 @@ function buildGuardrailLogRow(params: {
     detected_condition_id: params.detectedConditionId,
     matched_aliases: params.matchedAliases,
     score_breakdown: params.scoreBreakdown,
+    intervention_strategy: params.result.interventionStrategy ?? "",
+    professional_discussion: params.result.professionalDiscussion ?? "",
   };
 }
 
@@ -867,6 +893,8 @@ function buildGuardrailLogRowLegacy(params: {
     score_breakdown: params.scoreBreakdown,
     has_red_flag: params.result.hasRedFlag,
     compliance_score: params.result.complianceScore,
+    intervention_strategy: params.result.interventionStrategy ?? "",
+    professional_discussion: params.result.professionalDiscussion ?? "",
   };
 }
 
@@ -1043,6 +1071,7 @@ export async function POST(req: Request) {
 
     const systemPrompt = `
 You are a Chief Physical Therapy Clinical Evaluator and Medical Insurance Audit Specialist.
+You are also a Clinical Director with over 20 years of orthopedic manual physical therapy experience.
 Your task is to analyze the user's 4-step clinical reasoning data (Subjective History, Objective Evaluation, Goals, and Intervention) and evaluate it based on JOSPT Clinical Practice Guidelines (CPG) and APTA-aligned documentation standards.
 
 [CORE VALUES]
@@ -1057,6 +1086,11 @@ ${locale === "ko"
 
 [EVIDENCE CITATION — MANDATORY]
 Apply guideline citations to at least: logicChainAudit.feedback; each cpgCompliance[].reasoning and each non-null cpgCompliance[].alternative; auditDefense.feedback; auditDefense.improvementTip; predictiveTrajectory.trajectoryText.
+
+[CLINICAL REASONING DEPTH — MANDATORY]
+- Evaluate whether Step 3 goals are realistic based on Step 1 (chief complaint/onset/duration) and Step 2 (functional measures/TBC findings).
+- Explain in concrete biomechanical and physiological terms why Step 4 interventions (manual therapy, exercise, modalities, education) are appropriate for Step 1/2 problems, and what is missing.
+- Return deep expert-level reasoning, not generic summaries.
 
 CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact schema below. Do not include markdown formatting like \`\`\`json or any conversational text.
 
@@ -1085,7 +1119,9 @@ CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact
   "predictiveTrajectory": {
     "estimatedWeeks": number,
     "trajectoryText": "Clinical prediction of recovery timeline based on initial outcome measures and prognosis."
-  }
+  },
+  "intervention_strategy": "Detailed validity/completeness analysis of intervention strategy linking Step 1~4.",
+  "professional_discussion": "Comprehensive expert discussion and prognosis for this case."
 }
 `;
 
@@ -1139,7 +1175,9 @@ ${planSummary}
   "references": [
     { "title": "JOSPT Achilles Tendinopathy CPG 2023", "url": "https://www.jospt.org/..." },
     { "title": "APTA Clinical Practice Guideline", "url": "https://www.apta.org/..." }
-  ]
+  ],
+  "intervention_strategy": "Step 1~4 연결 기반 중재 전략 타당성/보완점",
+  "professional_discussion": "임상 전문가 종합 고찰 및 예후 논의"
 }
 `;
 
