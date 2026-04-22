@@ -226,6 +226,7 @@ export function PatientDetailClient({ dict }: Props) {
   const isEnglish = lang === "en";
   const base = `/${lang}`;
   const patientId = params.patientId as string;
+  const normalizedPatientId = decodeURIComponent(String(patientId ?? "")).trim();
   const supabase = useMemo(() => createClient(), []);
   const localeApi = lang === "en" ? "en" : "ko";
 
@@ -264,19 +265,26 @@ export function PatientDetailClient({ dict }: Props) {
   const [educationHep, setEducationHep] = useState("");
 
   const fetchTimelineLogs = useCallback(async () => {
-    if (!patientId || patientId === "null" || patientId === "undefined") return;
+    if (!normalizedPatientId || normalizedPatientId === "null" || normalizedPatientId === "undefined") return;
     setIsTimelineLogsLoading(true);
     try {
-      const { data: byPatientId } = await supabase
+      const { data: byPatientId, error: byPatientIdError } = await supabase
         .from("cdss_guardrail_logs")
         .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, payload")
-        .eq("patient_id", patientId)
+        .eq("patient_id", normalizedPatientId)
         .order("created_at", { ascending: false });
-      const { data: byPayloadPatientId } = await supabase
+      const { data: byPayloadPatientId, error: byPayloadPatientIdError } = await supabase
         .from("cdss_guardrail_logs")
         .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, payload")
-        .contains("payload", { patientId })
+        .contains("payload", { patientId: normalizedPatientId })
         .order("created_at", { ascending: false });
+
+      if (byPatientIdError) {
+        console.error("fetchTimelineLogs by patient_id error:", byPatientIdError);
+      }
+      if (byPayloadPatientIdError) {
+        console.error("fetchTimelineLogs by payload.patientId error:", byPayloadPatientIdError);
+      }
 
       const merged = [...(byPatientId ?? []), ...(byPayloadPatientId ?? [])] as TimelineLog[];
       const deduped = new Map<string, TimelineLog>();
@@ -286,14 +294,16 @@ export function PatientDetailClient({ dict }: Props) {
           payload: row.payload && typeof row.payload === "object" ? row.payload : null,
         });
       }
-      setTimelineLogs([...deduped.values()].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)));
+      const sorted = [...deduped.values()].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+      console.log("Fetched data:", sorted);
+      setTimelineLogs(sorted);
     } catch (error) {
       console.error("timeline log fetch failed:", error);
       setTimelineLogs([]);
     } finally {
       setIsTimelineLogsLoading(false);
     }
-  }, [patientId, supabase]);
+  }, [normalizedPatientId, supabase]);
 
   const fetchPatientAndRecords = useCallback(async () => {
     if (!patientId || patientId === "null" || patientId === "undefined") {
@@ -332,9 +342,9 @@ export function PatientDetailClient({ dict }: Props) {
   }, [fetchPatientAndRecords, fetchTimelineLogs]);
 
   useEffect(() => {
-    if (!patientId || patientId === "null" || patientId === "undefined") return;
+    if (!normalizedPatientId || normalizedPatientId === "null" || normalizedPatientId === "undefined") return;
     const channel = supabase
-      .channel(`cdss-guardrail-timeline-${patientId}`)
+      .channel(`cdss-guardrail-timeline-${normalizedPatientId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "cdss_guardrail_logs" },
@@ -345,7 +355,7 @@ export function PatientDetailClient({ dict }: Props) {
           const rowPatientId = typeof (row as { patient_id?: string }).patient_id === "string"
             ? (row as { patient_id?: string }).patient_id
             : null;
-          if (rowPatientId !== patientId && payloadPatientId !== patientId) return;
+          if (rowPatientId !== normalizedPatientId && payloadPatientId !== normalizedPatientId) return;
           void fetchTimelineLogs();
         },
       )
@@ -353,20 +363,20 @@ export function PatientDetailClient({ dict }: Props) {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [fetchTimelineLogs, patientId, supabase]);
+  }, [fetchTimelineLogs, normalizedPatientId, supabase]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handler = (event: Event) => {
       const custom = event as CustomEvent<{ patientId?: string }>;
-      if (custom.detail?.patientId && custom.detail.patientId !== patientId) return;
+      if (custom.detail?.patientId && custom.detail.patientId !== normalizedPatientId) return;
       void fetchTimelineLogs();
     };
     window.addEventListener("rephyt:timeline-log-saved", handler);
     return () => {
       window.removeEventListener("rephyt:timeline-log-saved", handler);
     };
-  }, [fetchTimelineLogs, patientId]);
+  }, [fetchTimelineLogs, normalizedPatientId]);
 
   const latestSoap = soapNotes[0] ?? null;
   const autoPlanPrefill = useMemo(() => formatPlanToTreatmentLog(latestSoap?.plan ?? null), [latestSoap?.plan]);
