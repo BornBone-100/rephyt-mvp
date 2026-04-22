@@ -10,5 +10,5 @@ export default async function AdvancedSoapPage({
   const locale = lang === "en" || lang === "ko" ? lang : "ko";
   const dict = await getDictionary(locale);
 
-  return <SoapNewPageClient dict={dict} />;
+  return <SoapNewPageClient dict={dict} locale={locale} />;
 }

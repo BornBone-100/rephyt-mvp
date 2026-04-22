@@ -2,6 +2,7 @@
 
 import { AlertTriangle, BookOpen, Link2, Shield, Siren, Sparkles, TrendingUp } from "lucide-react";
 import { useState } from "react";
+import { soapWizardCopy, type SoapLocale } from "./soap-copy";
 
 type LogicChainAudit = {
   status: "pass" | "fail" | "warning";
@@ -46,10 +47,8 @@ export type FinalReportResult = {
 type Props = {
   result?: FinalReportResult | null;
   isLoading?: boolean;
+  locale?: SoapLocale;
 };
-
-const REPORT_DISCLAIMER_KO =
-  "본 리포트는 입력된 데이터를 기반으로 학술적 가이드라인을 매핑한 AI 보조 도구입니다. 진단 및 치료의 최종 결정은 반드시 면허를 보유한 의료 전문가의 판단하에 이루어져야 하며, 본 서비스는 결과에 대해 법적 책임을 지지 않습니다.";
 
 function sanitizeText(raw: string) {
   return raw
@@ -82,7 +81,8 @@ function levelBadge(level: "green" | "yellow" | "red") {
   return "bg-rose-100 text-rose-700 border-rose-200";
 }
 
-function ReportBody({ data }: { data: FinalReportResult }) {
+function ReportBody({ data, locale }: { data: FinalReportResult; locale: SoapLocale }) {
+  const ui = soapWizardCopy(locale);
   const [isSharing, setIsSharing] = useState(false);
   const score = Math.max(0, Math.min(100, data.overallScore));
   const defenseScore = Math.max(0, Math.min(100, data.auditDefense.defenseScore));
@@ -107,12 +107,14 @@ function ReportBody({ data }: { data: FinalReportResult }) {
           <h3 className="flex items-center gap-2 text-sm font-black text-rose-700">
             <Siren className="h-4 w-4" /> Referral Priority
           </h3>
-          <p className="mt-2 text-sm font-bold text-slate-700">{data.criticalAlert?.suspectedCondition ?? "의학적 의뢰 필요"}</p>
+          <p className="mt-2 text-sm font-bold text-slate-700">
+            {data.criticalAlert?.suspectedCondition ?? ui.dashReferralFallback}
+          </p>
         </div>
       ) : null}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-sm font-bold text-slate-700">종합 임상 논리 점수</h2>
+        <h2 className="text-sm font-bold text-slate-700">{ui.dashOverallScore}</h2>
         <div className="mt-4 flex items-center justify-center">
           <div className="relative flex h-36 w-36 items-center justify-center rounded-full p-2" style={gaugeBg}>
             <div className="flex h-full w-full items-center justify-center rounded-full bg-white">
@@ -127,7 +129,7 @@ function ReportBody({ data }: { data: FinalReportResult }) {
 
       <div className={`rounded-2xl border p-5 shadow-sm ${logicTone}`}>
         <h3 className="flex items-center gap-2 text-sm font-black">
-          <Link2 className="h-4 w-4" /> 임상 추론 사슬 검증 (Logic Chain Audit)
+          <Link2 className="h-4 w-4" /> {ui.dashLogicAudit}
         </h3>
         <p className="mt-3 text-sm leading-relaxed">{data.logicChainAudit.feedback}</p>
         {data.logicChainAudit.missingLinks.length > 0 ? (
@@ -141,7 +143,7 @@ function ReportBody({ data }: { data: FinalReportResult }) {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="flex items-center gap-2 text-sm font-black text-slate-700">
-          <BookOpen className="h-4 w-4 text-blue-600" /> CPG 준수율 검증 (CPG Compliance)
+          <BookOpen className="h-4 w-4 text-blue-600" /> {ui.dashCpgCompliance}
         </h3>
         <div className="mt-4 space-y-3">
           {data.cpgCompliance.map((item, idx) => (
@@ -165,7 +167,7 @@ function ReportBody({ data }: { data: FinalReportResult }) {
 
       <div className={`rounded-2xl border p-5 shadow-sm ${riskTone}`}>
         <h3 className="flex items-center gap-2 text-sm font-black">
-          <Shield className="h-4 w-4" /> 삭감 방어력 (Audit Defense)
+          <Shield className="h-4 w-4" /> {ui.dashAuditDefense}
         </h3>
         <p className="mt-2 text-sm">{data.auditDefense.feedback}</p>
         <div className="mt-3">
@@ -178,32 +180,32 @@ function ReportBody({ data }: { data: FinalReportResult }) {
           </div>
         </div>
         <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700">
-          <p className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">개선 팁</p>
+          <p className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">{ui.dashImprovement}</p>
           {data.auditDefense.improvementTip}
         </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="flex items-center gap-2 text-sm font-black text-slate-700">
-          <TrendingUp className="h-4 w-4 text-emerald-600" /> 회복 궤적 예측 (Predictive Trajectory)
+          <TrendingUp className="h-4 w-4 text-emerald-600" /> {ui.dashTrajectory}
         </h3>
         <div className="mt-3 flex items-start gap-4">
           <div className="rounded-xl bg-emerald-50 px-4 py-3 text-center">
             <p className="text-3xl font-black text-emerald-700">{data.predictiveTrajectory.estimatedWeeks}</p>
-            <p className="text-xs font-bold text-emerald-600">주 예상</p>
+            <p className="text-xs font-bold text-emerald-600">{ui.dashWeeksLabel}</p>
           </div>
           <p className="text-sm leading-relaxed text-slate-600">{data.predictiveTrajectory.trajectoryText}</p>
         </div>
         {data.hasRedFlag ? (
           <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs font-semibold text-rose-700">
             <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
-            Red Flag 상태에서는 예측 해석보다 의학적 의뢰를 우선하세요.
+            {ui.dashRedFlagNote}
           </div>
         ) : null}
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="mb-3 text-sm font-black text-slate-700">커뮤니티 및 SNS 공유</h3>
+        <h3 className="mb-3 text-sm font-black text-slate-700">{ui.dashCommunity}</h3>
         <div className="grid grid-cols-1 gap-2">
           <button
             type="button"
@@ -217,17 +219,17 @@ function ReportBody({ data }: { data: FinalReportResult }) {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ mode: "challenge", payload }),
                 });
-                if (!res.ok) throw new Error("공유 실패");
-                alert("🏆 챌린지 참여 카드가 커뮤니티에 업로드되었습니다.");
+                if (!res.ok) throw new Error(ui.shareFail);
+                alert(ui.shareChallengeOk);
               } catch {
-                alert("커뮤니티 업로드 중 오류가 발생했습니다.");
+                alert(ui.shareError);
               } finally {
                 setIsSharing(false);
               }
             }}
             className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-left text-xs font-bold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60"
           >
-            🏆 챌린지 참여
+            {ui.dashChallenge}
           </button>
           <button
             type="button"
@@ -241,17 +243,17 @@ function ReportBody({ data }: { data: FinalReportResult }) {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ mode: "defense_tip", payload }),
                 });
-                if (!res.ok) throw new Error("공유 실패");
-                alert("🛡️ 삭감 방어 팁이 익명 공유되었습니다.");
+                if (!res.ok) throw new Error(ui.shareFail);
+                alert(ui.shareDefenseOk);
               } catch {
-                alert("커뮤니티 업로드 중 오류가 발생했습니다.");
+                alert(ui.shareError);
               } finally {
                 setIsSharing(false);
               }
             }}
             className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
           >
-            🛡️ 삭감 방어 팁 공유
+            {ui.dashDefenseShare}
           </button>
           <button
             type="button"
@@ -269,19 +271,20 @@ function ReportBody({ data }: { data: FinalReportResult }) {
             }}
             className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-left text-xs font-bold text-violet-700 transition hover:bg-violet-100"
           >
-            📱 인스타 브랜딩
+            {ui.dashInstagram}
           </button>
         </div>
       </div>
 
       <div className="sticky bottom-0 z-10 -mx-6 mt-6 border-t border-slate-200 bg-slate-50/95 px-6 pb-2 pt-4 backdrop-blur-sm lg:-mx-10 lg:px-10">
-        <p className="text-[11px] leading-relaxed text-slate-400">{REPORT_DISCLAIMER_KO}</p>
+        <p className="text-[11px] leading-relaxed text-slate-400">{ui.dashDisclaimer}</p>
       </div>
     </div>
   );
 }
 
-export default function FinalReportDashboard({ result, isLoading = false }: Props) {
+export default function FinalReportDashboard({ result, isLoading = false, locale = "ko" }: Props) {
+  const ui = soapWizardCopy(locale);
   if (isLoading) {
     return (
       <div className="h-full w-full overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans lg:p-10">
@@ -295,7 +298,7 @@ export default function FinalReportDashboard({ result, isLoading = false }: Prop
           ))}
         </div>
         <div className="sticky bottom-0 z-10 -mx-6 mt-6 border-t border-slate-200 bg-slate-50/95 px-6 pb-2 pt-4 backdrop-blur-sm lg:-mx-10 lg:px-10">
-          <p className="text-[11px] leading-relaxed text-slate-400">{REPORT_DISCLAIMER_KO}</p>
+          <p className="text-[11px] leading-relaxed text-slate-400">{ui.dashDisclaimer}</p>
         </div>
       </div>
     );
@@ -306,10 +309,10 @@ export default function FinalReportDashboard({ result, isLoading = false }: Prop
       <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans lg:p-10">
         <div className="mb-4 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-slate-600 shadow-sm">
           <Sparkles className="h-4 w-4 text-blue-500" />
-          <p className="text-sm font-semibold">AI 분석 대기 중입니다. 좌측 폼 입력 후 분석을 요청해 주세요.</p>
+          <p className="text-sm font-semibold">{ui.dashWaiting}</p>
         </div>
         <div className="sticky bottom-0 z-10 -mx-6 mt-auto border-t border-slate-200 bg-slate-50/95 px-6 pb-2 pt-4 backdrop-blur-sm lg:-mx-10 lg:px-10">
-          <p className="text-[11px] leading-relaxed text-slate-400">{REPORT_DISCLAIMER_KO}</p>
+          <p className="text-[11px] leading-relaxed text-slate-400">{ui.dashDisclaimer}</p>
         </div>
       </div>
     );
@@ -317,7 +320,7 @@ export default function FinalReportDashboard({ result, isLoading = false }: Prop
 
   return (
     <div className="h-full w-full animate-in fade-in overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans duration-300 lg:p-10">
-      <ReportBody data={result} />
+      <ReportBody data={result} locale={locale} />
     </div>
   );
 }

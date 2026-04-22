@@ -186,20 +186,91 @@ function isSpineRegion(r: ScreeningRegion): boolean {
   return r === "neck" || r === "lumbar";
 }
 
+export type ScreeningLocale = "ko" | "en";
+
+/** English copies — same IDs for AI / red-flag linkage */
+const SPINE_NECK_EN: ScreeningQuestion[] = SPINE_NECK.map((q, i) => ({
+  ...q,
+  text: [
+    "Radiating numbness or electric pain into the arm or hand, or weakness? (Nerve root)",
+    "Unsteady gait, hand clumsiness, or frequent dropping of objects? (Possible myelopathy)",
+    "New onset difficulty controlling bowel or bladder? (Urgent evaluation)",
+  ][i],
+}));
+
+const SPINE_LUMBAR_EN: ScreeningQuestion[] = SPINE_LUMBAR.map((q, i) => ({
+  ...q,
+  text: [
+    "Radiating symptoms into one leg with numbness or weakness? (Nerve root)",
+    "Urinary retention or inability to void despite urge? (Cauda equina — emergency)",
+    "Saddle anesthesia or loss of sensation in the perineum/buttocks? (Cauda equina)",
+    "Severe bilateral leg weakness at the same time? (Possible cauda equina)",
+  ][i],
+}));
+
+const JOINT_BASE_EN: ScreeningQuestion[] = JOINT_BASE.map((q, i) => ({
+  ...q,
+  text: [
+    "Feeling the joint may give way or instability with pivoting? (Instability)",
+    "Sudden buckling or inability to bear weight (e.g., knee, ankle)? (Giving way)",
+    "Acute hot, swollen, erythematous joint? (Septic arthritis — concern)",
+    "Severe swelling, deformity, or inability to bear weight after trauma? (Fracture / ligament injury)",
+  ][i],
+}));
+
+const JOINT_WEIGHT_BEARING_EN: ScreeningQuestion[] = JOINT_WEIGHT_BEARING.map((q) => ({
+  ...q,
+  text: "Pain so severe you cannot bear weight? (Fracture / severe injury concern)",
+}));
+
+const REGION_EXTRA_EN: Partial<Record<ScreeningRegion, ScreeningQuestion[]>> = {
+  knee: [
+    {
+      id: "knee_locking_catching",
+      text: "Locking or catching in the knee? (e.g., meniscus)",
+      isRedFlag: false,
+      category: "joint",
+      group: "joint",
+    },
+  ],
+  shoulder: [
+    {
+      id: "shoulder_traumatic_dislocation",
+      text: "History of dislocation or the shoulder “coming out”?",
+      isRedFlag: false,
+      category: "joint",
+      group: "joint",
+    },
+  ],
+  ankle: [
+    {
+      id: "ankle_repeated_sprain",
+      text: "Repeated ankle sprains on the same side? (Chronic instability)",
+      isRedFlag: false,
+      category: "joint",
+      group: "joint",
+    },
+  ],
+};
+
 /** 부위에 맞는 특이 질문 목록 */
-export function getScreeningQuestionsForRegion(region: ScreeningRegion | null): ScreeningQuestion[] {
+export function getScreeningQuestionsForRegion(
+  region: ScreeningRegion | null,
+  locale: ScreeningLocale = "ko",
+): ScreeningQuestion[] {
   if (!region) return [];
 
   if (isSpineRegion(region)) {
-    const spineBlock = region === "neck" ? SPINE_NECK : SPINE_LUMBAR;
+    const spineBlock =
+      region === "neck" ? (locale === "en" ? SPINE_NECK_EN : SPINE_NECK) : locale === "en" ? SPINE_LUMBAR_EN : SPINE_LUMBAR;
     return [...spineBlock];
   }
 
-  return [
-    ...JOINT_BASE,
-    ...JOINT_WEIGHT_BEARING,
-    ...(REGION_EXTRA[region] ?? []),
-  ];
+  const base = locale === "en" ? JOINT_BASE_EN : JOINT_BASE;
+  const wb = locale === "en" ? JOINT_WEIGHT_BEARING_EN : JOINT_WEIGHT_BEARING;
+  const extra = locale === "en" ? REGION_EXTRA_EN[region] : REGION_EXTRA[region];
+
+  return [...base, ...wb, ...(extra ?? [])];
 }
 
 export const GENERIC_RED_FLAG_META = {
@@ -219,6 +290,28 @@ export const GENERIC_RED_FLAG_META = {
     isRedFlag: true,
   },
 } as const;
+
+const GENERIC_RED_FLAG_META_EN = {
+  nightPain: {
+    id: "generic_night_pain",
+    label: "Night pain — malignancy / infection work-up",
+    isRedFlag: true,
+  },
+  weightLoss: {
+    id: "generic_unexplained_weight_loss",
+    label: "Unexplained weight loss — systemic / malignant concern",
+    isRedFlag: true,
+  },
+  neuroBowelBladder: {
+    id: "generic_neuro_bowel_bladder",
+    label: "Neurogenic bowel/bladder — cord / cauda equina concern",
+    isRedFlag: true,
+  },
+} as const;
+
+export function getGenericRedFlagMeta(locale: ScreeningLocale) {
+  return locale === "en" ? GENERIC_RED_FLAG_META_EN : GENERIC_RED_FLAG_META;
+}
 
 export type Step1RedFlagEntry = {
   questionId: string;

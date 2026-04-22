@@ -1,4 +1,6 @@
 /** JOSPT TBC 칩 라벨 + 진단 기준(Inclusion) 요약 */
+import { JOSPT_ICF_DB_EN, JOSPT_OUTCOME_DB_EN, JOSPT_TBC_DB_EN } from "./jospt-en";
+
 export type JosptTbcItem = { label: string; description: string };
 
 // JOSPT 임상진료지침(CPG) 기반 치료 기반 분류(TBC) 마스터 데이터
@@ -195,15 +197,33 @@ export const JOSPT_TBC_DB: Record<string, JosptTbcItem[]> = {
   ],
 };
 
+export type SoapDataLocale = "ko" | "en";
+
 /** 부위 키에 맞는 TBC 목록. DB에 없을 때만 폴백 라벨을 사용합니다. */
-export function getTbcOptionsForRegion(regionKey: string, fallbackLabels: string[] | undefined): JosptTbcItem[] {
-  const list = JOSPT_TBC_DB[regionKey as keyof typeof JOSPT_TBC_DB];
-  if (list?.length) return list;
+export function getTbcOptionsForRegion(
+  regionKey: string,
+  fallbackLabels: string[] | undefined,
+  locale: SoapDataLocale = "ko",
+): JosptTbcItem[] {
+  const db = locale === "en" ? JOSPT_TBC_DB_EN : JOSPT_TBC_DB;
+  const list = db[regionKey as keyof typeof JOSPT_TBC_DB];
+  if (list?.length) return list as JosptTbcItem[];
+  const fb =
+    locale === "en"
+      ? "Select when findings align with the JOSPT CPG for this classification. See the condition-specific CPG for detailed inclusion criteria."
+      : "JOSPT CPG의 임상·검사 소견과 일치할 때 선택하세요. 세부 inclusion 기준은 해당 질환 CPG를 참고하세요.";
   return (fallbackLabels ?? []).map((label) => ({
     label,
-    description:
-      "JOSPT CPG의 임상·검사 소견과 일치할 때 선택하세요. 세부 inclusion 기준은 해당 질환 CPG를 참고하세요.",
+    description: fb,
   }));
+}
+
+export function getJosptOutcomeDb(locale: SoapDataLocale) {
+  return locale === "en" ? JOSPT_OUTCOME_DB_EN : JOSPT_OUTCOME_DB;
+}
+
+export function getJosptIcfDb(locale: SoapDataLocale) {
+  return locale === "en" ? JOSPT_ICF_DB_EN : JOSPT_ICF_DB;
 }
 
 // JOSPT 기준 부위별 핵심 기능 평가 척도 (Outcome Measures)

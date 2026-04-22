@@ -912,18 +912,21 @@ export async function POST(req: Request) {
     const tuningMap = await loadAliasTuningMap();
     const detected = detectConditionRule(evaluation, fullInput, tuningMap);
     const detectedRule = detected.rule;
+    const useEnglish = String(body.language ?? "ko").toLowerCase().startsWith("en");
 
     const systemPrompt = `
 You are a Chief Physical Therapy Clinical Evaluator and Medical Insurance Audit Specialist.
-Your task is to analyze the user's 4-step clinical reasoning data (Subjective History, Objective Evaluation, Goals, and Intervention) and evaluate it based on JOSPT Clinical Practice Guidelines (CPG) and insurance billing defense standards.
+Your task is to analyze the user's 4-step clinical reasoning data (Subjective History, Objective Evaluation, Goals, and Intervention) and evaluate it based on JOSPT Clinical Practice Guidelines (CPG) and APTA-aligned documentation standards.
 
 [CORE VALUES]
 Evaluate based on "Honest Data" and "Precise Execution" with professional involvement.
 
+[OUTPUT LANGUAGE — STRICT]
+The request includes a \`language\` field from the client. If it is "en" or starts with "en", the user is interacting in English: write EVERY narrative string inside the JSON (logicChainAudit.feedback; cpgCompliance reasoning/alternatives; auditDefense; predictiveTrajectory; etc.) in professional Medical English only. End each such narrative with an evidence suffix such as (Evidence: JOSPT Shoulder Pain CPG) or (Evidence: APTA Clinical Practice Guideline).
+If the language is not English, write those narratives in Korean and end with (근거: JOSPT …) or (근거: APTA …) as appropriate.
+
 [EVIDENCE CITATION — MANDATORY]
-Every Korean narrative string you output inside the JSON must end with an explicit guideline reference in parentheses.
-Apply this to at least: logicChainAudit.feedback; each cpgCompliance[].reasoning and each non-null cpgCompliance[].alternative; auditDefense.feedback; auditDefense.improvementTip; predictiveTrajectory.trajectoryText.
-Use real guideline names you relied on, e.g. (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline), or (근거: JOSPT CPG, APTA CPG) when both apply. Do not omit this suffix on those fields.
+Apply guideline citations to at least: logicChainAudit.feedback; each cpgCompliance[].reasoning and each non-null cpgCompliance[].alternative; auditDefense.feedback; auditDefense.improvementTip; predictiveTrajectory.trajectoryText.
 
 CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact schema below. Do not include markdown formatting like \`\`\`json or any conversational text.
 
@@ -947,21 +950,20 @@ CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact
     "riskLevel": "Low" | "Medium" | "High",
     "defenseScore": number,
     "feedback": "Feedback on whether the chart justifies insurance billing.",
-    "improvementTip": "Specific tip to prevent claim denial (삭감)."
+    "improvementTip": "Specific tip to strengthen documentation / avoid claim denial."
   },
   "predictiveTrajectory": {
     "estimatedWeeks": number,
     "trajectoryText": "Clinical prediction of recovery timeline based on initial outcome measures and prognosis."
   }
 }
-
-Ensure all generated text inside the JSON (feedback, reasoning, tips) is written entirely in Korean, maintaining a highly professional, mentoring tone. Each such narrative must end with the mandatory (근거: …) guideline citation as described above.
 `;
 
     const prompt = `
+${useEnglish ? "User is interacting in English. Respond in professional Medical English for all narrative fields in the JSON, per the system OUTPUT LANGUAGE rule.\n\n" : ""}
 너는 JOSPT 최신 임상진료지침(CPG)을 마스터한 수석 물리치료 멘토야.
 유저가 입력한 4단계 임상 추론(검사, 평가, 목표, 중재)을 분석하고, 반드시 아래의 JSON 형식으로만 답변해.
-각 한국어 서술 필드(피드백·근거·개선팁·예후 문장 등) 끝에는 반드시 참고한 가이드라인 명칭을 괄호로 명시하라. 예: (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline).
+${useEnglish ? "For English mode: every narrative field must be Medical English with (Evidence: …) citations. " : "각 한국어 서술 필드(피드백·근거·개선팁·예후 문장 등) 끝에는 반드시 참고한 가이드라인 명칭을 괄호로 명시하라. 예: (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline)."}
 아래 추정 진단 컨텍스트를 우선 반영하라: ${detectedRule.id}
 
 [입력]

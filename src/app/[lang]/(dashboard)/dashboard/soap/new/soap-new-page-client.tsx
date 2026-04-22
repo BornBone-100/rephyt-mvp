@@ -20,10 +20,27 @@ import type { getDictionary } from "@/dictionaries/getDictionary";
 import DashboardRightPanel from "./DashboardRightPanel";
 import { MeasureModal, type Step2OutcomePayload } from "./MeasureModal";
 import { createClient } from "@/utils/supabase/client";
-import { getTbcOptionsForRegion, JOSPT_ICF_DB, JOSPT_OUTCOME_DB } from "./constants";
+import {
+  getJosptIcfDb,
+  getJosptOutcomeDb,
+  getTbcOptionsForRegion,
+  type SoapDataLocale,
+} from "./constants";
+import {
+  ONSET_OPTIONS,
+  PAIN_QUALITY_OPTIONS,
+  PROGNOSIS_WEEKS_EN,
+  PROGNOSIS_WEEKS_KO,
+  TRAUMA_OPTIONS,
+  onsetLabel,
+  painQualityLabel,
+  soapWizardCopy,
+  traumaLabel,
+  type SoapLocale,
+} from "./soap-copy";
 import { getModalRegionForOutcomeId } from "@/constants/measures";
 import {
-  GENERIC_RED_FLAG_META,
+  getGenericRedFlagMeta,
   getScreeningQuestionsForRegion,
   resolveScreeningRegion,
   type Step1RedFlagEntry,
@@ -33,6 +50,7 @@ export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
 type Props = {
   dict: Dictionary;
+  locale: SoapLocale;
 };
 
 type FormData = {
@@ -52,14 +70,12 @@ type FormData = {
   step1: { redFlags: Step1RedFlagEntry[] };
 };
 
-type ExamOnset = "급성(Acute)" | "아급성(Subacute)" | "만성(Chronic)";
-type ExamTrauma = "외상성(Traumatic)" | "비외상성(Non-traumatic)";
-type PainQuality = "날카로운" | "쑤시는" | "저리는" | "타는듯한" | "뻐근한" | "묵직한";
+type PainQuality = (typeof PAIN_QUALITY_OPTIONS)[number];
 
 type ExamDraft = {
   chiefComplaint: string;
-  onset: ExamOnset;
-  traumaType: ExamTrauma;
+  onset: (typeof ONSET_OPTIONS)[number];
+  traumaType: (typeof TRAUMA_OPTIONS)[number];
   vas: number;
   painQualities: PainQuality[];
   aggravatingFactors: string;
@@ -71,8 +87,6 @@ type ExamDraft = {
   };
   otherNotes: string;
 };
-
-const PAIN_QUALITY_OPTIONS: PainQuality[] = ["날카로운", "쑤시는", "저리는", "타는듯한", "뻐근한", "묵직한"];
 
 interface Patient {
   id: string;
@@ -235,15 +249,9 @@ const SPECIAL_TESTS_DB: Record<string, string[]> = {
 
 type SpecialTestValue = "positive" | "negative" | "not_tested";
 
-const SPECIAL_TEST_LABEL: Record<SpecialTestValue, string> = {
-  positive: "양성(+)",
-  negative: "음성(-)",
-  not_tested: "미실시",
-};
 
 const END_FEEL_OPTIONS = ["Normal", "Hard", "Soft", "Firm", "Empty"] as const;
 const MMT_OPTIONS = ["5", "4+", "4", "4-", "3+", "3", "3-", "2", "1", "0"] as const;
-const PROGNOSIS_DURATION_OPTIONS = ["1주", "2주", "3주", "4주", "5주", "6주", "7주", "8주", "9주", "10주", "11주", "12주 이상"] as const;
 const REHAB_POTENTIAL_OPTIONS = ["Excellent", "Good", "Fair", "Poor"] as const;
 
 type RomMmtInput = {
@@ -457,23 +465,27 @@ function upsertAutoObjectiveBlock(text: string, lines: string[]) {
   return base ? `${base}\n${block}` : block;
 }
 
-function composeExaminationSummary(draft: ExamDraft) {
-  const qualityText = draft.painQualities.length > 0 ? draft.painQualities.join(", ") : "미기재";
+function composeExaminationSummary(draft: ExamDraft, locale: SoapLocale) {
+  const t = soapWizardCopy(locale);
+  const qualityText =
+    draft.painQualities.length > 0
+      ? draft.painQualities.map((pq) => painQualityLabel(pq, locale)).join(", ")
+      : t.notProvided;
   const redFlags = [
-    draft.redFlags.nightPain ? "야간통" : null,
-    draft.redFlags.weightLoss ? "체중 감소" : null,
-    draft.redFlags.neuroBowelBladder ? "감각/대소변 이상" : null,
+    draft.redFlags.nightPain ? (locale === "en" ? "Night pain" : "야간통") : null,
+    draft.redFlags.weightLoss ? (locale === "en" ? "Unexplained weight loss" : "체중 감소") : null,
+    draft.redFlags.neuroBowelBladder ? (locale === "en" ? "Neurogenic bowel/bladder" : "감각/대소변 이상") : null,
   ].filter(Boolean);
 
   return [
-    `주소증: ${draft.chiefComplaint || "미기재"}`,
-    `발병: ${draft.onset} (${draft.traumaType})`,
-    `VAS: ${draft.vas}`,
-    `통증 양상: ${qualityText}`,
-    `가중 요인: ${draft.aggravatingFactors || "미기재"}`,
-    `완화 요인: ${draft.relievingFactors || "미기재"}`,
-    `Red Flag: ${redFlags.length > 0 ? redFlags.join(", ") : "특이사항 없음"}`,
-    `기타 메모: ${draft.otherNotes || "없음"}`,
+    `${t.prefixChief}: ${draft.chiefComplaint || t.notProvided}`,
+    `${t.prefixOnset}: ${onsetLabel(draft.onset, locale)} (${traumaLabel(draft.traumaType, locale)})`,
+    `${t.prefixVas}: ${draft.vas}`,
+    `${t.prefixQuality}: ${qualityText}`,
+    `${t.prefixAgg}: ${draft.aggravatingFactors || t.notProvided}`,
+    `${t.prefixRelief}: ${draft.relievingFactors || t.notProvided}`,
+    `${t.prefixRedFlag}: ${redFlags.length > 0 ? redFlags.join(", ") : t.redFlagNone}`,
+    `${t.prefixNotes}: ${draft.otherNotes || t.none}`,
   ].join(" / ");
 }
 
@@ -559,7 +571,10 @@ function outcomeMeasureChipLabel(outcomeId: string): string {
   return labels[outcomeId] ?? outcomeId.toUpperCase();
 }
 
-function RedFlagMentor() {
+function RedFlagMentor({ locale }: { locale: SoapLocale }) {
+  const t = soapWizardCopy(locale);
+  const dataLocale: SoapDataLocale = locale === "en" ? "en" : "ko";
+  const prognosisWeekOptions = locale === "en" ? PROGNOSIS_WEEKS_EN : PROGNOSIS_WEEKS_KO;
   const supabase = useMemo(() => createClient(), []);
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -571,7 +586,7 @@ function RedFlagMentor() {
   const [formData, setFormData] = useState<FormData>({
     patientId: "",
     diagnosisArea: "",
-    language: "ko",
+    language: locale === "en" ? "en" : "ko",
     examination: "",
     evaluation: "",
     prognosis: "",
@@ -583,8 +598,8 @@ function RedFlagMentor() {
   });
   const [examDraft, setExamDraft] = useState<ExamDraft>({
     chiefComplaint: "",
-    onset: "급성(Acute)",
-    traumaType: "비외상성(Non-traumatic)",
+    onset: "Acute",
+    traumaType: "Non-traumatic",
     vas: 5,
     painQualities: [],
     aggravatingFactors: "",
@@ -635,6 +650,15 @@ function RedFlagMentor() {
   const [manualOutcomeMax, setManualOutcomeMax] = useState("");
   const [screeningAnswers, setScreeningAnswers] = useState<Record<string, boolean>>({});
 
+  const specialTestLabel = useMemo(
+    (): Record<SpecialTestValue, string> => ({
+      positive: locale === "en" ? "Positive (+)" : "양성(+)",
+      negative: locale === "en" ? "Negative (-)" : "음성(-)",
+      not_tested: locale === "en" ? "Not tested" : "미실시",
+    }),
+    [locale],
+  );
+
   const screeningRegion = useMemo(
     () => resolveScreeningRegion(formData.diagnosisArea),
     [formData.diagnosisArea],
@@ -648,34 +672,35 @@ function RedFlagMentor() {
   useEffect(() => {
     const redFlags: Step1RedFlagEntry[] = [];
     const g = examDraft.redFlags;
+    const gmeta = getGenericRedFlagMeta(dataLocale);
     if (g.nightPain) {
       redFlags.push({
-        questionId: GENERIC_RED_FLAG_META.nightPain.id,
+        questionId: gmeta.nightPain.id,
         regionKey: "general",
-        label: GENERIC_RED_FLAG_META.nightPain.label,
-        isRedFlag: GENERIC_RED_FLAG_META.nightPain.isRedFlag,
+        label: gmeta.nightPain.label,
+        isRedFlag: gmeta.nightPain.isRedFlag,
         source: "generic",
       });
     }
     if (g.weightLoss) {
       redFlags.push({
-        questionId: GENERIC_RED_FLAG_META.weightLoss.id,
+        questionId: gmeta.weightLoss.id,
         regionKey: "general",
-        label: GENERIC_RED_FLAG_META.weightLoss.label,
-        isRedFlag: GENERIC_RED_FLAG_META.weightLoss.isRedFlag,
+        label: gmeta.weightLoss.label,
+        isRedFlag: gmeta.weightLoss.isRedFlag,
         source: "generic",
       });
     }
     if (g.neuroBowelBladder) {
       redFlags.push({
-        questionId: GENERIC_RED_FLAG_META.neuroBowelBladder.id,
+        questionId: gmeta.neuroBowelBladder.id,
         regionKey: "general",
-        label: GENERIC_RED_FLAG_META.neuroBowelBladder.label,
-        isRedFlag: GENERIC_RED_FLAG_META.neuroBowelBladder.isRedFlag,
+        label: gmeta.neuroBowelBladder.label,
+        isRedFlag: gmeta.neuroBowelBladder.isRedFlag,
         source: "generic",
       });
     }
-    const qs = getScreeningQuestionsForRegion(screeningRegion);
+    const qs = getScreeningQuestionsForRegion(screeningRegion, dataLocale);
     for (const q of qs) {
       if (screeningAnswers[q.id]) {
         redFlags.push({
@@ -693,7 +718,7 @@ function RedFlagMentor() {
       if (a === b) return prev;
       return { ...prev, step1: { redFlags } };
     });
-  }, [examDraft.redFlags, screeningAnswers, screeningRegion]);
+  }, [examDraft.redFlags, screeningAnswers, screeningRegion, dataLocale]);
 
   /** Step4 구조 → formData.step4 JSON (분석 전에도 서버와 동일 스냅샷 유지) */
   useEffect(() => {
@@ -749,8 +774,8 @@ function RedFlagMentor() {
   }, [supabase]);
 
   useEffect(() => {
-    setFormData((prev) => ({ ...prev, examination: composeExaminationSummary(examDraft) }));
-  }, [examDraft]);
+    setFormData((prev) => ({ ...prev, examination: composeExaminationSummary(examDraft, locale) }));
+  }, [examDraft, locale]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -790,7 +815,7 @@ function RedFlagMentor() {
     setSpecialTestSelection((prev) => ({ ...prev, [testName]: value }));
     setFormData((prev) => ({
       ...prev,
-      evaluation: upsertSpecialTestLine(prev.evaluation, testName, SPECIAL_TEST_LABEL[value]),
+      evaluation: upsertSpecialTestLine(prev.evaluation, testName, specialTestLabel[value]),
     }));
   };
 
@@ -815,7 +840,7 @@ function RedFlagMentor() {
     const inputVal = (outcomeScores[outcome.id] ?? "").trim();
     if (!inputVal) return;
 
-    const nextLine = `[평가 척도] ${outcome.name} : ${inputVal}/${outcome.max}${outcome.unit}`;
+    const nextLine = `${t.tagOutcome} ${outcome.name} : ${inputVal}/${outcome.max}${outcome.unit}`;
     setFormData((prev) => ({
       ...prev,
       evaluation: prev.evaluation ? `${prev.evaluation}\n${nextLine}` : nextLine,
@@ -826,7 +851,7 @@ function RedFlagMentor() {
   const handleTbcToggle = (tbcTag: string) => {
     setSelectedTbcTags((prev) => {
       const exists = prev.includes(tbcTag);
-      const line = `[TBC 분류] ${tbcTag}`;
+      const line = `${t.tagTbc} ${tbcTag}`;
       setFormData((fd) => ({
         ...fd,
         evaluation: exists ? removeExactLine(fd.evaluation, line) : appendUniqueLine(fd.evaluation, line),
@@ -837,13 +862,14 @@ function RedFlagMentor() {
 
   const handleAppendICF = (
     item: string,
-    categoryLabel: "신체손상" | "활동제한" | "참여제약",
-    event?: React.MouseEvent<HTMLButtonElement>
+    bucket: "impairment" | "activity" | "participation",
+    event?: React.MouseEvent<HTMLButtonElement>,
   ) => {
     event?.currentTarget.blur();
-    const line = `[ICF - ${categoryLabel}] ${item}`;
-    const key =
-      categoryLabel === "신체손상" ? "impairment" : categoryLabel === "활동제한" ? "activity" : "participation";
+    const tag =
+      bucket === "impairment" ? t.tagIcfBf : bucket === "activity" ? t.tagIcfAct : t.tagIcfPart;
+    const line = `${tag} ${item}`;
+    const key = bucket;
     setIcfSelection((prev) => {
       const exists = prev[key].includes(item);
       const nextBucket = exists ? prev[key].filter((v) => v !== item) : [...prev[key], item];
@@ -926,9 +952,7 @@ function RedFlagMentor() {
 
       const data = (await res.json()) as RedFlagResult;
       if (data.auxiliaryError?.stage === "db_log") {
-        alert(
-          `분석은 완료되었으나 기록 저장에 실패했습니다(DB).\n${data.auxiliaryError.message}`,
-        );
+        alert(`${t.dbLogWarn}\n${data.auxiliaryError.message}`);
       }
       setReportResult(data);
       setEvaluationResult(data);
@@ -948,8 +972,8 @@ function RedFlagMentor() {
       }
     } catch (error) {
       console.error(error);
-      const msg = error instanceof Error ? error.message : "Red Flag 분석 중 오류가 발생했습니다.";
-      alert(`${msg}\n잠시 후 다시 시도해 주세요.`);
+      const msg = error instanceof Error ? error.message : t.analyzeError;
+      alert(`${msg}\n${t.tryAgain}`);
     } finally {
       setIsLoading(false);
     }
@@ -990,19 +1014,17 @@ function RedFlagMentor() {
     ? REGION_EVIDENCE_DB[regionKey as keyof typeof REGION_EVIDENCE_DB] ?? null
     : null;
   const selectedTbcOptions = selectedDiagnosisKey
-    ? getTbcOptionsForRegion(regionKey, selectedRegionEvidence?.tbc)
+    ? getTbcOptionsForRegion(regionKey, selectedRegionEvidence?.tbc, dataLocale)
     : [];
   const selectedOutcomeOptions = selectedDiagnosisKey
-    ? JOSPT_OUTCOME_DB[regionKey as keyof typeof JOSPT_OUTCOME_DB] ?? []
+    ? getJosptOutcomeDb(dataLocale)[regionKey] ?? []
     : [];
   const selectedIcfOptions = selectedDiagnosisKey
-    ? JOSPT_ICF_DB[regionKey as keyof typeof JOSPT_ICF_DB] ?? null
+    ? getJosptIcfDb(dataLocale)[regionKey] ?? null
     : null;
 
   useEffect(() => {
-    const opts = selectedDiagnosisKey
-      ? JOSPT_OUTCOME_DB[regionKey as keyof typeof JOSPT_OUTCOME_DB] ?? []
-      : [];
+    const opts = selectedDiagnosisKey ? getJosptOutcomeDb(dataLocale)[regionKey] ?? [] : [];
     if (opts.length === 0) {
       setSelectedOutcomeTool("");
       return;
@@ -1012,14 +1034,14 @@ function RedFlagMentor() {
       if (prev && opts.some((o) => o.id === prev)) return prev;
       return opts[0].id;
     });
-  }, [regionKey, selectedDiagnosisKey]);
+  }, [regionKey, selectedDiagnosisKey, dataLocale]);
 
   useEffect(() => {
     const autoRomLines = Object.entries(romMmtInputs)
       .filter(([, row]) => row.arom || row.prom || row.mmt)
       .map(
         ([movement, row]) =>
-          `[ROM/MMT] ${movement} | AROM: ${row.arom || "-"} | PROM: ${row.prom || "-"} | End Feel: ${row.endFeel || "-"} | MMT: ${
+          `${t.tagRomMmt} ${movement} | AROM: ${row.arom || "-"} | PROM: ${row.prom || "-"} | End Feel: ${row.endFeel || "-"} | MMT: ${
             row.mmt || "-"
           }`,
       );
@@ -1027,64 +1049,68 @@ function RedFlagMentor() {
       .map((o) => {
         const score = (outcomeScores[o.id] ?? "").trim();
         if (!score) return null;
-        return `[평가 척도] ${o.name} : ${score}/${o.max}${o.unit}`;
+        return `${t.tagOutcome} ${o.name} : ${score}/${o.max}${o.unit}`;
       })
       .filter((v): v is string => Boolean(v));
-    const autoTbcLines = selectedTbcTags.map((tbc) => `[TBC 분류] ${tbc}`);
+    const autoTbcLines = selectedTbcTags.map((tbc) => `${t.tagTbc} ${tbc}`);
     const autoIcfLines = [
-      ...icfSelection.impairment.map((item) => `[ICF - 신체손상] ${item}`),
-      ...icfSelection.activity.map((item) => `[ICF - 활동제한] ${item}`),
-      ...icfSelection.participation.map((item) => `[ICF - 참여제약] ${item}`),
+      ...icfSelection.impairment.map((item) => `${t.tagIcfBf} ${item}`),
+      ...icfSelection.activity.map((item) => `${t.tagIcfAct} ${item}`),
+      ...icfSelection.participation.map((item) => `${t.tagIcfPart} ${item}`),
     ];
     const autoLines = [...autoRomLines, ...autoOutcomeLines, ...autoTbcLines, ...autoIcfLines];
     setFormData((prev) => ({
       ...prev,
       evaluation: upsertAutoObjectiveBlock(prev.evaluation, autoLines),
     }));
-  }, [icfSelection, outcomeScores, romMmtInputs, selectedOutcomeOptions, selectedTbcTags]);
+  }, [icfSelection, outcomeScores, romMmtInputs, selectedOutcomeOptions, selectedTbcTags, t]);
 
   useEffect(() => {
     const lines = [
-      prognosisDuration ? `[예상 치료 기간] ${prognosisDuration}` : "",
+      prognosisDuration ? `${t.tagEstimatedDuration} ${prognosisDuration}` : "",
       rehabPotential ? `[Rehab Potential] ${rehabPotential}` : "",
       shortTermGoal.trim() ? `[STG]\n${shortTermGoal.trim()}` : "",
       longTermGoal.trim() ? `[LTG]\n${longTermGoal.trim()}` : "",
     ].filter(Boolean);
     setFormData((prev) => ({ ...prev, prognosis: lines.join("\n\n") }));
-  }, [longTermGoal, prognosisDuration, rehabPotential, shortTermGoal]);
+  }, [longTermGoal, prognosisDuration, rehabPotential, shortTermGoal, t]);
 
   useEffect(() => {
     const manualLines = manualEntries.map(
-      (m, i) => `${i + 1}. ${m.name} | ${m.grade} | ${m.minutes || "-"}분`,
+      (m, i) => `${i + 1}. ${m.name} | ${m.grade} | ${m.minutes || "-"}${t.interventionMin}`,
     );
     const exerciseLines = exerciseEntries.map(
-      (e, i) => `${i + 1}. ${e.name} | ${e.sets || "-"} Sets x ${e.reps || "-"} Reps x Hold ${e.holdSec || "-"}초`,
+      (e, i) =>
+        `${i + 1}. ${e.name} | ${e.sets || "-"} Sets × ${e.reps || "-"} Reps × Hold ${e.holdSec || "-"}${t.interventionSec}`,
     );
-    const modalityLines = modalityEntries.map((m, i) => `${i + 1}. ${m.modality} | 적용 부위: ${m.target}`);
+    const modalityLines = modalityEntries.map(
+      (m, i) => `${i + 1}. ${m.modality} | ${t.modalityTargetLabel} ${m.target}`,
+    );
+    const none = t.manualSummaryNone;
     const blocks = [
       "[Manual Therapy]",
-      ...(manualLines.length > 0 ? manualLines : ["- 없음"]),
+      ...(manualLines.length > 0 ? manualLines : [none]),
       "",
       "[Therapeutic Exercise]",
-      ...(exerciseLines.length > 0 ? exerciseLines : ["- 없음"]),
+      ...(exerciseLines.length > 0 ? exerciseLines : [none]),
       "",
       "[Modalities]",
-      ...(modalityLines.length > 0 ? modalityLines : ["- 없음"]),
+      ...(modalityLines.length > 0 ? modalityLines : [none]),
       "",
       "[Education & HEP]",
-      educationHep.trim() || "- 없음",
+      educationHep.trim() || none,
     ];
     setFormData((prev) => ({ ...prev, intervention: blocks.join("\n") }));
-  }, [educationHep, exerciseEntries, manualEntries, modalityEntries]);
+  }, [educationHep, exerciseEntries, manualEntries, modalityEntries, t]);
 
   return (
     <div className="flex h-full flex-col bg-slate-50 font-sans">
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-4">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold text-slate-800">
-            <AlertTriangle className="h-6 w-6 text-rose-600" /> Re:PhyT Safety Net
+            <AlertTriangle className="h-6 w-6 text-rose-600" /> {t.safetyTitle}
           </h1>
-          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">Medical Screening & Red Flag Detection</p>
+          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{t.safetySubtitle}</p>
         </div>
         <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
           <Lock className="h-3 w-3" /> PRO GLOBAL EDITION
@@ -1115,40 +1141,44 @@ function RedFlagMentor() {
               <div className="p-10">
                 <div className="mb-8">
                   <h2 className="mb-2 text-2xl font-bold text-slate-800">
-                    {step === 1 ? "환자 검사 데이터" : step === 2 ? "임상 평가 및 진단" : step === 3 ? "예후 및 치료 목표" : "중재 전략 설정"}
+                    {step === 1
+                      ? t.stepExamTitle
+                      : step === 2
+                        ? t.stepEvalTitle
+                        : step === 3
+                          ? t.stepGoalTitle
+                          : t.stepPlanTitle}
                   </h2>
-                  <p className="mb-6 text-sm text-slate-500">
-                    입력된 임상 논리를 분석하여 치명적인 Medical Red Flag를 스크리닝합니다.
-                  </p>
+                  <p className="mb-6 text-sm text-slate-500">{t.step1Subtitle}</p>
 
                   {step === 1 ? (
                     <div className="mb-4 space-y-4">
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                         <div>
-                          <label className="mb-1 block text-xs font-bold uppercase text-slate-500">환자 선택</label>
+                          <label className="mb-1 block text-xs font-bold uppercase text-slate-500">{t.linkPatient}</label>
                           <select
                             name="patientId"
                             value={formData.patientId}
                             onChange={handleInputChange}
                             className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
                           >
-                            <option value="">{patientsLoading ? "환자 목록 로딩 중..." : "환자를 선택하세요"}</option>
+                            <option value="">{patientsLoading ? t.loadingPatients : t.selectPatient}</option>
                             {patients.map((p) => (
                               <option key={p.id} value={p.id}>
-                                {p.name} ({p.birthDate || "생년월일 미등록"})
+                                {p.name} ({p.birthDate || t.patientDobMissing})
                               </option>
                             ))}
                           </select>
                         </div>
                         <div>
-                          <label className="mb-1 block text-xs font-bold uppercase text-slate-500">진단 부위</label>
+                          <label className="mb-1 block text-xs font-bold uppercase text-slate-500">{t.bodyRegion}</label>
                           <select
                             name="diagnosisArea"
                             value={formData.diagnosisArea}
                             onChange={handleInputChange}
                             className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
                           >
-                            <option value="">부위를 선택하세요</option>
+                            <option value="">{t.selectRegion}</option>
                             <option value="neck">Neck (경추)</option>
                             <option value="shoulder">Shoulder (견관절)</option>
                             <option value="elbow">Elbow (주관절)</option>
@@ -1162,35 +1192,36 @@ function RedFlagMentor() {
                           </select>
                         </div>
                         <div>
-                          <label className="mb-1 block text-xs font-bold uppercase text-slate-500">출력 언어</label>
+                          <label className="mb-1 block text-xs font-bold uppercase text-slate-500">{t.outputLangLabel}</label>
                           <select
                             name="language"
                             value={formData.language}
                             onChange={handleInputChange}
                             className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
                           >
-                            <option value="ko">한국어 (+ 영문 의학용어)</option>
-                            <option value="ja">日本語 (일본어)</option>
-                            <option value="vi">Tiếng Việt (베트남어)</option>
-                            <option value="th">ภาษาไทย (태국어)</option>
+                            <option value="ko">{t.langOptKo}</option>
+                            <option value="en">{t.langOptEn}</option>
+                            <option value="ja">{t.langOptJa}</option>
+                            <option value="vi">{t.langOptVi}</option>
+                            <option value="th">{t.langOptTh}</option>
                           </select>
                         </div>
                       </div>
 
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <label className="mb-2 block text-xs font-bold uppercase text-slate-500">1. 주요 호소 증상 (Chief Complaint)</label>
+                        <label className="mb-2 block text-xs font-bold uppercase text-slate-500">{t.chiefSection}</label>
                         <input
                           value={examDraft.chiefComplaint}
                           onChange={(e) => handleExamDraftChange({ chiefComplaint: e.target.value })}
-                          placeholder="가장 불편한 부위와 증상을 간략히 적어주세요."
+                          placeholder={t.chiefPlaceholderShort}
                           className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
                         />
                       </div>
 
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p className="mb-2 text-xs font-bold uppercase text-slate-500">2. 발병 시기 및 경위 (Onset & Mechanism)</p>
+                        <p className="mb-2 text-xs font-bold uppercase text-slate-500">{t.onsetSection}</p>
                         <div className="mb-3 flex flex-wrap gap-2">
-                          {(["급성(Acute)", "아급성(Subacute)", "만성(Chronic)"] as const).map((item) => (
+                          {ONSET_OPTIONS.map((item) => (
                             <button
                               key={item}
                               type="button"
@@ -1201,12 +1232,12 @@ function RedFlagMentor() {
                                   : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
                               }`}
                             >
-                              {item}
+                              {onsetLabel(item, locale)}
                             </button>
                           ))}
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {(["외상성(Traumatic)", "비외상성(Non-traumatic)"] as const).map((item) => (
+                          {TRAUMA_OPTIONS.map((item) => (
                             <button
                               key={item}
                               type="button"
@@ -1217,16 +1248,18 @@ function RedFlagMentor() {
                                   : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
                               }`}
                             >
-                              {item}
+                              {traumaLabel(item, locale)}
                             </button>
                           ))}
                         </div>
                       </div>
 
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p className="mb-2 text-xs font-bold uppercase text-slate-500">3. 통증 양상 및 강도 (Pain Pattern & Intensity)</p>
+                        <p className="mb-2 text-xs font-bold uppercase text-slate-500">{t.painSection}</p>
                         <div className="mb-3">
-                          <label className="mb-1 block text-xs font-semibold text-slate-500">통증 강도 (VAS): {examDraft.vas}</label>
+                          <label className="mb-1 block text-xs font-semibold text-slate-500">
+                            {t.vasLabelPrefix}: {examDraft.vas}
+                          </label>
                           <input
                             type="range"
                             min={0}
@@ -1250,7 +1283,7 @@ function RedFlagMentor() {
                                     : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
                                 }`}
                               >
-                                {item}
+                                {painQualityLabel(item, locale)}
                               </button>
                             );
                           })}
@@ -1258,10 +1291,10 @@ function RedFlagMentor() {
                       </div>
 
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p className="mb-2 text-xs font-bold uppercase text-slate-500">4. 통증 가중 및 완화 요인 (Aggravating & Relieving Factors)</p>
+                        <p className="mb-2 text-xs font-bold uppercase text-slate-500">{t.aggravatingRelievingSection}</p>
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                           <div>
-                            <label className="mb-1 block text-xs font-semibold text-slate-500">가중 요인 (어떨 때 아픈가요?)</label>
+                            <label className="mb-1 block text-xs font-semibold text-slate-500">{t.aggravatingLong}</label>
                             <input
                               value={examDraft.aggravatingFactors}
                               onChange={(e) => handleExamDraftChange({ aggravatingFactors: e.target.value })}
@@ -1269,7 +1302,7 @@ function RedFlagMentor() {
                             />
                           </div>
                           <div>
-                            <label className="mb-1 block text-xs font-semibold text-slate-500">완화 요인 (어떨 때 편안한가요?)</label>
+                            <label className="mb-1 block text-xs font-semibold text-slate-500">{t.relievingLong}</label>
                             <input
                               value={examDraft.relievingFactors}
                               onChange={(e) => handleExamDraftChange({ relievingFactors: e.target.value })}
@@ -1281,12 +1314,10 @@ function RedFlagMentor() {
 
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-xs font-bold uppercase text-slate-500">
-                            5. 부위별 특이 문진 (Region-specific screening)
-                          </p>
+                          <p className="text-xs font-bold uppercase text-slate-500">{t.screeningSectionTitle}</p>
                           {screeningRegion ? (
                             <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 ring-1 ring-indigo-100">
-                              {screeningRegion === "neck" || screeningRegion === "lumbar" ? "Spine 그룹" : "Joint 그룹"} ·{" "}
+                              {screeningRegion === "neck" || screeningRegion === "lumbar" ? t.groupSpine : t.groupJoint} ·{" "}
                               {screeningRegion}
                             </span>
                           ) : null}
@@ -1533,7 +1564,7 @@ function RedFlagMentor() {
                                   role="tooltip"
                                   className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-max max-w-[min(20rem,calc(100vw-3rem))] -translate-x-1/2 translate-y-1 rounded-lg bg-slate-800 px-3 py-2 text-left text-xs leading-relaxed text-white opacity-0 shadow-lg transition-all duration-200 ease-out [text-wrap:pretty] group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
                                 >
-                                  <span className="block font-semibold text-slate-100">JOSPT 진단 기준 (Inclusion)</span>
+                                  <span className="block font-semibold text-slate-100">{t.tbcTooltipTitle}</span>
                                   <span className="mt-1 block font-normal text-white/95">{item.description}</span>
                                 </div>
                               </div>
@@ -1742,7 +1773,7 @@ function RedFlagMentor() {
                                   <button
                                     key={`imp-${idx}`}
                                     type="button"
-                                    onClick={(e) => handleAppendICF(item, "신체손상", e)}
+                                    onClick={(e) => handleAppendICF(item, "impairment", e)}
                                     className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100"
                                   >
                                     + {item}
@@ -1760,7 +1791,7 @@ function RedFlagMentor() {
                                   <button
                                     key={`act-${idx}`}
                                     type="button"
-                                    onClick={(e) => handleAppendICF(item, "활동제한", e)}
+                                    onClick={(e) => handleAppendICF(item, "activity", e)}
                                     className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100"
                                   >
                                     + {item}
@@ -1778,7 +1809,7 @@ function RedFlagMentor() {
                                   <button
                                     key={`part-${idx}`}
                                     type="button"
-                                    onClick={(e) => handleAppendICF(item, "참여제약", e)}
+                                    onClick={(e) => handleAppendICF(item, "participation", e)}
                                     className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
                                   >
                                     + {item}
@@ -1806,8 +1837,8 @@ function RedFlagMentor() {
                             onChange={(e) => setPrognosisDuration(e.target.value)}
                             className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-300"
                           >
-                            <option value="">치료 기간 선택</option>
-                            {PROGNOSIS_DURATION_OPTIONS.map((opt) => (
+                            <option value="">{t.selectDuration}</option>
+                            {prognosisWeekOptions.map((opt) => (
                               <option key={opt} value={opt}>
                                 {opt}
                               </option>
@@ -2104,7 +2135,7 @@ function RedFlagMentor() {
                         </>
                       ) : (
                         <>
-                          <AlertTriangle className="h-5 w-5" /> 🚀 AI 임상 스크리닝 리포트 생성
+                          <AlertTriangle className="h-5 w-5" /> {t.analyze}
                         </>
                       )}
                     </button>
@@ -2232,6 +2263,7 @@ function RedFlagMentor() {
           </div>
         </div>
         <DashboardRightPanel
+          locale={locale}
           result={
             reportResult
               ? {
@@ -2270,6 +2302,7 @@ function RedFlagMentor() {
           open={measureModalOpen}
           onClose={() => setMeasureModalOpen(false)}
           diagnosisArea={formData.diagnosisArea}
+          locale={locale}
           activeOutcomeId={selectedOutcomeTool !== "manual" ? selectedOutcomeTool : null}
           onApply={(payload: Step2OutcomePayload) => {
             const oid = payload.outcomeId ?? (selectedOutcomeTool !== "manual" ? selectedOutcomeTool : undefined);
@@ -2287,6 +2320,6 @@ function RedFlagMentor() {
   );
 }
 
-export function SoapNewPageClient({ dict: _dict }: Props) {
-  return <RedFlagMentor />;
+export function SoapNewPageClient({ dict: _dict, locale }: Props) {
+  return <RedFlagMentor locale={locale} />;
 }

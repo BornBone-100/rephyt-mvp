@@ -3,25 +3,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { X, ClipboardCheck } from "lucide-react";
 import {
-  OUTCOME_MEASURES,
-  calcNdi,
-  calcOdi,
-  calcQuickDash,
-  calcWomac,
+  getOutcomeMeasuresBundle,
   getModalRegionForOutcomeId,
   resolveOutcomeMeasureRegion,
+  type MeasureLocale,
   type MeasureQuestion5,
   type MeasureQuestion6,
   type MeasureQuestionWomac,
   type OutcomeMeasureRegion,
 } from "@/constants/measures";
+import { soapWizardCopy, type SoapLocale } from "./soap-copy";
 
 export type Step2OutcomePayload = {
   functionalScore: number;
   functionalComment: string;
   measureKey: OutcomeMeasureRegion | "custom";
   measureName: string;
-  /** 선택한 JOSPT 척도 id(ndi, quickdash 등) 또는 manual */
   outcomeId?: string;
 };
 
@@ -29,17 +26,45 @@ type MeasureModalProps = {
   open: boolean;
   onClose: () => void;
   diagnosisArea: string;
-  /** 선택된 척도 — 클릭형 모달 문항을 이 id 기준으로 고름 (예: quickdash → QuickDASH) */
   activeOutcomeId?: string | null;
   onApply: (payload: Step2OutcomePayload) => void;
+  locale?: SoapLocale;
 };
 
-function formatComment(measureName: string, percent: number, label: string): string {
+function formatComment(
+  locale: MeasureLocale,
+  measureName: string,
+  percent: number,
+  label: string,
+): string {
   const pct = Math.round(percent * 10) / 10;
+  if (locale === "en") {
+    return `${measureName}: ${pct}% total disability — ${label}.`;
+  }
   return `${measureName} 평가 결과 ${pct}%로 ${label} 소견 보임.`;
 }
 
-export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, onApply }: MeasureModalProps) {
+function isQuickDashCalcError(label: string): boolean {
+  return (
+    label.includes("불일치") ||
+    label.includes("허용") ||
+    label.includes("mismatch") ||
+    label.includes("must be scored")
+  );
+}
+
+export function MeasureModal({
+  open,
+  onClose,
+  diagnosisArea,
+  activeOutcomeId,
+  onApply,
+  locale = "ko",
+}: MeasureModalProps) {
+  const ml = locale === "en" ? "en" : "ko";
+  const ui = soapWizardCopy(locale);
+  const measures = useMemo(() => getOutcomeMeasuresBundle(ml), [ml]);
+
   const region = useMemo(() => {
     if (activeOutcomeId && activeOutcomeId !== "manual") {
       const mapped = getModalRegionForOutcomeId(activeOutcomeId);
@@ -48,7 +73,8 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
     }
     return resolveOutcomeMeasureRegion(diagnosisArea);
   }, [activeOutcomeId, diagnosisArea]);
-  const meta = region ? OUTCOME_MEASURES[region] : null;
+
+  const meta = region ? measures[region] : null;
 
   const [answers, setAnswers] = useState<Record<number, number>>({});
 
@@ -64,7 +90,7 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
     if (!region) return null;
 
     if (region === "neck") {
-      const qs = OUTCOME_MEASURES.neck.questions;
+      const qs = measures.neck.questions;
       const vals = qs.map((q) => answers[q.id]);
       if (vals.some((v) => v === undefined)) {
         const done = vals.filter((v) => v !== undefined).length;
@@ -72,22 +98,23 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
           kind: "partial" as const,
           done,
           total: qs.length,
-          text: `진행: ${done}/${qs.length}문항`,
+          text: `${ui.modalProgress}: ${done}/${qs.length} ${ui.modalItems}`,
         };
       }
       const sum = vals.reduce((a, b) => a + b, 0);
-      const calc = calcNdi(sum);
+      const calc = measures.neck.calc(sum);
+      const u = ui.scorePts;
       return {
         kind: "full" as const,
-        display: `현재 점수: ${calc.raw}점 (${Math.round(calc.percent * 10) / 10}%, ${calc.label})`,
+        display: `${calc.raw} ${u} (${Math.round(calc.percent * 10) / 10}%, ${calc.label})`,
         percent: calc.percent,
         label: calc.label,
-        rawLabel: `${calc.raw}/${calc.max}점`,
+        rawLabel: `${calc.raw}/${calc.max} ${u}`,
       };
     }
 
     if (region === "lumbar") {
-      const qs = OUTCOME_MEASURES.lumbar.questions;
+      const qs = measures.lumbar.questions;
       const vals = qs.map((q) => answers[q.id]);
       if (vals.some((v) => v === undefined)) {
         const done = vals.filter((v) => v !== undefined).length;
@@ -95,22 +122,23 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
           kind: "partial" as const,
           done,
           total: qs.length,
-          text: `진행: ${done}/${qs.length}문항`,
+          text: `${ui.modalProgress}: ${done}/${qs.length} ${ui.modalItems}`,
         };
       }
       const sum = vals.reduce((a, b) => a + b, 0);
-      const calc = calcOdi(sum);
+      const calc = measures.lumbar.calc(sum);
+      const u = ui.scorePts;
       return {
         kind: "full" as const,
-        display: `현재 점수: ${calc.raw}점 (${Math.round(calc.percent * 10) / 10}%, ${calc.label})`,
+        display: `${calc.raw} ${u} (${Math.round(calc.percent * 10) / 10}%, ${calc.label})`,
         percent: calc.percent,
         label: calc.label,
-        rawLabel: `${calc.raw}/${calc.max}점`,
+        rawLabel: `${calc.raw}/${calc.max} ${u}`,
       };
     }
 
     if (region === "shoulder") {
-      const qs = OUTCOME_MEASURES.shoulder.questions;
+      const qs = measures.shoulder.questions;
       const vals = qs.map((q) => answers[q.id]);
       if (vals.some((v) => v === undefined)) {
         const done = vals.filter((v) => v !== undefined).length;
@@ -118,16 +146,16 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
           kind: "partial" as const,
           done,
           total: qs.length,
-          text: `진행: ${done}/${qs.length}문항`,
+          text: `${ui.modalProgress}: ${done}/${qs.length} ${ui.modalItems}`,
         };
       }
-      const r = calcQuickDash(vals as number[]);
-      if (r.label.includes("불일치") || r.label.includes("허용")) {
+      const r = measures.shoulder.calc(vals as number[]);
+      if (isQuickDashCalcError(r.label)) {
         return { kind: "error" as const, text: r.label };
       }
       return {
         kind: "full" as const,
-        display: `현재 DASH 점수: ${Math.round(r.dashScore * 10) / 10}점 (${Math.round(r.percent * 10) / 10}%, ${r.label})`,
+        display: `QuickDASH ${Math.round(r.dashScore * 10) / 10} (${Math.round(r.percent * 10) / 10}%, ${r.label})`,
         percent: r.percent,
         label: r.label,
         rawLabel: `DASH ${Math.round(r.dashScore * 10) / 10}`,
@@ -135,9 +163,9 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
     }
 
     if (region === "knee") {
-      const pain = OUTCOME_MEASURES.knee.sections.pain.map((q) => answers[q.id]);
-      const stiffness = OUTCOME_MEASURES.knee.sections.stiffness.map((q) => answers[q.id]);
-      const func = OUTCOME_MEASURES.knee.sections.function.map((q) => answers[q.id]);
+      const pain = measures.knee.sections.pain.map((q) => answers[q.id]);
+      const stiffness = measures.knee.sections.stiffness.map((q) => answers[q.id]);
+      const func = measures.knee.sections.function.map((q) => answers[q.id]);
       const all = [...pain, ...stiffness, ...func];
       if (all.some((v) => v === undefined)) {
         const done = all.filter((v) => v !== undefined).length;
@@ -145,32 +173,33 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
           kind: "partial" as const,
           done,
           total: all.length,
-          text: `진행: ${done}/${all.length}문항`,
+          text: `${ui.modalProgress}: ${done}/${all.length} ${ui.modalItems}`,
         };
       }
-      const w = calcWomac(pain as number[], stiffness as number[], func as number[]);
+      const w = measures.knee.calc(pain as number[], stiffness as number[], func as number[]);
       if (Number.isNaN(w.total)) {
         return { kind: "error" as const, text: w.label };
       }
+      const u = ui.scorePts;
       return {
         kind: "full" as const,
-        display: `현재 점수: ${w.total}점/${w.maxTotal} (${Math.round(w.percent * 10) / 10}%, ${w.label})`,
+        display: `${w.total}/${w.maxTotal} ${u} (${Math.round(w.percent * 10) / 10}%, ${w.label})`,
         percent: w.percent,
         label: w.label,
-        rawLabel: `통증·강직·기능 합산`,
+        rawLabel: ui.womacSumLabel,
       };
     }
 
     return null;
-  }, [region, answers]);
+  }, [region, answers, measures, ui]);
 
   const canSubmit = preview?.kind === "full";
 
   const handleApply = () => {
     if (!region || preview?.kind !== "full") return;
-    const measureName = OUTCOME_MEASURES[region].name;
+    const measureName = measures[region].name;
     const functionalScore = preview.percent;
-    const functionalComment = formatComment(measureName, functionalScore, preview.label);
+    const functionalComment = formatComment(ml, measureName, functionalScore, preview.label);
 
     onApply({
       functionalScore: Math.round(functionalScore * 10) / 10,
@@ -195,14 +224,14 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
         type="button"
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] transition"
         onClick={onClose}
-        aria-label="닫기"
+        aria-label={ui.modalClose}
       />
       <div className="relative flex max-h-[min(92vh,900px)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-900/10">
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-blue-50/60 px-5 py-4">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Step 2 · 클릭형 기능 평가</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">{ui.modalBadge}</p>
             <h2 id="measure-modal-title" className="mt-1 text-lg font-bold text-slate-900">
-              {meta ? meta.name : "기능 평가 척도"}
+              {meta ? meta.name : ui.modalTitleFallback}
             </h2>
             {meta && <p className="mt-1 text-xs text-slate-600">{meta.description}</p>}
           </div>
@@ -210,7 +239,7 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
             type="button"
             onClick={onClose}
             className="rounded-lg p-2 text-slate-500 transition hover:bg-white hover:text-slate-800"
-            aria-label="모달 닫기"
+            aria-label={ui.modalClose}
           >
             <X className="h-5 w-5" />
           </button>
@@ -219,28 +248,34 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {!region || !meta ? (
             <div className="rounded-xl border border-amber-100 bg-amber-50/80 p-6 text-center text-sm text-amber-900">
-              <p className="font-semibold">클릭형 척도를 불러올 수 없습니다.</p>
-              <p className="mt-2 text-amber-800/90">
-                진단 부위를 <strong className="text-amber-950">경추(neck) · 어깨(shoulder) · 요추(lumbar) · 무릎(knee)</strong> 등으로 선택해 주세요.
-              </p>
+              <p className="font-semibold">{ui.modalError}</p>
+              <p className="mt-2 text-amber-800/90">{ui.modalErrorHint}</p>
             </div>
           ) : region === "neck" || region === "lumbar" ? (
             <NdiOdiQuestionGrid
-              questions={OUTCOME_MEASURES[region].questions as MeasureQuestion6[]}
+              questions={measures[region].questions as MeasureQuestion6[]}
               answers={answers}
               onChange={setAnswer}
+              scoreSuffix={ui.scorePts}
             />
           ) : region === "shoulder" ? (
             <QuickDashQuestionGrid
-              questions={OUTCOME_MEASURES.shoulder.questions}
+              questions={measures.shoulder.questions}
               answers={answers}
               onChange={setAnswer}
+              scoreSuffix={ui.scorePts}
             />
           ) : region === "knee" ? (
             <WomacQuestionGrid
-              sections={OUTCOME_MEASURES.knee.sections}
+              sections={measures.knee.sections}
               answers={answers}
               onChange={setAnswer}
+              scoreSuffix={ui.scorePts}
+              sectionLabels={{
+                pain: ui.womacPain,
+                stiffness: ui.womacStiff,
+                function: ui.womacFunc,
+              }}
             />
           ) : null}
         </div>
@@ -250,7 +285,7 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
             <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm text-blue-950">
               <ClipboardCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700">실시간 결과</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700">{ui.modalPreview}</p>
                 {preview?.kind === "full" && (
                   <p className="mt-0.5 font-semibold text-slate-900">{preview.display}</p>
                 )}
@@ -258,7 +293,7 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
                   <p className="mt-0.5 text-slate-700">{preview.text}</p>
                 )}
                 {preview?.kind === "error" && <p className="mt-0.5 text-rose-700">{preview.text}</p>}
-                {!preview && <p className="mt-0.5 text-slate-500">문항을 선택해 주세요.</p>}
+                {!preview && <p className="mt-0.5 text-slate-500">{ui.modalSelectPrompt}</p>}
               </div>
             </div>
             <div className="flex shrink-0 gap-2">
@@ -267,7 +302,7 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
                 onClick={onClose}
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
-                취소
+                {ui.modalCancel}
               </button>
               <button
                 type="button"
@@ -275,7 +310,7 @@ export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, on
                 onClick={handleApply}
                 className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-blue-600/25 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                평가 완료 및 결과 반영
+                {ui.modalApply}
               </button>
             </div>
           </div>
@@ -289,10 +324,12 @@ function NdiOdiQuestionGrid({
   questions,
   answers,
   onChange,
+  scoreSuffix,
 }: {
   questions: MeasureQuestion6[];
   answers: Record<number, number>;
   onChange: (id: number, value: number) => void;
+  scoreSuffix: string;
 }) {
   return (
     <div className="grid grid-cols-1 gap-6">
@@ -327,7 +364,10 @@ function NdiOdiQuestionGrid({
                     checked={selected}
                     onChange={() => onChange(q.id, value)}
                   />
-                  <span className="mb-1 text-[10px] font-bold text-blue-600">{value}점</span>
+                  <span className="mb-1 text-[10px] font-bold text-blue-600">
+                    {value}
+                    {scoreSuffix}
+                  </span>
                   {label}
                 </label>
               );
@@ -343,10 +383,12 @@ function QuickDashQuestionGrid({
   questions,
   answers,
   onChange,
+  scoreSuffix,
 }: {
   questions: MeasureQuestion5[];
   answers: Record<number, number>;
   onChange: (id: number, value: number) => void;
+  scoreSuffix: string;
 }) {
   return (
     <div className="grid grid-cols-1 gap-6">
@@ -378,7 +420,10 @@ function QuickDashQuestionGrid({
                     checked={selected}
                     onChange={() => onChange(q.id, value)}
                   />
-                  <span className="mb-1 text-[10px] font-bold text-blue-600">{value}점</span>
+                  <span className="mb-1 text-[10px] font-bold text-blue-600">
+                    {value}
+                    {scoreSuffix}
+                  </span>
                   {label}
                 </label>
               );
@@ -390,16 +435,12 @@ function QuickDashQuestionGrid({
   );
 }
 
-const WOMAC_SECTION_LABEL: Record<MeasureQuestionWomac["section"], string> = {
-  pain: "통증",
-  stiffness: "강직",
-  function: "일상 기능",
-};
-
 function WomacQuestionGrid({
   sections,
   answers,
   onChange,
+  scoreSuffix,
+  sectionLabels,
 }: {
   sections: {
     pain: MeasureQuestionWomac[];
@@ -408,6 +449,8 @@ function WomacQuestionGrid({
   };
   answers: Record<number, number>;
   onChange: (id: number, value: number) => void;
+  scoreSuffix: string;
+  sectionLabels: Record<MeasureQuestionWomac["section"], string>;
 }) {
   const blocks: { key: keyof typeof sections; items: MeasureQuestionWomac[] }[] = [
     { key: "pain", items: sections.pain },
@@ -420,7 +463,7 @@ function WomacQuestionGrid({
       {blocks.map(({ key, items }) => (
         <div key={key}>
           <h3 className="mb-4 border-b border-blue-100 pb-2 text-sm font-bold text-blue-800">
-            {WOMAC_SECTION_LABEL[key]}
+            {sectionLabels[key]}
           </h3>
           <div className="grid grid-cols-1 gap-5">
             {items.map((q) => (
@@ -451,7 +494,10 @@ function WomacQuestionGrid({
                           checked={selected}
                           onChange={() => onChange(q.id, value)}
                         />
-                        <span className="mb-1 text-[10px] font-bold text-blue-600">{value}점</span>
+                        <span className="mb-1 text-[10px] font-bold text-blue-600">
+                          {value}
+                          {scoreSuffix}
+                        </span>
                         {label}
                       </label>
                     );
