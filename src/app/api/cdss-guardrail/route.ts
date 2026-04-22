@@ -853,6 +853,38 @@ function buildGuardrailLogRowLegacy(params: {
   };
 }
 
+function extractUnknownColumnFromInsertError(error: unknown): string | null {
+  if (!error || typeof error !== "object") return null;
+  const e = error as { message?: string; details?: string; hint?: string; code?: string };
+  const source = [e.message, e.details, e.hint].filter((v): v is string => typeof v === "string").join(" ");
+  if (!source) return null;
+
+  // PostgREST 예시:
+  // "Could not find the 'result_snapshot' column of 'cdss_guardrail_logs' in the schema cache"
+  const postgrestMatch = source.match(/Could not find the '([^']+)' column/i);
+  if (postgrestMatch?.[1]) return postgrestMatch[1];
+
+  // PostgreSQL 예시:
+  // 'column "result_snapshot" of relation "cdss_guardrail_logs" does not exist'
+  const postgresMatch = source.match(/column\s+"([^"]+)"\s+of\s+relation/i);
+  if (postgresMatch?.[1]) return postgresMatch[1];
+
+  return null;
+}
+
+function splitKnownAndUnknownColumns(
+  row: Record<string, unknown>,
+  allowedColumns: ReadonlySet<string>,
+): { known: Record<string, unknown>; unknown: Record<string, unknown> } {
+  const known: Record<string, unknown> = {};
+  const unknown: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (allowedColumns.has(key)) known[key] = value;
+    else unknown[key] = value;
+  }
+  return { known, unknown };
+}
+
 async function logGuardrailEvent(params: {
   request: GuardrailRequest;
   detectedConditionId: string;
@@ -865,15 +897,68 @@ async function logGuardrailEvent(params: {
     const supabase = getSupabaseAdmin();
     if (!supabase) return { ok: true };
     const row = buildGuardrailLogRow(params);
-    let { error } = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(row as never);
-    if (error) {
-      console.warn("CDSS logGuardrailEvent full row failed, retrying legacy columns:", error.code, error.message);
-      const legacy = buildGuardrailLogRowLegacy(params);
-      const second = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(legacy as never);
-      if (second.error) {
-        console.error("CDSS logGuardrailEvent legacy insert:", second.error.code, second.error.message, second.error.details);
-        return { ok: false, message: second.error.message };
+    const legacy = buildGuardrailLogRowLegacy(params);
+
+    // 앱 코드에서 생성되는 "정상 후보 컬럼"만 먼저 허용한 뒤 insert.
+    const candidateColumns = new Set<string>([
+      ...Object.keys(legacy),
+      "cpg_compliance",
+      "audit_defense",
+      "predictive_trajectory",
+      "result_snapshot",
+      "extra_data",
+    ]);
+
+    const { known: filteredRow, unknown: preUnknown } = splitKnownAndUnknownColumns(row, candidateColumns);
+    let insertRow: Record<string, unknown> = { ...filteredRow };
+    if (Object.keys(preUnknown).length > 0) {
+      insertRow.extra_data = {
+        ...(typeof insertRow.extra_data === "object" && insertRow.extra_data !== null
+          ? (insertRow.extra_data as Record<string, unknown>)
+          : {}),
+        ...preUnknown,
+      };
+    }
+
+    // DB 스키마와 불일치하는 컬럼이 있으면 컬럼 단위로 제거/격리하며 최대 4회 재시도.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const { error } = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(insertRow as never);
+      if (!error) return { ok: true };
+
+      const unknownColumn = extractUnknownColumnFromInsertError(error);
+      if (!unknownColumn) {
+        console.error("CDSS logGuardrailEvent insert failed:", error.code, error.message, error.details);
+        return { ok: false, message: error.message };
       }
+
+      const unknownValue = insertRow[unknownColumn];
+      delete insertRow[unknownColumn];
+
+      // extra_data 컬럼이 존재하면 미지원 키를 보존, 없으면 조용히 드롭
+      if (unknownColumn !== "extra_data" && unknownValue !== undefined) {
+        insertRow.extra_data = {
+          ...(typeof insertRow.extra_data === "object" && insertRow.extra_data !== null
+            ? (insertRow.extra_data as Record<string, unknown>)
+            : {}),
+          [unknownColumn]: unknownValue,
+        };
+      }
+
+      console.warn("CDSS logGuardrailEvent: removed unknown DB column and retrying", {
+        unknownColumn,
+        attempt: attempt + 1,
+      });
+    }
+
+    const fallback = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(legacy as never);
+    if (fallback.error) {
+      console.error(
+        "CDSS logGuardrailEvent fallback legacy insert failed:",
+        fallback.error.code,
+        fallback.error.message,
+        fallback.error.details,
+      );
+      return { ok: false, message: fallback.error.message };
     }
     return { ok: true };
   } catch (e) {
