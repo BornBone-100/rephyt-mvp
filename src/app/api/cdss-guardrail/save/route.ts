@@ -27,6 +27,7 @@ const ALLOWED_COLUMNS = [
   "patient_id",
   "diagnosis_area",
   "overall_score",
+  "clinical_reasoning",
   "logic_audit",
   "cpg_compliance",
   "audit_defense",
@@ -103,6 +104,12 @@ export async function POST(req: Request) {
       patient_id: patientId,
       diagnosis_area: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,
       overall_score: overallScore,
+      clinical_reasoning:
+        typeof (result as { clinicalReasoning?: unknown; clinical_reasoning?: unknown }).clinicalReasoning === "string"
+          ? (result as { clinicalReasoning?: string }).clinicalReasoning
+          : typeof (result as { clinical_reasoning?: unknown }).clinical_reasoning === "string"
+            ? (result as { clinical_reasoning?: string }).clinical_reasoning
+            : "",
       logic_audit: result.logicChainAudit ?? null,
       cpg_compliance: result.cpgCompliance ?? null,
       audit_defense: result.auditDefense ?? null,

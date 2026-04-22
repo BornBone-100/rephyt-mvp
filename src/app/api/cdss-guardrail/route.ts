@@ -165,6 +165,7 @@ const ALLOWED_COLUMNS = [
   "patient_id",
   "diagnosis_area",
   "overall_score",
+  "clinical_reasoning",
   "logic_audit",
   "cpg_compliance",
   "audit_defense",
@@ -565,6 +566,7 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
     };
     intervention_strategy?: string;
     professional_discussion?: string;
+    clinical_reasoning?: string;
   };
   const mappedTraffic = Array.isArray(data.cpgCompliance)
     ? data.cpgCompliance
@@ -647,9 +649,9 @@ function normalizeGuardrailResponse(raw: unknown): GuardrailResponse {
           })
       : mappedAlerts,
     clinicalReasoning:
-      typeof (data.clinicalReasoning ?? data.reasoning ?? mappedReasoning) === "string" &&
-      (data.clinicalReasoning ?? data.reasoning ?? mappedReasoning)?.trim()
-        ? ((data.clinicalReasoning ?? data.reasoning ?? mappedReasoning) as string)
+      typeof (data.clinicalReasoning ?? data.clinical_reasoning ?? data.reasoning ?? mappedReasoning) === "string" &&
+      (data.clinicalReasoning ?? data.clinical_reasoning ?? data.reasoning ?? mappedReasoning)?.trim()
+        ? ((data.clinicalReasoning ?? data.clinical_reasoning ?? data.reasoning ?? mappedReasoning) as string)
         : "입력된 임상 정보를 기반으로 추가 검토가 필요합니다.",
     nextSteps: Array.isArray(data.nextSteps)
       ? data.nextSteps.filter((x): x is string => typeof x === "string")
@@ -845,6 +847,7 @@ function buildGuardrailLogRow(params: {
     patient_id: typeof params.request.patientId === "string" ? params.request.patientId : null,
     diagnosis_area: typeof params.request.diagnosisArea === "string" ? params.request.diagnosisArea : null,
     overall_score: overallScore,
+    clinical_reasoning: params.result.clinicalReasoning ?? "",
     logic_audit: ex.logic_audit,
     cpg_compliance: ex.cpg_compliance,
     audit_defense: ex.audit_defense,
@@ -885,6 +888,7 @@ function buildGuardrailLogRowLegacy(params: {
     patient_id: typeof params.request.patientId === "string" ? params.request.patientId : null,
     diagnosis_area: typeof params.request.diagnosisArea === "string" ? params.request.diagnosisArea : null,
     overall_score: overallScore,
+    clinical_reasoning: params.result.clinicalReasoning ?? "",
     logic_audit: ex.logic_audit,
     cpg_compliance: ex.cpg_compliance,
     audit_defense: ex.audit_defense,
@@ -1099,7 +1103,6 @@ export async function POST(req: Request) {
     const detected = detectConditionRule(evaluation, fullInput, tuningMap);
     const detectedRule = detected.rule;
     const locale = String(body.locale ?? "").toLowerCase().startsWith("en") ? "en" : "ko";
-    const useEnglish = locale === "en" || String(body.language ?? "ko").toLowerCase().startsWith("en");
 
     const systemPrompt = `
 You are a Clinical Director and professor-level orthopedic manual physical therapist (OCS) with over 20 years of experience in pain science and biomechanics.
@@ -1110,19 +1113,26 @@ Your task is to analyze the user's 4-step clinical reasoning data (Subjective Hi
 Evaluate based on "Honest Data" and "Precise Execution" with professional involvement.
 
 [OUTPUT LANGUAGE — STRICT]
-The request includes a \`language\` field from the client. If it is "en" or starts with "en", the user is interacting in English: write EVERY narrative string inside the JSON (logicChainAudit.feedback; cpgCompliance reasoning/alternatives; auditDefense; predictiveTrajectory; etc.) in professional Medical English only. End each such narrative with an evidence suffix such as (Evidence: JOSPT Shoulder Pain CPG) or (Evidence: APTA Clinical Practice Guideline).
-If the language is not English, write those narratives in Korean and end with (근거: JOSPT …) or (근거: APTA …) as appropriate.
-${locale === "ko"
-  ? '사용자가 한국어로 요청했으니, 모든 분석 결과와 문장을 한국어 전문 물리치료/의학 용어로 작성해. (예: "방사통", "관절가동범위 제한")'
-  : "User requested English output. Keep all narrative fields strictly in professional Medical English."}
+Regardless of client language preference, write EVERY narrative string inside the JSON (logicChainAudit.feedback; cpgCompliance reasoning/alternatives; auditDefense; predictiveTrajectory; clinical_reasoning; intervention_strategy; professional_discussion; etc.) in professional Korean clinical language.
+영문 전체 문장 사용은 금지한다. 필요한 경우에만 해부학/의학 용어를 한국어 우선으로 쓰고 괄호 안에 영문 약어/표기를 병기하라. 예: 심부경추굴곡근(DCNF), 견갑상완 리듬(Scapulohumeral rhythm).
 
 [EVIDENCE CITATION — MANDATORY]
-Apply guideline citations to at least: logicChainAudit.feedback; each cpgCompliance[].reasoning and each non-null cpgCompliance[].alternative; auditDefense.feedback; auditDefense.improvementTip; predictiveTrajectory.trajectoryText.
+logicChainAudit.feedback, 각 cpgCompliance[].reasoning, 각 cpgCompliance[].alternative(해당 시), auditDefense.feedback, auditDefense.improvementTip, predictiveTrajectory.trajectoryText의 문장 끝에는 반드시 근거 표기를 붙여라. 예: (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline), (근거: NICE NG59).
 
 [CLINICAL REASONING DEPTH — MANDATORY]
 - Evaluate whether Step 3 goals are realistic based on Step 1 (chief complaint/onset/duration) and Step 2 (functional measures/TBC findings).
 - Explain in concrete biomechanical and physiological terms why Step 4 interventions (manual therapy, exercise, modalities, education) are appropriate for Step 1/2 problems, and what is missing.
 - Return deep expert-level reasoning, not generic summaries.
+
+[CLINICAL_REASONING CHAIN-OF-THOUGHT — REQUIRED OUTPUT SUMMARY]
+When writing clinical_reasoning, you MUST follow this 3-step reasoning flow and present only the concise conclusions (do not expose hidden reasoning process):
+1) Tissue at fault identification:
+   - From Step 2 special tests + ROM/MMT findings, identify the most likely primary pain-generating tissue anatomically.
+2) Pathomechanics analysis:
+   - Link Step 1 job/lifestyle/mechanism to explain why this tissue is overloaded (altered kinematics, muscle imbalance, motor control deficit, load intolerance).
+   - Pure symptom listing is forbidden.
+3) Compensation and deterioration warning:
+   - Predict likely compensatory movement in adjacent joints and worsening scenario if Step 4 plan fails to resolve the mechanical driver.
 
 [CPG_COMPLIANCE WRITING RULES — STRICT]
 - Never write shallow statements like "guidelines are generally followed."
@@ -1168,7 +1178,10 @@ You MUST include all of the following in professional_discussion:
 - Do NOT parrot Step 1~4 content as a plain restatement.
 - Prioritize analytic, logical, critique-oriented writing over creative style.
 - intervention_strategy, professional_discussion, logicChainAudit.feedback, auditDefense.feedback, auditDefense.improvementTip, predictiveTrajectory.trajectoryText, and each cpgCompliance reasoning/alternative must be paragraph-style with at least 3-4 sentences each.
+- clinical_reasoning must be paragraph-style with at least 3-4 sentences and must explicitly include the 3-step chain (tissue at fault -> pathomechanics -> compensation risk).
 - For Korean locale, use professional Korean medical/physical-therapy and reimbursement-audit terminology consistently.
+- JSON 키는 반드시 영문 스키마 키를 그대로 유지하고(예: clinical_reasoning, intervention_strategy), 각 키의 값(value) 문자열은 100% 한국어로 작성하라.
+- CRITICAL REQUIREMENT: You MUST output all response values entirely in Korean. Do not use English for full sentences. Medical and anatomical terms should be written in Korean, with the English term in parentheses only if necessary for clarity (e.g., 심부경추굴곡근 (DCNF)).
 
 CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact schema below. Do not include markdown formatting like \`\`\`json or any conversational text.
 
@@ -1198,23 +1211,21 @@ CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact
     "estimatedWeeks": number,
     "trajectoryText": "Clinical prediction of recovery timeline based on initial outcome measures and prognosis."
   },
+  "clinical_reasoning": "Concise conclusion paragraph based on the 3-step chain: tissue at fault -> pathomechanics -> compensation risk.",
   "intervention_strategy": "Detailed validity/completeness analysis of intervention strategy linking Step 1~4.",
   "professional_discussion": "Comprehensive expert discussion and prognosis for this case."
 }
 `;
 
     const prompt = `
-${useEnglish ? "User is interacting in English. Respond in professional Medical English for all narrative fields in the JSON, per the system OUTPUT LANGUAGE rule.\n\n" : ""}
 너는 JOSPT 최신 임상진료지침(CPG)을 마스터한 수석 물리치료 멘토야.
 유저가 입력한 4단계 임상 추론(검사, 평가, 목표, 중재)을 분석하고, 반드시 아래의 JSON 형식으로만 답변해.
-${useEnglish ? "For English mode: every narrative field must be Medical English with (Evidence: …) citations. " : "각 한국어 서술 필드(피드백·근거·개선팁·예후 문장 등) 끝에는 반드시 참고한 가이드라인 명칭을 괄호로 명시하라. 예: (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline)."}
-${useEnglish ? "For intervention_strategy and professional_discussion, provide professor-level critique with biomechanics, healing timeline, and BPS analysis." : "intervention_strategy와 professional_discussion은 반드시 교수급 임상 비평 수준으로 작성하고, 생체역학·조직치유단계·BPS 관점을 포함하라."}
-${useEnglish
-  ? "For cpgCompliance, auditDefense, and predictiveTrajectory, enforce the same depth: include recommendation levels, payer-defense logic, phase-based prognosis, and actionable charting tips."
-  : "cpgCompliance, auditDefense, predictiveTrajectory도 intervention_strategy와 동일한 깊이로 작성하라. 권고등급(Level A/B), HIRA 심사 관점의 medical necessity 검토, 조직 치유 단계별(염증기/증식기/재형성기) 타임라인, 기능지표 점수 변화 예측, 정체기·재발 위험 경고를 반드시 포함하라."}
-${useEnglish
-  ? "Each major narrative value must be a deep paragraph of at least 3-4 sentences."
-  : "각 주요 항목값은 최소 3~4문장 이상의 깊이 있는 단락으로 작성하라."}
+각 한국어 서술 필드(피드백·근거·개선팁·예후 문장 등) 끝에는 반드시 참고한 가이드라인 명칭을 괄호로 명시하라. 예: (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline), (근거: NICE NG59).
+intervention_strategy와 professional_discussion은 반드시 교수급 임상 비평 수준으로 작성하고, 생체역학·조직치유단계·BPS 관점을 포함하라.
+cpgCompliance, auditDefense, predictiveTrajectory도 intervention_strategy와 동일한 깊이로 작성하라. 권고등급(Level A/B), HIRA 심사 관점의 medical necessity 검토, 조직 치유 단계별(염증기/증식기/재형성기) 타임라인, 기능지표 점수 변화 예측, 정체기·재발 위험 경고를 반드시 포함하라.
+clinical_reasoning은 반드시 3단계 사고 흐름을 따른다: (1) 손상 조직 특정, (2) 생체역학적 원인 분석, (3) 보상 작용/악화 시나리오 경고.
+각 주요 항목값은 최소 3~4문장 이상의 깊이 있는 단락으로 작성하라.
+JSON 키는 영문으로 유지하고, 값(value)은 반드시 한국어로 작성하라.
 아래 추정 진단 컨텍스트를 우선 반영하라: ${detectedRule.id}
 
 [입력]
@@ -1252,7 +1263,7 @@ ${planSummary}
   "alerts": [
     { "type": "Strong Recommendation | Missing Level A Recommendation | Low-Value Care Alert | Safety Concern", "text": "...", "status": "pass|warning" }
   ],
-  "reasoning": "...",
+  "clinical_reasoning": "...",
   "evidenceBasedAlternatives": [
     { "type": "special_test|intervention", "title": "...", "description": "...", "citation": "..." }
   ],

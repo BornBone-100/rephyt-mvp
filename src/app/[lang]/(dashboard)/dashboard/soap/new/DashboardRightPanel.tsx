@@ -40,6 +40,7 @@ type PredictiveTrajectory = {
 
 export type FinalReportResult = {
   overallScore: number;
+  clinicalReasoning?: string;
   logicChainAudit: LogicChainAudit;
   cpgCompliance: CpgComplianceItem[];
   auditDefense: AuditDefense;
@@ -201,6 +202,17 @@ function ReportBody({
                 {ui.dashRedFlagNote}
               </div>
             ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+            <h3 className="text-sm font-black text-blue-900">⚙️ {ui.dashClinicalReasoningTitle}</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+              {data.clinicalReasoning?.trim()
+                ? data.clinicalReasoning
+                : locale === "en"
+                  ? "Clinical reasoning summary will appear here after AI analysis."
+                  : "AI 분석 후 손상 조직, 병태역학, 보상 작용에 대한 임상 추론 요약이 여기에 표시됩니다."}
+            </p>
           </div>
 
           <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-5 shadow-sm">

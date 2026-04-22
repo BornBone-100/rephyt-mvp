@@ -283,6 +283,26 @@ type IcfSelectionState = {
   activity: string[];
   participation: string[];
 };
+type TempDraftPayload = {
+  savedAt: string;
+  locale: SoapLocale;
+  step: number;
+  formData: FormData;
+  examDraft: ExamDraft;
+  specialTestSelection: Record<string, SpecialTestValue>;
+  selectedTbcTags: string[];
+  romMmtInputs: Record<string, RomMmtBySide>;
+  outcomeScores: Record<string, string>;
+  icfSelection: IcfSelectionState;
+  prognosisDuration: string;
+  rehabPotential: string;
+  shortTermGoal: string;
+  longTermGoal: string;
+  manualEntries: ManualTherapyEntry[];
+  exerciseEntries: TherapeuticExerciseEntry[];
+  modalityEntries: ModalityEntry[];
+  educationHep: string;
+};
 
 type GuardrailPayload = {
   patientId: string;
@@ -660,6 +680,9 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const [manualOutcomeMax, setManualOutcomeMax] = useState("");
   const [screeningAnswers, setScreeningAnswers] = useState<Record<string, boolean>>({});
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [isDraftSaving, setIsDraftSaving] = useState(false);
+  const [pendingCloudDraft, setPendingCloudDraft] = useState<TempDraftPayload | null>(null);
+  const [showCloudDraftPrompt, setShowCloudDraftPrompt] = useState(false);
 
   const specialTestLabel = useMemo(
     (): Record<SpecialTestValue, string> => ({
@@ -847,11 +870,40 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     }));
   };
 
-  const handleDraftSave = () => {
-    if (typeof window === "undefined") return;
+  const applyDraftPayload = (draft: TempDraftPayload) => {
+    setStep(draft.step || 1);
+    setFormData(draft.formData);
+    setExamDraft(draft.examDraft);
+    setSpecialTestSelection(draft.specialTestSelection ?? {});
+    setSelectedTbcTags(draft.selectedTbcTags ?? []);
+    setRomMmtInputs(draft.romMmtInputs ?? {});
+    setOutcomeScores(draft.outcomeScores ?? {});
+    setIcfSelection(
+      draft.icfSelection ?? {
+        impairment: [],
+        activity: [],
+        participation: [],
+      },
+    );
+    setPrognosisDuration(draft.prognosisDuration ?? "");
+    setRehabPotential(draft.rehabPotential ?? "");
+    setShortTermGoal(draft.shortTermGoal ?? "");
+    setLongTermGoal(draft.longTermGoal ?? "");
+    setManualEntries(draft.manualEntries ?? []);
+    setExerciseEntries(draft.exerciseEntries ?? []);
+    setModalityEntries(draft.modalityEntries ?? []);
+    setEducationHep(draft.educationHep ?? "");
+  };
+
+  const handleDraftSave = async () => {
+    const normalizedPatientId = String(formData.patientId ?? "").trim();
+    if (!normalizedPatientId) {
+      alert(locale === "en" ? "Please select a patient first." : "먼저 환자를 선택해 주세요.");
+      return;
+    }
+    setIsDraftSaving(true);
     const now = new Date();
-    const draftKey = `rephyt:soap-draft:${String(formData.patientId || "new").trim() || "new"}`;
-    const payload = {
+    const payload: TempDraftPayload = {
       savedAt: now.toISOString(),
       locale,
       step,
@@ -871,13 +923,28 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       modalityEntries,
       educationHep,
     };
-    window.localStorage.setItem(draftKey, JSON.stringify(payload));
-    const hhmm = now.toLocaleTimeString(locale === "en" ? "en-US" : "ko-KR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    setDraftSavedAt(hhmm);
+    try {
+      const { error } = await supabase.from("temp_records").upsert(
+        {
+          patient_id: normalizedPatientId,
+          draft_data: payload,
+          last_saved_at: now.toISOString(),
+        } as never,
+        { onConflict: "patient_id" },
+      );
+      if (error) throw error;
+      const hhmm = now.toLocaleTimeString(locale === "en" ? "en-US" : "ko-KR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      setDraftSavedAt(hhmm);
+    } catch (error) {
+      console.error("temp_records upsert failed:", error);
+      alert(locale === "en" ? "Failed to save draft." : "임시 저장에 실패했습니다.");
+    } finally {
+      setIsDraftSaving(false);
+    }
   };
 
   const handleOutcomeScoreChange = (measureName: string, value: string) => {
@@ -1056,6 +1123,13 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       if (!res.ok) {
         throw new Error(body.error || t.dashSaveRecordError);
       }
+      const { error: deleteDraftError } = await supabase
+        .from("temp_records")
+        .delete()
+        .eq("patient_id", normalizedPatientId);
+      if (deleteDraftError) {
+        console.warn("temp_records delete failed:", deleteDraftError);
+      }
       setSaveStatus("saved");
       alert(t.dashSaveRecordSaved);
       if (typeof window !== "undefined") {
@@ -1096,6 +1170,50 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const selectedIcfOptions = selectedDiagnosisKey
     ? getJosptIcfDb(dataLocale)[regionKey] ?? null
     : null;
+
+  useEffect(() => {
+    const normalizedPatientId = String(formData.patientId ?? "").trim();
+    if (!normalizedPatientId) {
+      setPendingCloudDraft(null);
+      setShowCloudDraftPrompt(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("temp_records")
+        .select("draft_data, last_saved_at")
+        .eq("patient_id", normalizedPatientId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        console.error("temp_records fetch failed:", error);
+        return;
+      }
+      const row = data as { draft_data?: unknown; last_saved_at?: string | null } | null;
+      if (!row?.draft_data || typeof row.draft_data !== "object") {
+        setPendingCloudDraft(null);
+        setShowCloudDraftPrompt(false);
+        return;
+      }
+      setPendingCloudDraft(row.draft_data as TempDraftPayload);
+      setShowCloudDraftPrompt(true);
+      if (row.last_saved_at) {
+        const d = new Date(row.last_saved_at);
+        if (Number.isFinite(+d)) {
+          const hhmm = d.toLocaleTimeString(locale === "en" ? "en-US" : "ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+          setDraftSavedAt(hhmm);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.patientId, locale, supabase]);
 
   useEffect(() => {
     const opts = selectedDiagnosisKey ? getJosptOutcomeDb(dataLocale)[regionKey] ?? [] : [];
@@ -1187,6 +1305,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         hasRedFlag: reportResult.hasRedFlag,
         criticalAlert: reportResult.criticalAlert ?? null,
         overallScore: reportResult.overallScore ?? reportResult.complianceScore ?? 0,
+        clinicalReasoning: reportResult.clinicalReasoning ?? "",
         logicChainAudit: reportResult.logicChainAudit ?? {
           status: "warning" as const,
           feedback: reportResult.clinicalReasoning ?? "논리 사슬 검증 데이터가 충분하지 않습니다.",
@@ -1262,6 +1381,34 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                           : t.stepPlanTitle}
                   </h2>
                   <p className="mb-6 text-sm text-slate-500">{t.step1Subtitle}</p>
+                  {showCloudDraftPrompt && pendingCloudDraft ? (
+                    <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                      <p className="font-semibold">
+                        💡 {locale === "en"
+                          ? "A previously saved draft exists. Would you like to load it?"
+                          : "이전에 작성 중이던 임시 저장 기록이 있습니다. 불러오시겠습니까?"}
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            applyDraftPayload(pendingCloudDraft);
+                            setShowCloudDraftPrompt(false);
+                          }}
+                          className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600"
+                        >
+                          {locale === "en" ? "Load draft" : "불러오기"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowCloudDraftPrompt(false)}
+                          className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100"
+                        >
+                          {locale === "en" ? "Dismiss" : "닫기"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {step === 1 ? (
                     <div className="mb-4 space-y-4">
@@ -2277,9 +2424,16 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                     <button
                       type="button"
                       onClick={handleDraftSave}
+                      disabled={isDraftSaving}
                       className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
-                      {locale === "en" ? "Save Draft" : "임시 저장하기"}
+                      {isDraftSaving
+                        ? locale === "en"
+                          ? "Saving draft..."
+                          : "임시 저장 중..."
+                        : locale === "en"
+                          ? "Save Draft"
+                          : "임시 저장하기"}
                     </button>
                     {draftSavedAt ? (
                       <p className="text-xs text-slate-500">
