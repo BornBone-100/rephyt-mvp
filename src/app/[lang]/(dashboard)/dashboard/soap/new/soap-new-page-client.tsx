@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  ShieldCheck,
   ClipboardList,
   Activity,
   Target,
@@ -10,9 +9,7 @@ import {
   ChevronRight,
   ChevronLeft,
   AlertTriangle,
-  Stethoscope as MedicIcon,
   Lock,
-  AlertOctagon,
   ClipboardCheck,
   Info,
 } from "lucide-react";
@@ -586,6 +583,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const [isLoading, setIsLoading] = useState(false);
   const [reportResult, setReportResult] = useState<RedFlagResult | null>(null);
   const [evaluationResult, setEvaluationResult] = useState<RedFlagResult | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error" | "duplicated">("idle");
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [patients, setPatients] = useState<Patient[]>(MOCK_PATIENTS);
@@ -967,7 +965,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       }
       setReportResult(data);
       setEvaluationResult(data);
-      setSaveStatus(data.auxiliaryError?.stage === "db_log" ? "idle" : "saved");
+      // 분석 완료와 저장 완료 상태를 분리: 저장은 버튼 클릭 시에만 수행
+      setSaveStatus("idle");
       setSaveErrorMessage(null);
       if (typeof window !== "undefined" && formData.patientId) {
         const cautionLines =
@@ -994,6 +993,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
   const handleSaveDiagnosisRecord = async () => {
     if (!reportResult || !formData.patientId) return;
+    setIsSaving(true);
     setSaveStatus("saving");
     setSaveErrorMessage(null);
     try {
@@ -1026,6 +1026,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       const message = error instanceof Error ? error.message : t.dashSaveRecordError;
       setSaveStatus("error");
       setSaveErrorMessage(message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1136,6 +1138,37 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     setFormData((prev) => ({ ...prev, intervention: blocks.join("\n") }));
   }, [educationHep, exerciseEntries, manualEntries, modalityEntries, t]);
 
+  const dashboardResult = reportResult
+    ? {
+        hasRedFlag: reportResult.hasRedFlag,
+        criticalAlert: reportResult.criticalAlert ?? null,
+        overallScore: reportResult.overallScore ?? reportResult.complianceScore ?? 0,
+        logicChainAudit: reportResult.logicChainAudit ?? {
+          status: "warning" as const,
+          feedback: reportResult.clinicalReasoning ?? "논리 사슬 검증 데이터가 충분하지 않습니다.",
+          missingLinks: [],
+        },
+        cpgCompliance:
+          reportResult.cpgCompliance ??
+          (reportResult.trafficLightFeedback ?? []).map((item) => ({
+            intervention: item.title,
+            level: item.level,
+            reasoning: item.description,
+            alternative: item.level === "green" ? null : "근거 기반 대체 중재를 병행하세요.",
+          })),
+        auditDefense: reportResult.auditDefense ?? {
+          riskLevel: "Medium" as const,
+          defenseScore: reportResult.overallScore ?? reportResult.complianceScore ?? 0,
+          feedback: "삭감 방어력 기본 데이터가 생성되었습니다. 목표-중재-재평가 링크를 강화하세요.",
+          improvementTip: "Outcome 재평가 시점과 수치 목표를 명시해 문서 방어력을 높이세요.",
+        },
+        predictiveTrajectory: reportResult.predictiveTrajectory ?? {
+          estimatedWeeks: 8,
+          trajectoryText: "현재 데이터 기준 평균 8주 회복 경로가 예상됩니다.",
+        },
+      }
+    : null;
+
   return (
     <div className="flex h-full flex-col bg-slate-50 font-sans">
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-4">
@@ -1150,9 +1183,9 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         </div>
       </div>
 
-      <div className="grid flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_520px]">
+      <div className="grid flex-1 grid-cols-1">
         <div className="overflow-y-auto p-8">
-          <div className="mx-auto max-w-4xl">
+          <div className={`mx-auto ${evaluationResult ? "max-w-7xl" : "max-w-4xl"}`}>
           {!evaluationResult ? (
             <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
               <div className="flex border-b border-slate-100">
@@ -2177,118 +2210,19 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
               </div>
             </div>
           ) : (
-            <div className="animate-in zoom-in-95 space-y-6 fade-in duration-500">
-              {evaluationResult.hasRedFlag ? (
-                <div className="relative overflow-hidden rounded-3xl border-2 border-rose-500 bg-white shadow-2xl">
-                  <div className="absolute left-0 top-0 h-2 w-full animate-pulse bg-rose-600" />
-
-                  <div className="flex flex-col items-center border-b border-rose-100 bg-rose-50 p-8 text-center">
-                    <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-rose-100">
-                      <AlertOctagon className="h-12 w-12 text-rose-600" />
-                    </div>
-                    <h3 className="mb-2 text-sm font-black uppercase tracking-widest text-rose-600">
-                      {evaluationResult.criticalAlert?.title ?? "MEDICAL REFERRAL REQUIRED"}
-                    </h3>
-                    <div className="text-3xl font-black text-slate-900">
-                      {evaluationResult.criticalAlert?.suspectedCondition ?? "의학적 감별 필요 상태"}
-                    </div>
-                  </div>
-
-                  <div className="space-y-6 p-8">
-                    <div className="rounded-2xl border border-rose-200 bg-rose-100/70 p-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black uppercase tracking-wider text-rose-700">평가 상태</span>
-                        <span className="rounded-full bg-rose-600 px-3 py-1 text-xs font-black text-white">
-                          평가 중단 (Referral Priority)
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                      <h4 className="mb-2 flex items-center gap-2 font-bold text-slate-800">
-                        <Activity className="h-5 w-5 text-rose-500" /> 감별 진단 근거 (Clinical Reasoning)
-                      </h4>
-                      <p className="text-sm leading-relaxed text-slate-600">
-                        {evaluationResult.criticalAlert?.reason ?? evaluationResult.clinicalReasoning}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-slate-900 p-6 text-white shadow-inner">
-                      <h4 className="mb-2 flex items-center gap-2 font-bold text-rose-400">
-                        <MedicIcon className="h-5 w-5" /> 즉각적 행동 지침 (Action Required)
-                      </h4>
-                      <p className="text-sm font-medium leading-relaxed text-slate-200">
-                        {evaluationResult.criticalAlert?.action ?? "물리치료를 보류하고 관련 진료과 의뢰를 우선 진행하세요."}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setEvaluationResult(null)}
-                      className="mt-4 w-full rounded-xl bg-rose-100 py-4 font-bold text-rose-700 transition-all hover:bg-rose-200"
-                    >
-                      의뢰 완료 및 새 케이스 스크리닝
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-3xl bg-white p-10 text-center shadow-xl">
-                  <ShieldCheck className="mx-auto mb-4 h-16 w-16 text-emerald-500" />
-                  <h3 className="text-2xl font-bold text-slate-800">{t.noRedFlagTitle}</h3>
-                  <p className="mt-2 text-slate-500">{t.noRedFlagBody}</p>
-                  <button
-                    type="button"
-                    onClick={() => setEvaluationResult(null)}
-                    className="mt-8 rounded-xl bg-slate-100 px-8 py-3 font-bold text-slate-600"
-                  >
-                    새로 검증하기
-                  </button>
-                </div>
-              )}
-            </div>
+            <DashboardRightPanel
+              locale={locale}
+              result={dashboardResult}
+              isLoading={isLoading}
+              onSaveRecord={() => void handleSaveDiagnosisRecord()}
+              onRetrySave={() => void handleSaveDiagnosisRecord()}
+              isSaving={isSaving}
+              saveStatus={saveStatus}
+              saveErrorMessage={saveErrorMessage}
+            />
           )}
           </div>
         </div>
-        <DashboardRightPanel
-          locale={locale}
-          result={
-            reportResult
-              ? {
-                  hasRedFlag: reportResult.hasRedFlag,
-                  criticalAlert: reportResult.criticalAlert ?? null,
-                  overallScore: reportResult.overallScore ?? reportResult.complianceScore ?? 0,
-                  logicChainAudit: reportResult.logicChainAudit ?? {
-                    status: "warning",
-                    feedback: reportResult.clinicalReasoning ?? "논리 사슬 검증 데이터가 충분하지 않습니다.",
-                    missingLinks: [],
-                  },
-                  cpgCompliance:
-                    reportResult.cpgCompliance ??
-                    (reportResult.trafficLightFeedback ?? []).map((item) => ({
-                      intervention: item.title,
-                      level: item.level,
-                      reasoning: item.description,
-                      alternative: item.level === "green" ? null : "근거 기반 대체 중재를 병행하세요.",
-                    })),
-                  auditDefense: reportResult.auditDefense ?? {
-                    riskLevel: "Medium",
-                    defenseScore: reportResult.overallScore ?? reportResult.complianceScore ?? 0,
-                    feedback: "삭감 방어력 기본 데이터가 생성되었습니다. 목표-중재-재평가 링크를 강화하세요.",
-                    improvementTip: "Outcome 재평가 시점과 수치 목표를 명시해 문서 방어력을 높이세요.",
-                  },
-                  predictiveTrajectory: reportResult.predictiveTrajectory ?? {
-                    estimatedWeeks: 8,
-                    trajectoryText: "현재 데이터 기준 평균 8주 회복 경로가 예상됩니다.",
-                  },
-                }
-              : null
-          }
-          isLoading={isLoading}
-          onSaveRecord={() => void handleSaveDiagnosisRecord()}
-          onRetrySave={() => void handleSaveDiagnosisRecord()}
-          saveStatus={saveStatus}
-          saveErrorMessage={saveErrorMessage}
-        />
         <MeasureModal
           open={measureModalOpen}
           onClose={() => setMeasureModalOpen(false)}

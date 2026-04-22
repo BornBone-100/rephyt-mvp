@@ -59,6 +59,7 @@ type Props = {
   locale?: SoapLocale;
   onSaveRecord?: () => void;
   onRetrySave?: () => void;
+  isSaving?: boolean;
   saveStatus?: "idle" | "saving" | "saved" | "error" | "duplicated";
   saveErrorMessage?: string | null;
 };
@@ -74,6 +75,7 @@ function ReportBody({
   locale,
   onSaveRecord,
   onRetrySave,
+  isSaving = false,
   saveStatus = "idle",
   saveErrorMessage = null,
 }: {
@@ -81,6 +83,7 @@ function ReportBody({
   locale: SoapLocale;
   onSaveRecord?: () => void;
   onRetrySave?: () => void;
+  isSaving?: boolean;
   saveStatus?: "idle" | "saving" | "saved" | "error" | "duplicated";
   saveErrorMessage?: string | null;
 }) {
@@ -103,8 +106,8 @@ function ReportBody({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <div className="space-y-4 xl:col-span-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-sm font-bold text-slate-700">{ui.dashOverallScore}</h2>
             <div className="mt-4 flex items-center justify-center">
@@ -199,7 +202,7 @@ function ReportBody({
           </div>
         </div>
 
-        <aside className="space-y-4 xl:col-span-1">
+        <aside className="space-y-4 lg:col-span-1">
           <div className={`rounded-2xl border-2 p-5 shadow-sm ${data.hasRedFlag ? "border-rose-300 bg-rose-50" : "border-emerald-300 bg-emerald-50"}`}>
             <h3 className={`flex items-center gap-2 text-sm font-black ${data.hasRedFlag ? "text-rose-700" : "text-emerald-700"}`}>
               <Siren className="h-4 w-4" /> {ui.dashRedFlagTitle}
@@ -229,7 +232,7 @@ function ReportBody({
         <button
           type="button"
           onClick={onSaveRecord}
-          disabled={saveStatus === "saving" || saveStatus === "saved" || saveStatus === "duplicated"}
+          disabled={isSaving}
           className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-900 px-4 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {saveStatus === "saved" || saveStatus === "duplicated" ? (
@@ -272,6 +275,7 @@ export default function FinalReportDashboard({
   locale = "ko",
   onSaveRecord,
   onRetrySave,
+  isSaving = false,
   saveStatus = "idle",
   saveErrorMessage = null,
 }: Props) {
@@ -316,6 +320,7 @@ export default function FinalReportDashboard({
         locale={locale}
         onSaveRecord={onSaveRecord}
         onRetrySave={onRetrySave}
+        isSaving={isSaving}
         saveStatus={saveStatus}
         saveErrorMessage={saveErrorMessage}
       />
