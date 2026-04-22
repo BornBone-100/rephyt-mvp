@@ -34,6 +34,8 @@ type FormData = {
   prognosis: string;
   intervention: string;
   todayTreatment: string;
+  /** Step4 구조화 데이터(JSON 문자열). API·표시 동기화용 */
+  step4: string;
 };
 
 type ExamOnset = "급성(Acute)" | "아급성(Subacute)" | "만성(Chronic)";
@@ -270,6 +272,27 @@ type GuardrailPayload = {
   language: string;
 };
 
+/** OpenAI 전송 전: 실명·생년월일·연락처 등 식별 가능 정보 완화 */
+function scrubClinicalTextForApi(text: string, knownNames: string[]): string {
+  let out = text;
+  const sorted = [...new Set(knownNames.filter((n) => n && n.trim().length >= 2))].sort(
+    (a, b) => b.length - a.length,
+  );
+  for (const name of sorted) {
+    const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(escaped, "gi"), "Patient");
+  }
+  out = out.replace(/\b\d{2,4}[-.\s]?\d{3,4}[-.\s]?\d{4}\b/g, "[연락처 제거]");
+  out = out.replace(/\b\d{4}[./-]\d{1,2}[./-]\d{1,2}\b/g, "[생년월일 제거]");
+  out = out.replace(/\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g, "[날짜 제거]");
+  out = out.replace(/[가-힣]{2,4}\s*(님|씨)(?=\s|$|[,.!?])/g, "Patient");
+  out = out.replace(
+    /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+    "[ID 제거]",
+  );
+  return out;
+}
+
 function resolveDiagnosisKey(raw: string): keyof typeof SPECIAL_TESTS_DB | null {
   const v = raw.trim().split(" ")[0].toLowerCase();
   if (!v) return null;
@@ -293,6 +316,83 @@ function appendUniqueLine(text: string, line: string) {
   const lines = trimmed.split("\n");
   if (lines.includes(line)) return trimmed;
   return `${trimmed}\n${line}`;
+}
+
+/** API 전송용: 순환 참조·비직렬화 값 제거 후 항상 유효한 JSON 문자열 */
+function buildSanitizedStep4Object(
+  manualEntries: ManualTherapyEntry[],
+  exerciseEntries: TherapeuticExerciseEntry[],
+  modalityEntries: ModalityEntry[],
+  educationHep: string,
+): {
+  manual: ManualTherapyEntry[];
+  exercise: TherapeuticExerciseEntry[];
+  modalities: ModalityEntry[];
+  education: string;
+} {
+  const manual = Array.isArray(manualEntries)
+    ? manualEntries.map((m) => ({
+        name: String(m?.name ?? "").slice(0, 2000),
+        grade: m.grade,
+        minutes: String(m?.minutes ?? "").slice(0, 64),
+      }))
+    : [];
+  const exercise = Array.isArray(exerciseEntries)
+    ? exerciseEntries.map((e) => ({
+        name: String(e?.name ?? "").slice(0, 2000),
+        sets: String(e?.sets ?? "").slice(0, 64),
+        reps: String(e?.reps ?? "").slice(0, 64),
+        holdSec: String(e?.holdSec ?? "").slice(0, 64),
+      }))
+    : [];
+  const modalities = Array.isArray(modalityEntries)
+    ? modalityEntries.map((m) => ({
+        modality: m.modality,
+        target: String(m?.target ?? "").slice(0, 2000),
+      }))
+    : [];
+  const education = typeof educationHep === "string" ? educationHep.slice(0, 12000) : "";
+  return { manual, exercise, modalities, education };
+}
+
+function safeJsonStringifyStep4(obj: ReturnType<typeof buildSanitizedStep4Object>): string {
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return '{"manual":[],"exercise":[],"modalities":[],"education":""}';
+  }
+}
+
+function buildGuardrailRequestPayload(payload: GuardrailPayload): string {
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    const fallback: GuardrailPayload = {
+      examination: String(payload.examination ?? "").slice(0, 50000),
+      evaluation: String(payload.evaluation ?? "").slice(0, 50000),
+      prognosis: String(payload.prognosis ?? "").slice(0, 50000),
+      intervention: String(payload.intervention ?? "").slice(0, 50000),
+      step4: '{"manual":[],"exercise":[],"modalities":[],"education":""}',
+      language: String(payload.language ?? "ko").slice(0, 16),
+    };
+    return JSON.stringify(fallback);
+  }
+}
+
+function formatGuardrailFailureMessage(err: { error?: string; stage?: string }): string {
+  const stageKo: Record<string, string> = {
+    request_body_parse: "요청 본문",
+    validation: "입력 검증",
+    openai_fetch: "OpenAI 연결",
+    openai_http: "OpenAI API",
+    openai_upstream_body_parse: "OpenAI 응답 형식",
+    model_content_parse: "모델 JSON 본문",
+    db_log: "분석 기록 저장(DB)",
+    server: "서버",
+  };
+  const label = err.stage ? stageKo[err.stage] ?? err.stage : "";
+  const base = err.error ?? "Red Flag 분석 요청 실패";
+  return label ? `[${label}] ${base}` : base;
 }
 
 const formatPlanToTreatment = (
@@ -392,6 +492,7 @@ type RedFlagResult = {
     scoreBreakdown: Record<string, number>;
     tuningVersion: string;
   };
+  auxiliaryError?: { stage: "db_log"; message: string };
   logicChainAudit?: {
     status: "pass" | "fail" | "warning";
     feedback: string;
@@ -440,6 +541,7 @@ function RedFlagMentor() {
     prognosis: "",
     intervention: "",
     todayTreatment: "",
+    step4: '{"manual":[],"exercise":[],"modalities":[],"education":""}',
   });
   const [examDraft, setExamDraft] = useState<ExamDraft>({
     chiefComplaint: "",
@@ -488,6 +590,22 @@ function RedFlagMentor() {
   });
   const [modalityEntries, setModalityEntries] = useState<ModalityEntry[]>([]);
   const [educationHep, setEducationHep] = useState("");
+
+  /** Step4 구조 → formData.step4 JSON (분석 전에도 서버와 동일 스냅샷 유지) */
+  useEffect(() => {
+    const obj = buildSanitizedStep4Object(manualEntries, exerciseEntries, modalityEntries, educationHep);
+    const json = safeJsonStringifyStep4(obj);
+    setFormData((prev) => (prev.step4 === json ? prev : { ...prev, step4: json }));
+  }, [manualEntries, exerciseEntries, modalityEntries, educationHep]);
+
+  /** 분석 클릭 시 todayTreatment 반영 — setFormData 배치와 분리해 누락 방지 */
+  const [treatmentApplyFromAnalyze, setTreatmentApplyFromAnalyze] = useState<string | null>(null);
+  useEffect(() => {
+    if (treatmentApplyFromAnalyze === null) return;
+    const text = treatmentApplyFromAnalyze;
+    setFormData((prev) => ({ ...prev, todayTreatment: text }));
+    setTreatmentApplyFromAnalyze(null);
+  }, [treatmentApplyFromAnalyze]);
 
   useEffect(() => {
     let cancelled = false;
@@ -665,33 +783,45 @@ function RedFlagMentor() {
         modalityEntries,
         educationHep,
       );
-      setFormData((prev) => ({ ...prev, todayTreatment: treatmentText }));
-      const step4Structured = {
-        manual: manualEntries ?? [],
-        exercise: exerciseEntries ?? [],
-        modalities: modalityEntries ?? [],
-        education: educationHep?.trim() || "",
-      };
+      setTreatmentApplyFromAnalyze(treatmentText);
+      const step4Obj = buildSanitizedStep4Object(
+        manualEntries,
+        exerciseEntries,
+        modalityEntries,
+        educationHep,
+      );
+      const step4Json = safeJsonStringifyStep4(step4Obj);
+      const selectedPatient = patients.find((p) => p.id === formData.patientId);
+      const nameHints = [
+        ...(selectedPatient?.name ? [selectedPatient.name] : []),
+        ...MOCK_PATIENTS.map((p) => p.name),
+        ...patients.map((p) => p.name),
+      ];
       const payload: GuardrailPayload = {
-        examination: formData.examination.trim(),
-        evaluation: formData.evaluation.trim(),
-        prognosis: formData.prognosis.trim(),
-        intervention: treatmentText || formData.intervention.trim(),
-        step4: JSON.stringify(step4Structured),
+        examination: scrubClinicalTextForApi(formData.examination.trim(), nameHints),
+        evaluation: scrubClinicalTextForApi(formData.evaluation.trim(), nameHints),
+        prognosis: scrubClinicalTextForApi(formData.prognosis.trim(), nameHints),
+        intervention: scrubClinicalTextForApi(treatmentText || formData.intervention.trim(), nameHints),
+        step4: scrubClinicalTextForApi(step4Json, nameHints),
         language: formData.language,
       };
       const res = await fetch("/api/cdss-guardrail", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: buildGuardrailRequestPayload(payload),
       });
 
       if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error ?? "Red Flag 분석 요청 실패");
+        const err = (await res.json().catch(() => ({}))) as { error?: string; stage?: string };
+        throw new Error(formatGuardrailFailureMessage(err));
       }
 
       const data = (await res.json()) as RedFlagResult;
+      if (data.auxiliaryError?.stage === "db_log") {
+        alert(
+          `분석은 완료되었으나 기록 저장에 실패했습니다(DB).\n${data.auxiliaryError.message}`,
+        );
+      }
       setReportResult(data);
       setEvaluationResult(data);
       if (typeof window !== "undefined" && formData.patientId) {
@@ -710,7 +840,8 @@ function RedFlagMentor() {
       }
     } catch (error) {
       console.error(error);
-      alert("Red Flag 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+      const msg = error instanceof Error ? error.message : "Red Flag 분석 중 오류가 발생했습니다.";
+      alert(`${msg}\n잠시 후 다시 시도해 주세요.`);
     } finally {
       setIsLoading(false);
     }

@@ -264,7 +264,7 @@ export type Database = {
       community_posts: {
         Row: {
           id: string;
-          author_id: string;
+          user_id: string;
           content: Json;
           likes: number;
           views: number;
@@ -272,7 +272,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
-          author_id: string;
+          user_id: string;
           content: Json;
           likes?: number;
           views?: number;

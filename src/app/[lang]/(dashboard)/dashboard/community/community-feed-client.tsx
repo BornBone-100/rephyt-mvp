@@ -378,7 +378,7 @@ export function CommunityFeedClient({ dict, lang }: Props) {
                     [post.id]: !prev[post.id],
                   }))
                 }
-                canDelete={currentUserId != null && post.author_id === currentUserId}
+                canDelete={currentUserId != null && post.user_id === currentUserId}
                 deleting={deletingPostId === post.id}
                 onDelete={() => {
                   if (!window.confirm("이 케이스를 커뮤니티에서 정말 삭제하시겠습니까?")) return;

@@ -22,7 +22,7 @@ export async function DELETE(request: Request) {
     const { error } = await supabase
       .from("community_posts")
       .delete()
-      .match({ id: postId, author_id: user.id });
+      .match({ id: postId, user_id: user.id });
 
     if (error) {
       console.error("community_posts delete:", error);

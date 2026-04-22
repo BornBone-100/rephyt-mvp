@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     };
 
     const { error } = await supabase.from("community_posts").insert({
-      author_id: user.id,
+      user_id: user.id,
       content: content as unknown as Json,
       likes: 0,
       views: 0,

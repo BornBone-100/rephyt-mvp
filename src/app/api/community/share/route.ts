@@ -106,11 +106,11 @@ export async function POST(request: Request) {
     }
 
     const { error } = await supabase.from("community_posts").insert({
-      author_id: user.id,
+      user_id: user.id,
       content: anonymizedSoap as Json,
       likes: 0,
       views: 0,
-    });
+    } as any);
 
     if (error) {
       console.error("community_posts insert:", error);

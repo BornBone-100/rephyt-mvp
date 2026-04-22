@@ -6,9 +6,74 @@ type GuardrailRequest = {
   evaluation?: string;
   prognosis?: string;
   intervention?: string;
-  step4?: string;
+  /** JSON 문자열 또는 { manual, exercise, modalities, education } 객체 */
+  step4?: string | Record<string, unknown>;
   language?: string;
 };
+
+type Step4Payload = {
+  manual?: unknown;
+  exercise?: unknown;
+  modalities?: unknown;
+  education?: unknown;
+};
+
+/** Step4가 배열/객체로 올 때 AI가 처리하기 쉬운 평문 요약으로 변환 */
+function normalizeStep4Payload(raw: unknown): Step4Payload | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!t) return null;
+    try {
+      const parsed = JSON.parse(t) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Step4Payload;
+      }
+      return { education: t };
+    } catch {
+      return { education: t };
+    }
+  }
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Step4Payload;
+  }
+  return null;
+}
+
+function buildPlanSummaryFromStep4(payload: Step4Payload | null): string {
+  if (!payload) {
+    return [
+      "Manual: []",
+      "Exercise: []",
+      "Modalities: []",
+      "Education: (없음)",
+    ].join("\n");
+  }
+  const manual = Array.isArray(payload.manual) ? payload.manual : [];
+  const exercise = Array.isArray(payload.exercise) ? payload.exercise : [];
+  const modalities = Array.isArray(payload.modalities) ? payload.modalities : [];
+  const education =
+    typeof payload.education === "string" && payload.education.trim()
+      ? payload.education.trim()
+      : "(없음)";
+  return [
+    `Manual: ${JSON.stringify(manual)}`,
+    `Exercise: ${JSON.stringify(exercise)}`,
+    `Modalities: ${JSON.stringify(modalities)}`,
+    `Education: ${education}`,
+  ].join("\n");
+}
+
+/** API 경계에서 PHI 패턴 추가 제거 (클라이언트 스크럽 보완) */
+function scrubClinicalTextServer(input: string): string {
+  let s = input;
+  s = s.replace(/\b\d{2,4}[-.\s]?\d{3,4}[-.\s]?\d{4}\b/g, "[연락처 제거]");
+  s = s.replace(/\b\d{4}[./-]\d{1,2}[./-]\d{1,2}\b/g, "[생년월일 제거]");
+  s = s.replace(/\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g, "[날짜 제거]");
+  s = s.replace(/[가-힣]{2,4}\s*(님|씨)(?=\s|$|[,.!?])/g, "Patient");
+  s = s.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "[ID 제거]");
+  return s;
+}
 
 type GuardrailResponse = {
   hasRedFlag: boolean;
@@ -406,13 +471,25 @@ function detectConditionRule(
   };
 }
 
-function parseModelJson(content: string): { ok: true; data: unknown } | { ok: false } {
-  const cleaned = content
+/** 모델이 JSON 외 마크다운/장식을 섞었을 때 파싱 성공률을 높임 */
+function stripMarkdownAndFenceArtifacts(raw: string): string {
+  let s = raw
     .replace(/^\s*```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/i, "")
     .replace(/```json/gi, "")
     .replace(/```/g, "")
+    .replace(/^\s*#{1,6}\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/^>\s?/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .trim();
+  return s;
+}
+
+function parseModelJson(content: string): { ok: true; data: unknown } | { ok: false } {
+  const cleaned = stripMarkdownAndFenceArtifacts(content);
   try {
     return { ok: true, data: JSON.parse(cleaned) };
   } catch {
@@ -421,12 +498,13 @@ function parseModelJson(content: string): { ok: true; data: unknown } | { ok: fa
       console.error("CDSS parseModelJson: JSON object block not found", { preview: cleaned.slice(0, 500) });
       return { ok: false };
     }
+    const inner = stripMarkdownAndFenceArtifacts(matched[0]);
     try {
-      return { ok: true, data: JSON.parse(matched[0]) };
+      return { ok: true, data: JSON.parse(inner) };
     } catch (fallbackError) {
       console.error("CDSS parseModelJson fallback parse failed", {
         message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-        preview: matched[0].slice(0, 500),
+        preview: inner.slice(0, 500),
       });
       return { ok: false };
     }
@@ -674,35 +752,50 @@ async function logGuardrailEvent(params: {
   matchedAliases: string[];
   scoreBreakdown: Record<string, number>;
   result: GuardrailResponse;
-}) {
+}): Promise<{ ok: true } | { ok: false; message: string }> {
   const supabase = getSupabaseAdmin();
-  if (!supabase) return;
-  try {
-    await supabase.from("cdss_guardrail_logs").insert({
-      payload: params.request,
-      detected_condition_id: params.detectedConditionId,
-      matched_aliases: params.matchedAliases,
-      score_breakdown: params.scoreBreakdown,
-      has_red_flag: params.result.hasRedFlag,
-      status: params.result.status,
-      compliance_score: params.result.complianceScore,
-      tuning_version: TUNING_VERSION,
-    });
-  } catch {
-    // noop: logging should never block response
+  if (!supabase) return { ok: true };
+  const { error } = await supabase.from("cdss_guardrail_logs").insert({
+    payload: params.request,
+    detected_condition_id: params.detectedConditionId,
+    matched_aliases: params.matchedAliases,
+    score_breakdown: params.scoreBreakdown,
+    has_red_flag: params.result.hasRedFlag,
+    status: params.result.status,
+    compliance_score: params.result.complianceScore,
+    tuning_version: TUNING_VERSION,
+  });
+  if (error) {
+    console.error("CDSS logGuardrailEvent:", error);
+    return { ok: false, message: error.message };
   }
+  return { ok: true };
 }
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as GuardrailRequest;
-    const examination = (body.examination ?? "").trim();
-    const evaluation = (body.evaluation ?? "").trim();
-    const prognosis = (body.prognosis ?? "").trim();
-    const intervention = (body.intervention ?? "").trim();
+    let body: GuardrailRequest;
+    try {
+      body = (await req.json()) as GuardrailRequest;
+    } catch {
+      return NextResponse.json(
+        { error: "요청 본문(JSON)을 읽을 수 없습니다.", stage: "request_body_parse" },
+        { status: 400 },
+      );
+    }
+    const examination = scrubClinicalTextServer((body.examination ?? "").trim());
+    const evaluation = scrubClinicalTextServer((body.evaluation ?? "").trim());
+    const prognosis = scrubClinicalTextServer((body.prognosis ?? "").trim());
+    const intervention = scrubClinicalTextServer((body.intervention ?? "").trim());
+    const step4Normalized = normalizeStep4Payload(body.step4);
+    const planSummaryRaw = buildPlanSummaryFromStep4(step4Normalized);
+    const planSummary = scrubClinicalTextServer(planSummaryRaw);
 
     if (!examination || !evaluation || !prognosis || !intervention) {
-      return NextResponse.json({ error: "모든 단계 입력이 필요합니다." }, { status: 400 });
+      return NextResponse.json(
+        { error: "모든 단계 입력이 필요합니다.", stage: "validation" },
+        { status: 400 },
+      );
     }
     const fullInput = `${examination}\n${evaluation}\n${prognosis}\n${intervention}`;
     const tuningMap = await loadAliasTuningMap();
@@ -715,6 +808,11 @@ Your task is to analyze the user's 4-step clinical reasoning data (Subjective Hi
 
 [CORE VALUES]
 Evaluate based on "Honest Data" and "Precise Execution" with professional involvement.
+
+[EVIDENCE CITATION — MANDATORY]
+Every Korean narrative string you output inside the JSON must end with an explicit guideline reference in parentheses.
+Apply this to at least: logicChainAudit.feedback; each cpgCompliance[].reasoning and each non-null cpgCompliance[].alternative; auditDefense.feedback; auditDefense.improvementTip; predictiveTrajectory.trajectoryText.
+Use real guideline names you relied on, e.g. (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline), or (근거: JOSPT CPG, APTA CPG) when both apply. Do not omit this suffix on those fields.
 
 CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact schema below. Do not include markdown formatting like \`\`\`json or any conversational text.
 
@@ -746,12 +844,13 @@ CRITICAL INSTRUCTION: You MUST respond ONLY in valid JSON format using the exact
   }
 }
 
-Ensure all generated text inside the JSON (feedback, reasoning, tips) is written entirely in Korean, maintaining a highly professional, mentoring tone.
+Ensure all generated text inside the JSON (feedback, reasoning, tips) is written entirely in Korean, maintaining a highly professional, mentoring tone. Each such narrative must end with the mandatory (근거: …) guideline citation as described above.
 `;
 
     const prompt = `
 너는 JOSPT 최신 임상진료지침(CPG)을 마스터한 수석 물리치료 멘토야.
 유저가 입력한 4단계 임상 추론(검사, 평가, 목표, 중재)을 분석하고, 반드시 아래의 JSON 형식으로만 답변해.
+각 한국어 서술 필드(피드백·근거·개선팁·예후 문장 등) 끝에는 반드시 참고한 가이드라인 명칭을 괄호로 명시하라. 예: (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline).
 아래 추정 진단 컨텍스트를 우선 반영하라: ${detectedRule.id}
 
 [입력]
@@ -766,6 +865,10 @@ ${prognosis}
 
 4) Intervention
 ${intervention}
+
+[Step 4 구조화 치료계획 — 배열/객체 원본 요약]
+아래는 Manual·Exercise·Modalities 배열과 Education 텍스트를 JSON 문자열로 정리한 것이다. Intervention 본문과 함께 CPG 적합성을 판단하라.
+${planSummary}
 
 [출력 JSON 스키마]
 {
@@ -819,7 +922,10 @@ ${intervention}
       console.error("CDSS guardrail fetch error:", {
         message: fetchError instanceof Error ? fetchError.message : String(fetchError),
       });
-      return NextResponse.json({ error: "CPG 분석 서버 통신에 실패했습니다." }, { status: 502 });
+      return NextResponse.json(
+        { error: "CPG 분석 서버 통신에 실패했습니다.", stage: "openai_fetch" },
+        { status: 502 },
+      );
     }
 
     if (!response.ok) {
@@ -828,7 +934,10 @@ ${intervention}
         status: response.status,
         body: text,
       });
-      return NextResponse.json({ error: "CPG 분석 호출에 실패했습니다." }, { status: 502 });
+      return NextResponse.json(
+        { error: "CPG 분석 호출에 실패했습니다.", stage: "openai_http" },
+        { status: 502 },
+      );
     }
 
     const rawResponseText = await response.text();
@@ -840,12 +949,21 @@ ${intervention}
         message: parseError instanceof Error ? parseError.message : String(parseError),
         body: rawResponseText,
       });
-      return NextResponse.json({ error: "AI 응답 파싱에 실패했습니다." }, { status: 502 });
+      return NextResponse.json(
+        { error: "AI 응답(상위 JSON) 파싱에 실패했습니다.", stage: "openai_upstream_body_parse" },
+        { status: 502 },
+      );
     }
     const content = data.choices?.[0]?.message?.content ?? "{}";
     const parsed = parseModelJson(content);
     if (!parsed.ok) {
-      return NextResponse.json({ error: "Parsing Error" }, { status: 500 });
+      return NextResponse.json(
+        {
+          error: "모델 본문 JSON 파싱에 실패했습니다.",
+          stage: "model_content_parse",
+        },
+        { status: 500 },
+      );
     }
 
     const normalized = normalizeGuardrailResponse(parsed.data);
@@ -860,7 +978,7 @@ ${intervention}
       },
     };
 
-    await logGuardrailEvent({
+    const logResult = await logGuardrailEvent({
       request: { examination, evaluation, prognosis, intervention },
       detectedConditionId: detectedRule.id,
       matchedAliases: detected.matchedAliases,
@@ -868,9 +986,19 @@ ${intervention}
       result: finalResult,
     });
 
+    if (!logResult.ok) {
+      return NextResponse.json({
+        ...finalResult,
+        auxiliaryError: { stage: "db_log" as const, message: logResult.message },
+      });
+    }
+
     return NextResponse.json(finalResult);
   } catch (error) {
     console.error("CDSS guardrail route error:", error);
-    return NextResponse.json({ error: "서버 처리 중 오류가 발생했습니다." }, { status: 500 });
+    return NextResponse.json(
+      { error: "서버 처리 중 오류가 발생했습니다.", stage: "server" },
+      { status: 500 },
+    );
   }
 }

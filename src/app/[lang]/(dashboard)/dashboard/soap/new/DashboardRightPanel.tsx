@@ -48,6 +48,9 @@ type Props = {
   isLoading?: boolean;
 };
 
+const REPORT_DISCLAIMER_KO =
+  "본 리포트는 입력된 데이터를 기반으로 학술적 가이드라인을 매핑한 AI 보조 도구입니다. 진단 및 치료의 최종 결정은 반드시 면허를 보유한 의료 전문가의 판단하에 이루어져야 하며, 본 서비스는 결과에 대해 법적 책임을 지지 않습니다.";
+
 function sanitizeText(raw: string) {
   return raw
     .replace(/[가-힣]{2,4}\s?(님|씨)?/g, "***")
@@ -270,6 +273,10 @@ function ReportBody({ data }: { data: FinalReportResult }) {
           </button>
         </div>
       </div>
+
+      <div className="sticky bottom-0 z-10 -mx-6 mt-6 border-t border-slate-200 bg-slate-50/95 px-6 pb-2 pt-4 backdrop-blur-sm lg:-mx-10 lg:px-10">
+        <p className="text-[11px] leading-relaxed text-slate-400">{REPORT_DISCLAIMER_KO}</p>
+      </div>
     </div>
   );
 }
@@ -287,16 +294,22 @@ export default function FinalReportDashboard({ result, isLoading = false }: Prop
             </div>
           ))}
         </div>
+        <div className="sticky bottom-0 z-10 -mx-6 mt-6 border-t border-slate-200 bg-slate-50/95 px-6 pb-2 pt-4 backdrop-blur-sm lg:-mx-10 lg:px-10">
+          <p className="text-[11px] leading-relaxed text-slate-400">{REPORT_DISCLAIMER_KO}</p>
+        </div>
       </div>
     );
   }
 
   if (!result) {
     return (
-      <div className="h-full w-full overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans lg:p-10">
+      <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans lg:p-10">
         <div className="mb-4 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-slate-600 shadow-sm">
           <Sparkles className="h-4 w-4 text-blue-500" />
           <p className="text-sm font-semibold">AI 분석 대기 중입니다. 좌측 폼 입력 후 분석을 요청해 주세요.</p>
+        </div>
+        <div className="sticky bottom-0 z-10 -mx-6 mt-auto border-t border-slate-200 bg-slate-50/95 px-6 pb-2 pt-4 backdrop-blur-sm lg:-mx-10 lg:px-10">
+          <p className="text-[11px] leading-relaxed text-slate-400">{REPORT_DISCLAIMER_KO}</p>
         </div>
       </div>
     );
