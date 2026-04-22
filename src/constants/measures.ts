@@ -318,3 +318,16 @@ export function resolveOutcomeMeasureRegion(diagnosisArea: string): OutcomeMeasu
   if (raw in OUTCOME_MEASURES) return raw as OutcomeMeasureRegion;
   return OUTCOME_REGION_ALIASES[raw] ?? null;
 }
+
+/** JOSPT 척도 id → 클릭형 모달(OUTCOME_MEASURES) 영역. 없으면 해당 척도는 수동 점수만 */
+export const OUTCOME_ID_TO_MODAL_REGION: Partial<Record<string, OutcomeMeasureRegion>> = {
+  ndi: "neck",
+  odi: "lumbar",
+  quickdash: "shoulder",
+  womac: "knee",
+};
+
+export function getModalRegionForOutcomeId(outcomeId: string): OutcomeMeasureRegion | null {
+  const r = OUTCOME_ID_TO_MODAL_REGION[outcomeId];
+  return r ?? null;
+}

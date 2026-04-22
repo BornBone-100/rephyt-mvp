@@ -8,6 +8,7 @@ import {
   calcOdi,
   calcQuickDash,
   calcWomac,
+  getModalRegionForOutcomeId,
   resolveOutcomeMeasureRegion,
   type MeasureQuestion5,
   type MeasureQuestion6,
@@ -18,14 +19,18 @@ import {
 export type Step2OutcomePayload = {
   functionalScore: number;
   functionalComment: string;
-  measureKey: OutcomeMeasureRegion;
+  measureKey: OutcomeMeasureRegion | "custom";
   measureName: string;
+  /** 선택한 JOSPT 척도 id(ndi, quickdash 등) 또는 manual */
+  outcomeId?: string;
 };
 
 type MeasureModalProps = {
   open: boolean;
   onClose: () => void;
   diagnosisArea: string;
+  /** 선택된 척도 — 클릭형 모달 문항을 이 id 기준으로 고름 (예: quickdash → QuickDASH) */
+  activeOutcomeId?: string | null;
   onApply: (payload: Step2OutcomePayload) => void;
 };
 
@@ -34,8 +39,15 @@ function formatComment(measureName: string, percent: number, label: string): str
   return `${measureName} 평가 결과 ${pct}%로 ${label} 소견 보임.`;
 }
 
-export function MeasureModal({ open, onClose, diagnosisArea, onApply }: MeasureModalProps) {
-  const region = useMemo(() => resolveOutcomeMeasureRegion(diagnosisArea), [diagnosisArea]);
+export function MeasureModal({ open, onClose, diagnosisArea, activeOutcomeId, onApply }: MeasureModalProps) {
+  const region = useMemo(() => {
+    if (activeOutcomeId && activeOutcomeId !== "manual") {
+      const mapped = getModalRegionForOutcomeId(activeOutcomeId);
+      if (mapped) return mapped;
+      return null;
+    }
+    return resolveOutcomeMeasureRegion(diagnosisArea);
+  }, [activeOutcomeId, diagnosisArea]);
   const meta = region ? OUTCOME_MEASURES[region] : null;
 
   const [answers, setAnswers] = useState<Record<number, number>>({});
@@ -165,6 +177,7 @@ export function MeasureModal({ open, onClose, diagnosisArea, onApply }: MeasureM
       functionalComment,
       measureKey: region,
       measureName,
+      outcomeId: activeOutcomeId && activeOutcomeId !== "manual" ? activeOutcomeId : undefined,
     });
     onClose();
   };

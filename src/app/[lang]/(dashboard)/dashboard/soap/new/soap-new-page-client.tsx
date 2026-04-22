@@ -14,12 +14,14 @@ import {
   Lock,
   AlertOctagon,
   ClipboardCheck,
+  Info,
 } from "lucide-react";
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import DashboardRightPanel from "./DashboardRightPanel";
 import { MeasureModal, type Step2OutcomePayload } from "./MeasureModal";
 import { createClient } from "@/utils/supabase/client";
-import { JOSPT_ICF_DB, JOSPT_OUTCOME_DB, JOSPT_TBC_DB } from "./constants";
+import { getTbcOptionsForRegion, JOSPT_ICF_DB, JOSPT_OUTCOME_DB } from "./constants";
+import { getModalRegionForOutcomeId } from "@/constants/measures";
 import {
   GENERIC_RED_FLAG_META,
   getScreeningQuestionsForRegion,
@@ -538,6 +540,25 @@ const STEP_FIELD_MAP: Record<number, SoapStepTextField> = {
   4: "intervention",
 };
 
+function outcomeMeasureChipLabel(outcomeId: string): string {
+  const labels: Record<string, string> = {
+    spadi: "SPADI",
+    quickdash: "QuickDASH",
+    ndi: "NDI",
+    odi: "ODI",
+    prtee: "PRTEE",
+    prwe: "PRWE",
+    mhq: "MHQ",
+    hoos: "HOOS",
+    lefs: "LEFS",
+    koos: "KOOS",
+    lysholm: "Lysholm",
+    faam: "FAAM",
+    ffi: "FFI",
+  };
+  return labels[outcomeId] ?? outcomeId.toUpperCase();
+}
+
 function RedFlagMentor() {
   const supabase = useMemo(() => createClient(), []);
   const [step, setStep] = useState(1);
@@ -608,6 +629,10 @@ function RedFlagMentor() {
   const [modalityEntries, setModalityEntries] = useState<ModalityEntry[]>([]);
   const [educationHep, setEducationHep] = useState("");
   const [measureModalOpen, setMeasureModalOpen] = useState(false);
+  const [selectedOutcomeTool, setSelectedOutcomeTool] = useState<string>("");
+  const [manualOutcomeName, setManualOutcomeName] = useState("");
+  const [manualOutcomeScore, setManualOutcomeScore] = useState("");
+  const [manualOutcomeMax, setManualOutcomeMax] = useState("");
   const [screeningAnswers, setScreeningAnswers] = useState<Record<string, boolean>>({});
 
   const screeningRegion = useMemo(
@@ -965,7 +990,7 @@ function RedFlagMentor() {
     ? REGION_EVIDENCE_DB[regionKey as keyof typeof REGION_EVIDENCE_DB] ?? null
     : null;
   const selectedTbcOptions = selectedDiagnosisKey
-    ? JOSPT_TBC_DB[regionKey as keyof typeof JOSPT_TBC_DB] ?? selectedRegionEvidence?.tbc ?? []
+    ? getTbcOptionsForRegion(regionKey, selectedRegionEvidence?.tbc)
     : [];
   const selectedOutcomeOptions = selectedDiagnosisKey
     ? JOSPT_OUTCOME_DB[regionKey as keyof typeof JOSPT_OUTCOME_DB] ?? []
@@ -973,6 +998,21 @@ function RedFlagMentor() {
   const selectedIcfOptions = selectedDiagnosisKey
     ? JOSPT_ICF_DB[regionKey as keyof typeof JOSPT_ICF_DB] ?? null
     : null;
+
+  useEffect(() => {
+    const opts = selectedDiagnosisKey
+      ? JOSPT_OUTCOME_DB[regionKey as keyof typeof JOSPT_OUTCOME_DB] ?? []
+      : [];
+    if (opts.length === 0) {
+      setSelectedOutcomeTool("");
+      return;
+    }
+    setSelectedOutcomeTool((prev) => {
+      if (prev === "manual") return "manual";
+      if (prev && opts.some((o) => o.id === prev)) return prev;
+      return opts[0].id;
+    });
+  }, [regionKey, selectedDiagnosisKey]);
 
   useEffect(() => {
     const autoRomLines = Object.entries(romMmtInputs)
@@ -1468,21 +1508,35 @@ function RedFlagMentor() {
                           환자의 핵심 기능적 결함을 선택하세요. AI가 최적의 중재 가이드라인을 매핑합니다.
                         </p>
 
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2 overflow-visible">
                           {selectedTbcOptions.length > 0 ? (
-                            selectedTbcOptions.map((tbcTag, idx) => (
-                              <button
-                                key={`${tbcTag}-${idx}`}
-                                type="button"
-                                onClick={() => handleTbcToggle(tbcTag)}
-                                className={`rounded-full border px-4 py-2 text-left text-sm font-medium transition-all ${
-                                  selectedTbcTags.includes(tbcTag)
-                                    ? "border-blue-300 bg-blue-50 text-blue-700"
-                                    : "border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                                }`}
+                            selectedTbcOptions.map((item, idx) => (
+                              <div
+                                key={`${item.label}-${idx}`}
+                                className="group relative inline-flex max-w-full items-center gap-1 overflow-visible"
                               >
-                                {tbcTag}
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTbcToggle(item.label)}
+                                  className={`rounded-full border px-4 py-2 text-left text-sm font-medium transition-all ${
+                                    selectedTbcTags.includes(item.label)
+                                      ? "border-blue-300 bg-blue-50 text-blue-700"
+                                      : "border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                                  }`}
+                                >
+                                  {item.label}
+                                </button>
+                                <span className="inline-flex shrink-0 cursor-help text-slate-400 transition-colors hover:text-slate-600">
+                                  <Info className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                                </span>
+                                <div
+                                  role="tooltip"
+                                  className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-max max-w-[min(20rem,calc(100vw-3rem))] -translate-x-1/2 translate-y-1 rounded-lg bg-slate-800 px-3 py-2 text-left text-xs leading-relaxed text-white opacity-0 shadow-lg transition-all duration-200 ease-out [text-wrap:pretty] group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+                                >
+                                  <span className="block font-semibold text-slate-100">JOSPT 진단 기준 (Inclusion)</span>
+                                  <span className="mt-1 block font-normal text-white/95">{item.description}</span>
+                                </div>
+                              </div>
                             ))
                           ) : (
                             <span className="text-sm italic text-slate-400">먼저 Step 1에서 진단 부위를 선택해 주세요.</span>
@@ -1499,69 +1553,176 @@ function RedFlagMentor() {
                           입력하신 객관적 점수는 AI의 치료 예후(Prognosis) 예측에 활용됩니다.
                         </p>
 
-                        <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0 flex-1">
-                            <h4 className="font-bold text-blue-900">전문 기능 평가 (Outcome Measure)</h4>
-                            <p className="text-xs text-blue-600">
-                              현재 선택 부위: {formData.diagnosisArea.trim() || "미선택"}
-                            </p>
-                            {formData.step2 ? (
-                              <p className="mt-2 rounded-lg border border-blue-100/80 bg-white/90 px-3 py-2 text-xs text-slate-800 shadow-sm">
-                                <span className="font-bold text-blue-700">
-                                  {formData.step2.measureName}: {formData.step2.functionalScore}%
-                                </span>
-                                <span className="mt-0.5 block text-slate-600">{formData.step2.functionalComment}</span>
-                              </p>
-                            ) : (
-                              <p className="mt-1 text-[11px] text-slate-500">
-                                문항 선택만으로 점수·해석이 자동 산출되어 Step2에 저장됩니다.
-                              </p>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setMeasureModalOpen(true)}
-                            disabled={!formData.diagnosisArea.trim()}
-                            className="flex shrink-0 items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <ClipboardCheck className="h-[18px] w-[18px]" aria-hidden />
-                            척도 평가 시작
-                          </button>
-                        </div>
+                        {formData.diagnosisArea && selectedOutcomeOptions.length > 0 ? (
+                          <>
+                            <div className="mb-4 flex flex-wrap gap-2">
+                              {selectedOutcomeOptions.map((o) => (
+                                <button
+                                  key={o.id}
+                                  type="button"
+                                  onClick={() => setSelectedOutcomeTool(o.id)}
+                                  className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                    selectedOutcomeTool === o.id
+                                      ? "bg-blue-700 text-white shadow-md shadow-blue-700/30"
+                                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                  }`}
+                                >
+                                  [{outcomeMeasureChipLabel(o.id)}]
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedOutcomeTool("manual")}
+                                className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                  selectedOutcomeTool === "manual"
+                                    ? "bg-blue-700 text-white shadow-md shadow-blue-700/30"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                }`}
+                              >
+                                [직접 입력]
+                              </button>
+                            </div>
 
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                          {formData.diagnosisArea && selectedOutcomeOptions.length > 0 ? (
-                            selectedOutcomeOptions.map((outcome) => (
-                              <div key={outcome.id} className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3">
-                                <label className="text-xs font-bold text-slate-700">{outcome.name}</label>
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="number"
-                                    max={outcome.max}
-                                    min={0}
-                                    value={outcomeScores[outcome.id] ?? ""}
-                                    onChange={(e) => handleOutcomeScoreChange(outcome.id, e.target.value)}
-                                    placeholder="점수"
-                                    className="w-20 rounded-lg border border-slate-200 p-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                                  />
-                                  <span className="text-sm font-medium text-slate-400">
-                                    / {outcome.max}
-                                    {outcome.unit}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOutcomeAppendToNote(outcome)}
-                                    className="ml-auto rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
-                                  >
-                                    노트에 기록
-                                  </button>
+                            {selectedOutcomeTool === "manual" ? (
+                              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/90 p-4">
+                                <p className="text-xs font-bold text-slate-700">목록에 없는 척도 직접 입력</p>
+                                <input
+                                  value={manualOutcomeName}
+                                  onChange={(e) => setManualOutcomeName(e.target.value)}
+                                  placeholder="척도 이름 (예: Constant-Murley)"
+                                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                                />
+                                <div className="flex flex-wrap items-end gap-3">
+                                  <div>
+                                    <label className="mb-1 block text-[10px] font-semibold text-slate-500">점수</label>
+                                    <input
+                                      type="number"
+                                      value={manualOutcomeScore}
+                                      onChange={(e) => setManualOutcomeScore(e.target.value)}
+                                      className="h-10 w-28 rounded-lg border border-slate-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                                    />
+                                  </div>
+                                  <div className="min-w-[10rem] flex-1">
+                                    <label className="mb-1 block text-[10px] font-semibold text-slate-500">만점·단위 (선택)</label>
+                                    <input
+                                      value={manualOutcomeMax}
+                                      onChange={(e) => setManualOutcomeMax(e.target.value)}
+                                      placeholder="예: 100점, %"
+                                      className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                                    />
+                                  </div>
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const name = manualOutcomeName.trim();
+                                    const score = manualOutcomeScore.trim();
+                                    if (!name || !score) return;
+                                    const suffix = manualOutcomeMax.trim() ? ` (${manualOutcomeMax.trim()})` : "";
+                                    const nextLine = `[평가 척도] ${name} : ${score}${suffix}`;
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      evaluation: prev.evaluation ? `${prev.evaluation}\n${nextLine}` : nextLine,
+                                      step2: {
+                                        functionalScore: Number.parseFloat(score) || 0,
+                                        functionalComment: `${name} 평가 ${score}${suffix} (직접 입력)`,
+                                        measureKey: "custom",
+                                        measureName: name,
+                                        outcomeId: "manual",
+                                      },
+                                    }));
+                                    setOutcomeScores((prev) => ({ ...prev, manual: score }));
+                                  }}
+                                  className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-emerald-700"
+                                >
+                                  노트에 기록 · Step2 요약 반영
+                                </button>
                               </div>
-                            ))
-                          ) : (
-                            <span className="col-span-2 text-sm italic text-slate-400">먼저 Step 1에서 진단 부위를 선택해 주세요.</span>
-                          )}
-                        </div>
+                            ) : (
+                              <>
+                                <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                  <div className="min-w-0 flex-1">
+                                    <h4 className="font-bold text-blue-900">전문 기능 평가 (Outcome Measure)</h4>
+                                    <p className="text-xs text-blue-600">
+                                      선택: [{outcomeMeasureChipLabel(selectedOutcomeTool)}] · 부위:{" "}
+                                      {formData.diagnosisArea.trim() || "미선택"}
+                                    </p>
+                                    {formData.step2 &&
+                                    (formData.step2.outcomeId === selectedOutcomeTool ||
+                                      (formData.step2.outcomeId == null && selectedOutcomeTool !== "manual")) ? (
+                                      <p className="mt-2 rounded-lg border border-blue-100/80 bg-white/90 px-3 py-2 text-xs text-slate-800 shadow-sm">
+                                        <span className="font-bold text-blue-700">
+                                          {formData.step2.measureName}: {formData.step2.functionalScore}%
+                                        </span>
+                                        <span className="mt-0.5 block text-slate-600">{formData.step2.functionalComment}</span>
+                                      </p>
+                                    ) : formData.step2 &&
+                                      formData.step2.outcomeId &&
+                                      formData.step2.outcomeId !== selectedOutcomeTool ? (
+                                      <p className="mt-2 text-[11px] text-slate-500">
+                                        다른 척도로 저장된 Step2 요약이 있습니다. 해당 척도 탭을 선택하면 표시됩니다.
+                                      </p>
+                                    ) : (
+                                      <p className="mt-1 text-[11px] text-slate-500">
+                                        클릭형 평가는 NDI·ODI·QuickDASH·WOMAC 등 지원 척도에서만 사용할 수 있습니다.
+                                      </p>
+                                    )}
+                                  </div>
+                                  {getModalRegionForOutcomeId(selectedOutcomeTool) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setMeasureModalOpen(true)}
+                                      disabled={!formData.diagnosisArea.trim()}
+                                      className="flex shrink-0 items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      <ClipboardCheck className="h-[18px] w-[18px]" aria-hidden />
+                                      척도 평가 시작
+                                    </button>
+                                  ) : (
+                                    <p className="max-w-[11rem] shrink-0 text-right text-[11px] font-medium leading-snug text-slate-500">
+                                      이 척도는 수동 점수 입력만 지원합니다.
+                                    </p>
+                                  )}
+                                </div>
+
+                                {selectedOutcomeOptions
+                                  .filter((o) => o.id === selectedOutcomeTool)
+                                  .map((outcome) => (
+                                    <div
+                                      key={outcome.id}
+                                      className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3"
+                                    >
+                                      <label className="text-xs font-bold text-slate-700">{outcome.name}</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="number"
+                                          max={outcome.max}
+                                          min={0}
+                                          value={outcomeScores[outcome.id] ?? ""}
+                                          onChange={(e) => handleOutcomeScoreChange(outcome.id, e.target.value)}
+                                          placeholder="점수"
+                                          className="w-24 rounded-lg border border-slate-200 bg-white p-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                                        />
+                                        <span className="text-sm font-medium text-slate-400">
+                                          / {outcome.max}
+                                          {outcome.unit}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOutcomeAppendToNote(outcome)}
+                                          className="ml-auto rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
+                                        >
+                                          노트에 기록
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-sm italic text-slate-400">먼저 Step 1에서 진단 부위를 선택해 주세요.</span>
+                        )}
                       </div>
 
                       <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -2109,8 +2270,16 @@ function RedFlagMentor() {
           open={measureModalOpen}
           onClose={() => setMeasureModalOpen(false)}
           diagnosisArea={formData.diagnosisArea}
-          onApply={(payload) => {
-            setFormData((prev) => ({ ...prev, step2: payload }));
+          activeOutcomeId={selectedOutcomeTool !== "manual" ? selectedOutcomeTool : null}
+          onApply={(payload: Step2OutcomePayload) => {
+            const oid = payload.outcomeId ?? (selectedOutcomeTool !== "manual" ? selectedOutcomeTool : undefined);
+            setFormData((prev) => ({
+              ...prev,
+              step2: { ...payload, outcomeId: oid },
+            }));
+            if (oid && oid !== "manual") {
+              setOutcomeScores((prev) => ({ ...prev, [oid]: String(payload.functionalScore) }));
+            }
           }}
         />
       </div>
