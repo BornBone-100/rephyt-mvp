@@ -278,10 +278,11 @@ export function PatientDetailClient({ dict }: Props) {
         setTimelineLogs([]);
         return;
       }
-      const rows = (data ?? []).map((row) => ({
+      const timelineData = (data ?? []) as Array<Omit<TimelineLog, "payload"> & { payload?: unknown }>;
+      const rows = timelineData.map((row) => ({
         ...row,
-        payload: row.payload && typeof row.payload === "object" ? row.payload : null,
-      })) as TimelineLog[];
+        payload: row.payload && typeof row.payload === "object" ? (row.payload as Record<string, unknown>) : null,
+      }));
       console.log("Fetched timeline data:", rows);
       setTimelineLogs(rows);
     } catch (error) {
