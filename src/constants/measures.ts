@@ -210,3 +210,309 @@ export const OUTCOME_MEASURES = {
     },
   },
 };
+
+export type MeasureLocale = "ko" | "en";
+
+export type MeasureQuestion5 = {
+  id: number;
+  text: string;
+  options: readonly [string, string, string, string, string];
+};
+
+export type MeasureQuestion6 = {
+  id: number;
+  text: string;
+  options: readonly [string, string, string, string, string, string];
+};
+
+export type MeasureQuestion10 = {
+  id: number;
+  text: string;
+  options: readonly string[];
+};
+
+export type MeasureQuestionWomac = {
+  id: number;
+  section: "pain" | "stiffness" | "function";
+  text: string;
+  options: readonly [string, string, string, string, string];
+};
+
+export type OutcomeMeasureRegion = "neck" | "lumbar" | "shoulder" | "knee";
+
+type NdiOdiCalcResult = {
+  raw: number;
+  max: number;
+  percent: number;
+  label: string;
+};
+
+type QuickDashCalcResult = {
+  rawMean: number;
+  dashScore: number;
+  percent: number;
+  label: string;
+};
+
+type WomacCalcResult = {
+  pain: number;
+  stiffness: number;
+  function: number;
+  total: number;
+  maxTotal: number;
+  percent: number;
+  label: string;
+};
+
+type OutcomeMeasuresBundle = {
+  neck: {
+    id: string;
+    name: string;
+    description: string;
+    questions: MeasureQuestion6[];
+    maxRaw: number;
+    calc: (score: number) => NdiOdiCalcResult;
+  };
+  lumbar: {
+    id: string;
+    name: string;
+    description: string;
+    questions: MeasureQuestion6[];
+    maxRaw: number;
+    calc: (score: number) => NdiOdiCalcResult;
+  };
+  shoulder: {
+    id: string;
+    name: string;
+    description: string;
+    questions: MeasureQuestion5[];
+    itemCount: number;
+    calc: (responses: readonly number[]) => QuickDashCalcResult;
+  };
+  knee: {
+    id: string;
+    name: string;
+    description: string;
+    sections: {
+      pain: MeasureQuestionWomac[];
+      stiffness: MeasureQuestionWomac[];
+      function: MeasureQuestionWomac[];
+    };
+    allQuestions: MeasureQuestionWomac[];
+    maxTotal: number;
+    calc: (pain: number[], stiffness: number[], func: number[]) => WomacCalcResult;
+  };
+};
+
+const L6_EN: MeasureQuestion6["options"] = [
+  "No pain/limitation",
+  "Mild",
+  "Moderate",
+  "Moderately severe",
+  "Severe",
+  "Unable / extreme",
+];
+
+const L6_KO: MeasureQuestion6["options"] = [
+  "전혀 없음",
+  "약간",
+  "보통",
+  "중등도",
+  "심함",
+  "매우 심함/불가",
+];
+
+const L5_EN: MeasureQuestion5["options"] = ["No difficulty", "Mild", "Moderate", "Severe", "Unable"];
+const L5_KO: MeasureQuestion5["options"] = ["전혀 어려움 없음", "약간", "보통", "심함", "불가"];
+
+function toNumericId(rawId: string, index: number): number {
+  const n = Number(rawId.replace(/[^\d]/g, ""));
+  if (Number.isFinite(n) && n > 0) return n;
+  return index + 1;
+}
+
+function toQuestion6(
+  questions: Array<{ id: string; text: string }>,
+  locale: MeasureLocale,
+): MeasureQuestion6[] {
+  const options = locale === "en" ? L6_EN : L6_KO;
+  return questions.map((q, idx) => ({ id: toNumericId(q.id, idx), text: q.text, options }));
+}
+
+function toQuestion5(
+  questions: Array<{ id: string; text: string }>,
+  locale: MeasureLocale,
+): MeasureQuestion5[] {
+  const options = locale === "en" ? L5_EN : L5_KO;
+  return questions.map((q, idx) => ({ id: toNumericId(q.id, idx), text: q.text, options }));
+}
+
+function calcNdiLike(score: number, max = 50): NdiOdiCalcResult {
+  const raw = Math.max(0, Math.min(max, score));
+  const percent = (raw / max) * 100;
+  const label =
+    percent <= 20
+      ? "Minimal disability"
+      : percent <= 40
+        ? "Moderate disability"
+        : percent <= 60
+          ? "Severe disability"
+          : "Very severe disability";
+  return { raw, max, percent, label };
+}
+
+function calcQuickDashLike(responses: readonly number[]): QuickDashCalcResult {
+  if (responses.length !== 11) {
+    return { rawMean: 0, dashScore: 0, percent: 0, label: "Item count mismatch (11 required)" };
+  }
+  const valid = responses.every((v) => Number.isFinite(v) && v >= 1 && v <= 5);
+  if (!valid) {
+    return { rawMean: 0, dashScore: 0, percent: 0, label: "Each item must be scored 1-5" };
+  }
+  const rawMean = responses.reduce((a, b) => a + b, 0) / responses.length;
+  const dashScore = (rawMean - 1) * 25;
+  return {
+    rawMean,
+    dashScore,
+    percent: Math.max(0, Math.min(100, dashScore)),
+    label: dashScore < 25 ? "Mild disability" : dashScore < 50 ? "Moderate disability" : "Severe disability",
+  };
+}
+
+function calcWomacLike(pain: number[], stiffness: number[], func: number[]): WomacCalcResult {
+  if (pain.length !== 5 || stiffness.length !== 2 || func.length !== 5) {
+    return {
+      pain: Number.NaN,
+      stiffness: Number.NaN,
+      function: Number.NaN,
+      total: Number.NaN,
+      maxTotal: 48,
+      percent: 0,
+      label: "Item mismatch",
+    };
+  }
+  const all = [...pain, ...stiffness, ...func];
+  const valid = all.every((v) => Number.isFinite(v) && v >= 0 && v <= 4);
+  if (!valid) {
+    return {
+      pain: Number.NaN,
+      stiffness: Number.NaN,
+      function: Number.NaN,
+      total: Number.NaN,
+      maxTotal: 48,
+      percent: 0,
+      label: "Each item must be scored 0-4",
+    };
+  }
+  const p = pain.reduce((a, b) => a + b, 0);
+  const s = stiffness.reduce((a, b) => a + b, 0);
+  const f = func.reduce((a, b) => a + b, 0);
+  const total = p + s + f;
+  const maxTotal = 48;
+  const percent = (total / maxTotal) * 100;
+  const label = percent < 25 ? "Mild symptoms" : percent < 50 ? "Moderate" : "Severe";
+  return { pain: p, stiffness: s, function: f, total, maxTotal, percent, label };
+}
+
+export function getOutcomeMeasuresBundle(locale: MeasureLocale): OutcomeMeasuresBundle {
+  const neck = OUTCOME_MEASURES.neck;
+  const lowback = OUTCOME_MEASURES.lowback;
+  const arm = OUTCOME_MEASURES.arm;
+  const knee = OUTCOME_MEASURES.knee;
+
+  const kneeOptions = locale === "en" ? L5_EN : L5_KO;
+  const kneePain = knee.questions.slice(0, 4).map((q, i) => ({
+    id: toNumericId(q.id, i),
+    section: "pain" as const,
+    text: q.text,
+    options: kneeOptions,
+  }));
+  const kneeStiffness = knee.questions.slice(4, 6).map((q, i) => ({
+    id: toNumericId(q.id, i + 4),
+    section: "stiffness" as const,
+    text: q.text,
+    options: kneeOptions,
+  }));
+  const kneeFunction = knee.questions.slice(6, 11).map((q, i) => ({
+    id: toNumericId(q.id, i + 6),
+    section: "function" as const,
+    text: q.text,
+    options: kneeOptions,
+  }));
+
+  return {
+    neck: {
+      id: neck.id,
+      name: neck.name,
+      description: neck.description,
+      questions: toQuestion6(neck.questions, locale),
+      maxRaw: 50,
+      calc: (score: number) => calcNdiLike(score, 50),
+    },
+    lumbar: {
+      id: lowback.id,
+      name: lowback.name,
+      description: lowback.description,
+      questions: toQuestion6(lowback.questions, locale),
+      maxRaw: 50,
+      calc: (score: number) => calcNdiLike(score, 50),
+    },
+    shoulder: {
+      id: arm.id,
+      name: arm.name,
+      description: arm.description,
+      questions: toQuestion5(arm.questions, locale),
+      itemCount: 11,
+      calc: (responses: readonly number[]) => calcQuickDashLike(responses),
+    },
+    knee: {
+      id: knee.id,
+      name: knee.name,
+      description: knee.description,
+      sections: {
+        pain: kneePain,
+        stiffness: kneeStiffness,
+        function: kneeFunction,
+      },
+      allQuestions: [...kneePain, ...kneeStiffness, ...kneeFunction],
+      maxTotal: 48,
+      calc: (pain: number[], stiffness: number[], func: number[]) => calcWomacLike(pain, stiffness, func),
+    },
+  };
+}
+
+const REGION_ALIAS: Record<string, OutcomeMeasureRegion> = {
+  neck: "neck",
+  cervical: "neck",
+  shoulder: "shoulder",
+  arm: "shoulder",
+  upper: "shoulder",
+  lowback: "lumbar",
+  "low-back": "lumbar",
+  lumbar: "lumbar",
+  back: "lumbar",
+  knee: "knee",
+};
+
+export function resolveOutcomeMeasureRegion(diagnosisArea: string): OutcomeMeasureRegion | null {
+  const key = diagnosisArea.trim().toLowerCase().split(/\s+/)[0] ?? "";
+  if (!key) return null;
+  return REGION_ALIAS[key] ?? null;
+}
+
+const OUTCOME_ID_TO_MODAL_REGION: Record<string, OutcomeMeasureRegion> = {
+  ndi: "neck",
+  odi: "lumbar",
+  quickdash: "shoulder",
+  spadi: "shoulder",
+  koos: "knee",
+  womac: "knee",
+  lefs: "lumbar",
+  faam: "lumbar",
+};
+
+export function getModalRegionForOutcomeId(outcomeId: string): OutcomeMeasureRegion | null {
+  return OUTCOME_ID_TO_MODAL_REGION[outcomeId] ?? null;
+}
+
+export const OUTCOME_MEASURES_LOWBACK = OUTCOME_MEASURES.lowback;
