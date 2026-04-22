@@ -154,6 +154,9 @@ type AliasTuning = {
 const BASE_ALIAS_WEIGHT = 1;
 const TUNING_VERSION = "v1-feedback-weighted";
 
+/** Supabase public 스키마 테이블명 (오타 방지) */
+const CDSS_GUARDRAIL_LOGS_TABLE = "cdss_guardrail_logs" as const;
+
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -746,17 +749,100 @@ function enforceGuardrails(response: GuardrailResponse, rule: ConditionRule): Gu
   };
 }
 
-async function logGuardrailEvent(params: {
+/** OpenAI 원본 JSON → DB jsonb 컬럼용 필드 추출 */
+function extractModelFieldsForLog(raw: unknown): {
+  logic_audit: unknown;
+  cpg_compliance: unknown;
+  audit_defense: unknown;
+  predictive_trajectory: unknown;
+  overall_from_model: number | null;
+} {
+  if (!raw || typeof raw !== "object") {
+    return {
+      logic_audit: null,
+      cpg_compliance: null,
+      audit_defense: null,
+      predictive_trajectory: null,
+      overall_from_model: null,
+    };
+  }
+  const o = raw as Record<string, unknown>;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return {
+    logic_audit: o.logicChainAudit ?? null,
+    cpg_compliance: o.cpgCompliance ?? null,
+    audit_defense: o.auditDefense ?? null,
+    predictive_trajectory: o.predictiveTrajectory ?? null,
+    overall_from_model: num(o.overallScore) ?? num(o.score) ?? num((o.auditDefense as { defenseScore?: number } | undefined)?.defenseScore),
+  };
+}
+
+function buildGuardrailLogRow(params: {
   request: GuardrailRequest;
   detectedConditionId: string;
   matchedAliases: string[];
   scoreBreakdown: Record<string, number>;
   result: GuardrailResponse;
-}): Promise<{ ok: true } | { ok: false; message: string }> {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) return { ok: true };
-  const { error } = await supabase.from("cdss_guardrail_logs").insert({
+  rawModelJson: unknown;
+}): Record<string, unknown> {
+  const ex = extractModelFieldsForLog(params.rawModelJson);
+  const overallScore = Math.round(
+    Math.max(
+      0,
+      Math.min(
+        100,
+        ex.overall_from_model ??
+          params.result.overallScore ??
+          params.result.complianceScore ??
+          0,
+      ),
+    ),
+  );
+  return {
     payload: params.request,
+    overall_score: overallScore,
+    logic_audit: ex.logic_audit,
+    cpg_compliance: ex.cpg_compliance,
+    audit_defense: ex.audit_defense,
+    predictive_trajectory: ex.predictive_trajectory,
+    has_red_flag: params.result.hasRedFlag,
+    status: params.result.status,
+    compliance_score: params.result.complianceScore,
+    detected_condition_id: params.detectedConditionId,
+    matched_aliases: params.matchedAliases,
+    score_breakdown: params.scoreBreakdown,
+    tuning_version: TUNING_VERSION,
+    /** 정규화·가드레일 적용 후 클라이언트와 동일 구조 */
+    result_snapshot: params.result,
+  };
+}
+
+/** 스키마가 아직 확장되지 않은 경우: 핵심 컬럼만 재시도 */
+function buildGuardrailLogRowLegacy(params: {
+  request: GuardrailRequest;
+  detectedConditionId: string;
+  matchedAliases: string[];
+  scoreBreakdown: Record<string, number>;
+  result: GuardrailResponse;
+  rawModelJson: unknown;
+}): Record<string, unknown> {
+  const ex = extractModelFieldsForLog(params.rawModelJson);
+  const overallScore = Math.round(
+    Math.max(
+      0,
+      Math.min(
+        100,
+        ex.overall_from_model ??
+          params.result.overallScore ??
+          params.result.complianceScore ??
+          0,
+      ),
+    ),
+  );
+  return {
+    payload: params.request,
+    overall_score: overallScore,
+    logic_audit: ex.logic_audit,
     detected_condition_id: params.detectedConditionId,
     matched_aliases: params.matchedAliases,
     score_breakdown: params.scoreBreakdown,
@@ -764,12 +850,37 @@ async function logGuardrailEvent(params: {
     status: params.result.status,
     compliance_score: params.result.complianceScore,
     tuning_version: TUNING_VERSION,
-  });
-  if (error) {
-    console.error("CDSS logGuardrailEvent:", error);
-    return { ok: false, message: error.message };
+  };
+}
+
+async function logGuardrailEvent(params: {
+  request: GuardrailRequest;
+  detectedConditionId: string;
+  matchedAliases: string[];
+  scoreBreakdown: Record<string, number>;
+  result: GuardrailResponse;
+  rawModelJson: unknown;
+}): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) return { ok: true };
+    const row = buildGuardrailLogRow(params);
+    let { error } = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(row as never);
+    if (error) {
+      console.warn("CDSS logGuardrailEvent full row failed, retrying legacy columns:", error.code, error.message);
+      const legacy = buildGuardrailLogRowLegacy(params);
+      const second = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(legacy as never);
+      if (second.error) {
+        console.error("CDSS logGuardrailEvent legacy insert:", second.error.code, second.error.message, second.error.details);
+        return { ok: false, message: second.error.message };
+      }
+    }
+    return { ok: true };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("CDSS logGuardrailEvent exception:", message);
+    return { ok: false, message };
   }
-  return { ok: true };
 }
 
 export async function POST(req: Request) {
@@ -978,22 +1089,29 @@ ${planSummary}
       },
     };
 
-    const logResult = await logGuardrailEvent({
-      request: { examination, evaluation, prognosis, intervention },
-      detectedConditionId: detectedRule.id,
-      matchedAliases: detected.matchedAliases,
-      scoreBreakdown: detected.scoreBreakdown,
-      result: finalResult,
-    });
-
-    if (!logResult.ok) {
-      return NextResponse.json({
-        ...finalResult,
-        auxiliaryError: { stage: "db_log" as const, message: logResult.message },
+    /** DB 저장 실패해도 AI 분석 결과는 항상 반환 (로깅은 부가 작업) */
+    let auxiliaryError: { stage: "db_log"; message: string } | undefined;
+    try {
+      const logResult = await logGuardrailEvent({
+        request: { examination, evaluation, prognosis, intervention },
+        detectedConditionId: detectedRule.id,
+        matchedAliases: detected.matchedAliases,
+        scoreBreakdown: detected.scoreBreakdown,
+        result: finalResult,
+        rawModelJson: parsed.data,
       });
+      if (!logResult.ok) {
+        auxiliaryError = { stage: "db_log", message: logResult.message };
+      }
+    } catch (logErr) {
+      const message = logErr instanceof Error ? logErr.message : String(logErr);
+      console.error("CDSS POST: logGuardrailEvent failed after AI success:", message);
+      auxiliaryError = { stage: "db_log", message };
     }
 
-    return NextResponse.json(finalResult);
+    return NextResponse.json(
+      auxiliaryError ? { ...finalResult, auxiliaryError } : finalResult,
+    );
   } catch (error) {
     console.error("CDSS guardrail route error:", error);
     return NextResponse.json(

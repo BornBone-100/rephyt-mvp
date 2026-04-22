@@ -13,11 +13,19 @@ import {
   Stethoscope as MedicIcon,
   Lock,
   AlertOctagon,
+  ClipboardCheck,
 } from "lucide-react";
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import DashboardRightPanel from "./DashboardRightPanel";
+import { MeasureModal, type Step2OutcomePayload } from "./MeasureModal";
 import { createClient } from "@/utils/supabase/client";
 import { JOSPT_ICF_DB, JOSPT_OUTCOME_DB, JOSPT_TBC_DB } from "./constants";
+import {
+  GENERIC_RED_FLAG_META,
+  getScreeningQuestionsForRegion,
+  resolveScreeningRegion,
+  type Step1RedFlagEntry,
+} from "@/constants/screening";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -36,6 +44,10 @@ type FormData = {
   todayTreatment: string;
   /** Step4 구조화 데이터(JSON 문자열). API·표시 동기화용 */
   step4: string;
+  /** Step2 클릭형 기능 평가(모달) 결과 */
+  step2: Step2OutcomePayload | null;
+  /** Step1 주관적 문진·Red Flag 스크리닝 (AI 위험도 근거) */
+  step1: { redFlags: Step1RedFlagEntry[] };
 };
 
 type ExamOnset = "급성(Acute)" | "아급성(Subacute)" | "만성(Chronic)";
@@ -516,7 +528,10 @@ type RedFlagResult = {
   };
 };
 
-const STEP_FIELD_MAP: Record<number, keyof FormData> = {
+/** Step별 메인 텍스트 영역(SOAP 본문) — step2/step4 메타와 구분 */
+type SoapStepTextField = "examination" | "evaluation" | "prognosis" | "intervention";
+
+const STEP_FIELD_MAP: Record<number, SoapStepTextField> = {
   1: "examination",
   2: "evaluation",
   3: "prognosis",
@@ -542,6 +557,8 @@ function RedFlagMentor() {
     intervention: "",
     todayTreatment: "",
     step4: '{"manual":[],"exercise":[],"modalities":[],"education":""}',
+    step2: null,
+    step1: { redFlags: [] },
   });
   const [examDraft, setExamDraft] = useState<ExamDraft>({
     chiefComplaint: "",
@@ -590,6 +607,68 @@ function RedFlagMentor() {
   });
   const [modalityEntries, setModalityEntries] = useState<ModalityEntry[]>([]);
   const [educationHep, setEducationHep] = useState("");
+  const [measureModalOpen, setMeasureModalOpen] = useState(false);
+  const [screeningAnswers, setScreeningAnswers] = useState<Record<string, boolean>>({});
+
+  const screeningRegion = useMemo(
+    () => resolveScreeningRegion(formData.diagnosisArea),
+    [formData.diagnosisArea],
+  );
+
+  useEffect(() => {
+    setScreeningAnswers({});
+  }, [screeningRegion]);
+
+  /** Step1: 일반 Red Flag 토글 + 부위별 스크리닝 → formData.step1.redFlags */
+  useEffect(() => {
+    const redFlags: Step1RedFlagEntry[] = [];
+    const g = examDraft.redFlags;
+    if (g.nightPain) {
+      redFlags.push({
+        questionId: GENERIC_RED_FLAG_META.nightPain.id,
+        regionKey: "general",
+        label: GENERIC_RED_FLAG_META.nightPain.label,
+        isRedFlag: GENERIC_RED_FLAG_META.nightPain.isRedFlag,
+        source: "generic",
+      });
+    }
+    if (g.weightLoss) {
+      redFlags.push({
+        questionId: GENERIC_RED_FLAG_META.weightLoss.id,
+        regionKey: "general",
+        label: GENERIC_RED_FLAG_META.weightLoss.label,
+        isRedFlag: GENERIC_RED_FLAG_META.weightLoss.isRedFlag,
+        source: "generic",
+      });
+    }
+    if (g.neuroBowelBladder) {
+      redFlags.push({
+        questionId: GENERIC_RED_FLAG_META.neuroBowelBladder.id,
+        regionKey: "general",
+        label: GENERIC_RED_FLAG_META.neuroBowelBladder.label,
+        isRedFlag: GENERIC_RED_FLAG_META.neuroBowelBladder.isRedFlag,
+        source: "generic",
+      });
+    }
+    const qs = getScreeningQuestionsForRegion(screeningRegion);
+    for (const q of qs) {
+      if (screeningAnswers[q.id]) {
+        redFlags.push({
+          questionId: q.id,
+          regionKey: screeningRegion ?? "unknown",
+          label: q.text,
+          isRedFlag: q.isRedFlag,
+          source: "screening",
+        });
+      }
+    }
+    setFormData((prev) => {
+      const a = JSON.stringify(prev.step1.redFlags);
+      const b = JSON.stringify(redFlags);
+      if (a === b) return prev;
+      return { ...prev, step1: { redFlags } };
+    });
+  }, [examDraft.redFlags, screeningAnswers, screeningRegion]);
 
   /** Step4 구조 → formData.step4 JSON (분석 전에도 서버와 동일 스냅샷 유지) */
   useEffect(() => {
@@ -675,6 +754,10 @@ function RedFlagMentor() {
       ...prev,
       redFlags: { ...prev.redFlags, [key]: !prev.redFlags[key] },
     }));
+  };
+
+  const toggleScreeningQuestion = (questionId: string) => {
+    setScreeningAnswers((prev) => ({ ...prev, [questionId]: !prev[questionId] }));
   };
 
   const handleSpecialTestToggle = (testName: string, value: SpecialTestValue) => {
@@ -1156,8 +1239,80 @@ function RedFlagMentor() {
                         </div>
                       </div>
 
-                      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                        <p className="mb-2 text-xs font-bold uppercase text-rose-600">5. 레드플래그 스크리닝 (Red Flag Screening)</p>
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-bold uppercase text-slate-500">
+                            5. 부위별 특이 문진 (Region-specific screening)
+                          </p>
+                          {screeningRegion ? (
+                            <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 ring-1 ring-indigo-100">
+                              {screeningRegion === "neck" || screeningRegion === "lumbar" ? "Spine 그룹" : "Joint 그룹"} ·{" "}
+                              {screeningRegion}
+                            </span>
+                          ) : null}
+                        </div>
+                        {!formData.diagnosisArea.trim() ? (
+                          <p className="text-sm italic text-slate-400">
+                            상단에서 진단 부위를 선택하면 해당 부위에 맞는 특이 질문이 나타납니다.
+                          </p>
+                        ) : !screeningRegion ? (
+                          <p className="text-sm text-amber-700">
+                            선택한 부위에 대한 스크리닝 템플릿이 없습니다. 일반 레드플래그 항목을 이용해 주세요.
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            {getScreeningQuestionsForRegion(screeningRegion).map((q) => {
+                              const on = Boolean(screeningAnswers[q.id]);
+                              const rf = q.isRedFlag;
+                              return (
+                                <button
+                                  key={q.id}
+                                  type="button"
+                                  onClick={() => toggleScreeningQuestion(q.id)}
+                                  className={`flex gap-2 rounded-xl border-2 p-3 text-left text-sm font-medium leading-snug transition ${
+                                    rf
+                                      ? on
+                                        ? "border-rose-500 bg-rose-50 text-rose-950 ring-2 ring-rose-200"
+                                        : "border-rose-200 bg-rose-50/50 text-slate-800 hover:border-rose-400"
+                                      : on
+                                        ? "border-blue-400 bg-blue-50 text-blue-950"
+                                        : "border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300"
+                                  }`}
+                                >
+                                  {rf ? (
+                                    <AlertTriangle
+                                      className="mt-0.5 h-5 w-5 shrink-0 text-rose-600"
+                                      aria-hidden
+                                    />
+                                  ) : (
+                                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-400" aria-hidden />
+                                  )}
+                                  <span className="min-w-0 flex-1">
+                                    {rf && (
+                                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                                        Red Flag 의심
+                                      </span>
+                                    )}
+                                    {q.text}
+                                    <span className="mt-2 block text-[10px] font-bold text-slate-500">
+                                      {on ? "예 · 해당됨" : "아니오 · 해당 없음 (탭하여 변경)"}
+                                    </span>
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border-2 border-rose-200 bg-rose-50/90 p-4 shadow-sm ring-1 ring-rose-100">
+                        <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase text-rose-700">
+                          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+                          6. 전신 레드플래그 스크리닝 (Systemic Red Flags)
+                        </p>
+                        <p className="mb-3 text-[11px] text-rose-800/90">
+                          악성·감염·전신 질환 감별에 필요한 항목입니다. 해당 시 반드시 표시해 주세요.
+                        </p>
                         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                           {[
                             ["nightPain", "야간통(Night Pain)"],
@@ -1168,14 +1323,17 @@ function RedFlagMentor() {
                               key={key}
                               type="button"
                               onClick={() => handleRedFlagToggle(key as keyof ExamDraft["redFlags"])}
-                              className={`flex items-center justify-between rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                              className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${
                                 examDraft.redFlags[key as keyof ExamDraft["redFlags"]]
-                                  ? "border-rose-300 bg-rose-100 text-rose-700"
-                                  : "border-rose-200 bg-white text-slate-600"
+                                  ? "border-rose-500 bg-rose-100 text-rose-900 ring-2 ring-rose-200"
+                                  : "border-rose-200 bg-white text-slate-600 hover:border-rose-300"
                               }`}
                             >
-                              <span>{label}</span>
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px]">
+                              <span className="flex items-center gap-1.5 text-left">
+                                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-600 opacity-80" aria-hidden />
+                                {label}
+                              </span>
+                              <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] text-rose-800 ring-1 ring-rose-100">
                                 {examDraft.redFlags[key as keyof ExamDraft["redFlags"]] ? "ON" : "OFF"}
                               </span>
                             </button>
@@ -1184,7 +1342,7 @@ function RedFlagMentor() {
                       </div>
 
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <label className="mb-2 block text-xs font-bold uppercase text-slate-500">6. 기타 메모 (Other Notes)</label>
+                        <label className="mb-2 block text-xs font-bold uppercase text-slate-500">7. 기타 메모 (Other Notes)</label>
                         <textarea
                           value={examDraft.otherNotes}
                           onChange={(e) => handleExamDraftChange({ otherNotes: e.target.value })}
@@ -1340,6 +1498,36 @@ function RedFlagMentor() {
                         <p className="mb-4 text-xs text-slate-500">
                           입력하신 객관적 점수는 AI의 치료 예후(Prognosis) 예측에 활용됩니다.
                         </p>
+
+                        <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-bold text-blue-900">전문 기능 평가 (Outcome Measure)</h4>
+                            <p className="text-xs text-blue-600">
+                              현재 선택 부위: {formData.diagnosisArea.trim() || "미선택"}
+                            </p>
+                            {formData.step2 ? (
+                              <p className="mt-2 rounded-lg border border-blue-100/80 bg-white/90 px-3 py-2 text-xs text-slate-800 shadow-sm">
+                                <span className="font-bold text-blue-700">
+                                  {formData.step2.measureName}: {formData.step2.functionalScore}%
+                                </span>
+                                <span className="mt-0.5 block text-slate-600">{formData.step2.functionalComment}</span>
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                문항 선택만으로 점수·해석이 자동 산출되어 Step2에 저장됩니다.
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setMeasureModalOpen(true)}
+                            disabled={!formData.diagnosisArea.trim()}
+                            className="flex shrink-0 items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <ClipboardCheck className="h-[18px] w-[18px]" aria-hidden />
+                            척도 평가 시작
+                          </button>
+                        </div>
 
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                           {formData.diagnosisArea && selectedOutcomeOptions.length > 0 ? (
@@ -1916,6 +2104,14 @@ function RedFlagMentor() {
               : null
           }
           isLoading={isLoading}
+        />
+        <MeasureModal
+          open={measureModalOpen}
+          onClose={() => setMeasureModalOpen(false)}
+          diagnosisArea={formData.diagnosisArea}
+          onApply={(payload) => {
+            setFormData((prev) => ({ ...prev, step2: payload }));
+          }}
         />
       </div>
     </div>
