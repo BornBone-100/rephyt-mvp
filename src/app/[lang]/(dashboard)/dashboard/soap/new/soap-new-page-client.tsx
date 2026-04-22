@@ -586,6 +586,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const [isLoading, setIsLoading] = useState(false);
   const [reportResult, setReportResult] = useState<RedFlagResult | null>(null);
   const [evaluationResult, setEvaluationResult] = useState<RedFlagResult | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error" | "duplicated">("idle");
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [patients, setPatients] = useState<Patient[]>(MOCK_PATIENTS);
   const [patientsLoading, setPatientsLoading] = useState(true);
 
@@ -965,6 +967,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       }
       setReportResult(data);
       setEvaluationResult(data);
+      setSaveStatus(data.auxiliaryError?.stage === "db_log" ? "idle" : "saved");
+      setSaveErrorMessage(null);
       if (typeof window !== "undefined" && formData.patientId) {
         const cautionLines =
           data.cpgCompliance
@@ -988,20 +992,40 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     }
   };
 
-  const sendFeedback = async (feedbackType: "true_positive" | "false_positive" | "false_negative") => {
-    if (!evaluationResult?.detectionMeta) return;
+  const handleSaveDiagnosisRecord = async () => {
+    if (!reportResult || !formData.patientId) return;
+    setSaveStatus("saving");
+    setSaveErrorMessage(null);
     try {
-      await fetch("/api/cdss-guardrail/feedback", {
+      const res = await fetch("/api/cdss-guardrail/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          feedbackType,
-          detectedConditionId: evaluationResult.detectionMeta.conditionId,
-          matchedAliases: evaluationResult.detectionMeta.matchedAliases,
+          patientId: formData.patientId,
+          diagnosisArea: formData.diagnosisArea,
+          locale,
+          language: formData.language,
+          result: reportResult,
         }),
       });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; duplicated?: boolean };
+      if (!res.ok) {
+        throw new Error(body.error || t.dashSaveRecordError);
+      }
+      if (body.duplicated) {
+        setSaveStatus("duplicated");
+        alert(t.dashSaveRecordAlready);
+        return;
+      }
+      setSaveStatus("saved");
+      alert(t.dashSaveRecordSaved);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: formData.patientId } }));
+      }
     } catch (error) {
-      console.error(error);
+      const message = error instanceof Error ? error.message : t.dashSaveRecordError;
+      setSaveStatus("error");
+      setSaveErrorMessage(message);
     }
   };
 
@@ -2205,29 +2229,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                     >
                       의뢰 완료 및 새 케이스 스크리닝
                     </button>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void sendFeedback("true_positive")}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                      >
-                        판정 정확
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void sendFeedback("false_positive")}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                      >
-                        오탐
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void sendFeedback("false_negative")}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                      >
-                        미탐
-                      </button>
-                    </div>
                   </div>
                 </div>
               ) : (
@@ -2242,29 +2243,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                   >
                     새로 검증하기
                   </button>
-                  <div className="mx-auto mt-4 grid max-w-sm grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void sendFeedback("true_positive")}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                    >
-                      판정 정확
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void sendFeedback("false_positive")}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                    >
-                      오탐
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void sendFeedback("false_negative")}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                    >
-                      미탐
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
@@ -2306,6 +2284,10 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
               : null
           }
           isLoading={isLoading}
+          onSaveRecord={() => void handleSaveDiagnosisRecord()}
+          onRetrySave={() => void handleSaveDiagnosisRecord()}
+          saveStatus={saveStatus}
+          saveErrorMessage={saveErrorMessage}
         />
         <MeasureModal
           open={measureModalOpen}

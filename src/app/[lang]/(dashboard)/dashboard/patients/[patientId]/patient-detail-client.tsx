@@ -223,6 +223,7 @@ export function PatientDetailClient({ dict }: Props) {
   const pd = dict.dashboard.patients;
   const params = useParams();
   const lang = params.lang as string;
+  const isEnglish = lang === "en";
   const base = `/${lang}`;
   const patientId = params.patientId as string;
   const supabase = useMemo(() => createClient(), []);
@@ -353,6 +354,19 @@ export function PatientDetailClient({ dict }: Props) {
       void supabase.removeChannel(channel);
     };
   }, [fetchTimelineLogs, patientId, supabase]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{ patientId?: string }>;
+      if (custom.detail?.patientId && custom.detail.patientId !== patientId) return;
+      void fetchTimelineLogs();
+    };
+    window.addEventListener("rephyt:timeline-log-saved", handler);
+    return () => {
+      window.removeEventListener("rephyt:timeline-log-saved", handler);
+    };
+  }, [fetchTimelineLogs, patientId]);
 
   const latestSoap = soapNotes[0] ?? null;
   const autoPlanPrefill = useMemo(() => formatPlanToTreatmentLog(latestSoap?.plan ?? null), [latestSoap?.plan]);
@@ -595,7 +609,7 @@ export function PatientDetailClient({ dict }: Props) {
           onClick={() => setActiveTab("soap")} 
           className={`pb-4 text-lg font-black transition-all ${activeTab === "soap" ? "text-blue-950 border-b-4 border-blue-950" : "text-zinc-400 hover:text-zinc-600"}`}
         >
-          🧠 진단 기록 (SOAP)
+          🧠 {isEnglish ? "Screening Report" : "스크리닝 리포트"}
         </button>
         <button 
           onClick={() => setActiveTab("treatment")} 

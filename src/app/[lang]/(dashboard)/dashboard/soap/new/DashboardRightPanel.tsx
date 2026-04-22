@@ -1,6 +1,16 @@
 "use client";
 
-import { AlertTriangle, BookOpen, Link2, Shield, Siren, Sparkles, TrendingUp } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  Database,
+  Link2,
+  Shield,
+  Siren,
+  Sparkles,
+  TrendingUp,
+} from "lucide-react";
 import { soapWizardCopy, type SoapLocale } from "./soap-copy";
 
 type LogicChainAudit = {
@@ -47,6 +57,10 @@ type Props = {
   result?: FinalReportResult | null;
   isLoading?: boolean;
   locale?: SoapLocale;
+  onSaveRecord?: () => void;
+  onRetrySave?: () => void;
+  saveStatus?: "idle" | "saving" | "saved" | "error" | "duplicated";
+  saveErrorMessage?: string | null;
 };
 
 function levelBadge(level: "green" | "yellow" | "red") {
@@ -55,7 +69,21 @@ function levelBadge(level: "green" | "yellow" | "red") {
   return "bg-rose-100 text-rose-700 border-rose-200";
 }
 
-function ReportBody({ data, locale }: { data: FinalReportResult; locale: SoapLocale }) {
+function ReportBody({
+  data,
+  locale,
+  onSaveRecord,
+  onRetrySave,
+  saveStatus = "idle",
+  saveErrorMessage = null,
+}: {
+  data: FinalReportResult;
+  locale: SoapLocale;
+  onSaveRecord?: () => void;
+  onRetrySave?: () => void;
+  saveStatus?: "idle" | "saving" | "saved" | "error" | "duplicated";
+  saveErrorMessage?: string | null;
+}) {
   const ui = soapWizardCopy(locale);
   const score = Math.max(0, Math.min(100, data.overallScore));
   const defenseScore = Math.max(0, Math.min(100, data.auditDefense.defenseScore));
@@ -75,104 +103,158 @@ function ReportBody({ data, locale }: { data: FinalReportResult; locale: SoapLoc
 
   return (
     <div className="space-y-4">
-      {data.hasRedFlag ? (
-        <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-5 shadow-sm">
-          <h3 className="flex items-center gap-2 text-sm font-black text-rose-700">
-            <Siren className="h-4 w-4" /> {ui.referralPriority}
-          </h3>
-          <p className="mt-2 text-sm font-bold text-slate-700">
-            {data.criticalAlert?.suspectedCondition ?? ui.dashReferralFallback}
-          </p>
-        </div>
-      ) : null}
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-sm font-bold text-slate-700">{ui.dashOverallScore}</h2>
-        <div className="mt-4 flex items-center justify-center">
-          <div className="relative flex h-36 w-36 items-center justify-center rounded-full p-2" style={gaugeBg}>
-            <div className="flex h-full w-full items-center justify-center rounded-full bg-white">
-              <div className="text-center">
-                <p className="text-3xl font-black text-blue-700">{score}</p>
-                <p className="text-xs font-semibold text-slate-400">/ 100</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className={`rounded-2xl border p-5 shadow-sm ${logicTone}`}>
-        <h3 className="flex items-center gap-2 text-sm font-black">
-          <Link2 className="h-4 w-4" /> {ui.dashLogicAudit}
-        </h3>
-        <p className="mt-3 text-sm leading-relaxed">{data.logicChainAudit.feedback}</p>
-        {data.logicChainAudit.missingLinks.length > 0 ? (
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-xs">
-            {data.logicChainAudit.missingLinks.map((item, idx) => (
-              <li key={`${item}-${idx}`}>{item}</li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="flex items-center gap-2 text-sm font-black text-slate-700">
-          <BookOpen className="h-4 w-4 text-blue-600" /> {ui.dashCpgCompliance}
-        </h3>
-        <div className="mt-4 space-y-3">
-          {data.cpgCompliance.map((item, idx) => (
-            <div key={`${item.intervention}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-bold text-slate-700">{item.intervention}</p>
-                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase ${levelBadge(item.level)}`}>
-                  {item.level}
-                </span>
-              </div>
-              <p className="mt-2 text-xs leading-relaxed text-slate-600">{item.reasoning}</p>
-              {item.level !== "green" && item.alternative ? (
-                <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-2 text-xs font-semibold text-blue-700">
-                  💡 {item.alternative}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <div className="space-y-4 xl:col-span-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-sm font-bold text-slate-700">{ui.dashOverallScore}</h2>
+            <div className="mt-4 flex items-center justify-center">
+              <div className="relative flex h-36 w-36 items-center justify-center rounded-full p-2" style={gaugeBg}>
+                <div className="flex h-full w-full items-center justify-center rounded-full bg-white">
+                  <div className="text-center">
+                    <p className="text-3xl font-black text-blue-700">{score}</p>
+                    <p className="text-xs font-semibold text-slate-400">/ 100</p>
+                  </div>
                 </div>
-              ) : null}
+              </div>
             </div>
-          ))}
+          </div>
+
+          <div className={`rounded-2xl border p-5 shadow-sm ${logicTone}`}>
+            <h3 className="flex items-center gap-2 text-sm font-black">
+              <Link2 className="h-4 w-4" /> {ui.dashLogicAudit}
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed">{data.logicChainAudit.feedback}</p>
+            {data.logicChainAudit.missingLinks.length > 0 ? (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-xs">
+                {data.logicChainAudit.missingLinks.map((item, idx) => (
+                  <li key={`${item}-${idx}`}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="flex items-center gap-2 text-sm font-black text-slate-700">
+              <BookOpen className="h-4 w-4 text-blue-600" /> {ui.dashCpgCompliance}
+            </h3>
+            <div className="mt-4 space-y-3">
+              {data.cpgCompliance.map((item, idx) => (
+                <div key={`${item.intervention}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-bold text-slate-700">{item.intervention}</p>
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase ${levelBadge(item.level)}`}
+                    >
+                      {item.level}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-600">{item.reasoning}</p>
+                  {item.level !== "green" && item.alternative ? (
+                    <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-2 text-xs font-semibold text-blue-700">
+                      💡 {item.alternative}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={`rounded-2xl border p-5 shadow-sm ${riskTone}`}>
+            <h3 className="flex items-center gap-2 text-sm font-black">
+              <Shield className="h-4 w-4" /> {ui.dashAuditDefense}
+            </h3>
+            <p className="mt-2 text-sm">{data.auditDefense.feedback}</p>
+            <div className="mt-3">
+              <div className="mb-1 flex items-center justify-between text-xs font-bold">
+                <span>{ui.dashDefenseScore}</span>
+                <span>{defenseScore}/100</span>
+              </div>
+              <div className="h-2.5 w-full rounded-full bg-white/70">
+                <div className="h-2.5 rounded-full bg-emerald-500" style={{ width: `${defenseScore}%` }} />
+              </div>
+            </div>
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700">
+              <p className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">{ui.dashImprovement}</p>
+              {data.auditDefense.improvementTip}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="flex items-center gap-2 text-sm font-black text-slate-700">
+              <TrendingUp className="h-4 w-4 text-emerald-600" /> {ui.dashTrajectory}
+            </h3>
+            <div className="mt-3 flex items-start gap-4">
+              <div className="rounded-xl bg-emerald-50 px-4 py-3 text-center">
+                <p className="text-3xl font-black text-emerald-700">{data.predictiveTrajectory.estimatedWeeks}</p>
+                <p className="text-xs font-bold text-emerald-600">{ui.dashWeeksLabel}</p>
+              </div>
+              <p className="text-sm leading-relaxed text-slate-600">{data.predictiveTrajectory.trajectoryText}</p>
+            </div>
+            {data.hasRedFlag ? (
+              <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs font-semibold text-rose-700">
+                <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+                {ui.dashRedFlagNote}
+              </div>
+            ) : null}
+          </div>
         </div>
+
+        <aside className="space-y-4 xl:col-span-1">
+          <div className={`rounded-2xl border-2 p-5 shadow-sm ${data.hasRedFlag ? "border-rose-300 bg-rose-50" : "border-emerald-300 bg-emerald-50"}`}>
+            <h3 className={`flex items-center gap-2 text-sm font-black ${data.hasRedFlag ? "text-rose-700" : "text-emerald-700"}`}>
+              <Siren className="h-4 w-4" /> {ui.dashRedFlagTitle}
+            </h3>
+            <p className="mt-2 text-sm font-bold text-slate-700">
+              {data.hasRedFlag
+                ? data.criticalAlert?.suspectedCondition ?? ui.dashReferralFallback
+                : ui.dashRedFlagBodyClear}
+            </p>
+            {data.hasRedFlag ? (
+              <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                {data.criticalAlert?.reason ?? ui.dashRedFlagBody}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-5 shadow-sm">
+            <h3 className="flex items-center gap-2 text-sm font-black text-yellow-800">
+              <AlertTriangle className="h-4 w-4" /> {ui.dashYellowFlagTitle}
+            </h3>
+            <p className="mt-2 text-xs leading-relaxed text-yellow-900">{ui.dashYellowFlagBody}</p>
+          </div>
+        </aside>
       </div>
 
-      <div className={`rounded-2xl border p-5 shadow-sm ${riskTone}`}>
-        <h3 className="flex items-center gap-2 text-sm font-black">
-          <Shield className="h-4 w-4" /> {ui.dashAuditDefense}
-        </h3>
-        <p className="mt-2 text-sm">{data.auditDefense.feedback}</p>
-        <div className="mt-3">
-          <div className="mb-1 flex items-center justify-between text-xs font-bold">
-            <span>{ui.dashDefenseScore}</span>
-            <span>{defenseScore}/100</span>
-          </div>
-          <div className="h-2.5 w-full rounded-full bg-white/70">
-            <div className="h-2.5 rounded-full bg-emerald-500" style={{ width: `${defenseScore}%` }} />
-          </div>
-        </div>
-        <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700">
-          <p className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">{ui.dashImprovement}</p>
-          {data.auditDefense.improvementTip}
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="flex items-center gap-2 text-sm font-black text-slate-700">
-          <TrendingUp className="h-4 w-4 text-emerald-600" /> {ui.dashTrajectory}
-        </h3>
-        <div className="mt-3 flex items-start gap-4">
-          <div className="rounded-xl bg-emerald-50 px-4 py-3 text-center">
-            <p className="text-3xl font-black text-emerald-700">{data.predictiveTrajectory.estimatedWeeks}</p>
-            <p className="text-xs font-bold text-emerald-600">{ui.dashWeeksLabel}</p>
-          </div>
-          <p className="text-sm leading-relaxed text-slate-600">{data.predictiveTrajectory.trajectoryText}</p>
-        </div>
-        {data.hasRedFlag ? (
-          <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs font-semibold text-rose-700">
-            <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
-            {ui.dashRedFlagNote}
+      <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={onSaveRecord}
+          disabled={saveStatus === "saving" || saveStatus === "saved" || saveStatus === "duplicated"}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-900 px-4 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {saveStatus === "saved" || saveStatus === "duplicated" ? (
+            <CheckCircle2 className="h-4 w-4" />
+          ) : (
+            <Database className="h-4 w-4" />
+          )}
+          {saveStatus === "saving"
+            ? ui.dashSaveRecordSaving
+            : saveStatus === "saved"
+              ? ui.dashSaveRecordSaved
+              : saveStatus === "duplicated"
+                ? ui.dashSaveRecordAlready
+                : ui.dashSaveRecord}
+        </button>
+        {saveStatus === "error" ? (
+          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+            <p>{saveErrorMessage || ui.dashSaveRecordError}</p>
+            <button
+              type="button"
+              onClick={onRetrySave}
+              className="mt-2 inline-flex items-center rounded-md bg-rose-600 px-3 py-1.5 font-bold text-white hover:bg-rose-500"
+            >
+              {ui.dashSaveRecordRetry}
+            </button>
           </div>
         ) : null}
       </div>
@@ -184,7 +266,15 @@ function ReportBody({ data, locale }: { data: FinalReportResult; locale: SoapLoc
   );
 }
 
-export default function FinalReportDashboard({ result, isLoading = false, locale = "ko" }: Props) {
+export default function FinalReportDashboard({
+  result,
+  isLoading = false,
+  locale = "ko",
+  onSaveRecord,
+  onRetrySave,
+  saveStatus = "idle",
+  saveErrorMessage = null,
+}: Props) {
   const ui = soapWizardCopy(locale);
   if (isLoading) {
     return (
@@ -221,7 +311,14 @@ export default function FinalReportDashboard({ result, isLoading = false, locale
 
   return (
     <div className="h-full w-full animate-in fade-in overflow-y-auto border-l border-slate-200 bg-slate-50 p-6 font-sans duration-300 lg:p-10">
-      <ReportBody data={result} locale={locale} />
+      <ReportBody
+        data={result}
+        locale={locale}
+        onSaveRecord={onSaveRecord}
+        onRetrySave={onRetrySave}
+        saveStatus={saveStatus}
+        saveErrorMessage={saveErrorMessage}
+      />
     </div>
   );
 }
