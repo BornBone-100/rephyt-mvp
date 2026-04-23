@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ClipboardList,
   Activity,
@@ -623,6 +623,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const t = soapWizardCopy(locale);
   const dataLocale: SoapDataLocale = locale === "en" ? "en" : "ko";
   const prognosisWeekOptions = locale === "en" ? PROGNOSIS_WEEKS_EN : PROGNOSIS_WEEKS_KO;
+  const router = useRouter();
   const searchParams = useSearchParams();
   const patientIdFromUrl = useMemo(() => {
     const raw = searchParams.get("patientId");
@@ -660,6 +661,10 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const effectivePatientId = useMemo(
     () => normalizePatientId(String(formData.patientId ?? "")) || patientIdFromUrl,
     [formData.patientId, patientIdFromUrl],
+  );
+  const patientDetailHref = useCallback(
+    (patientId: string) => `/${locale}/dashboard/patients/${encodeURIComponent(patientId)}`,
+    [locale],
   );
 
   useEffect(() => {
@@ -1265,6 +1270,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
             ? "Data saved. Please check the list manually."
             : "데이터가 저장되었습니다. 목록을 확인해 보세요.",
         );
+        router.refresh();
+        router.push(`${patientDetailHref(chartPatientId)}?refresh=${Date.now()}`);
         return;
       }
       console.log("🔄 [FETCH] 타임라인 다시 가져옴. 데이터 개수:", timelineRows.length);
@@ -1274,6 +1281,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: chartPatientId } }));
       }
       toast.success(locale === "en" ? "Clinical report saved." : t.dashSaveRecordSaved);
+      router.refresh();
+      router.push(`${patientDetailHref(chartPatientId)}?refresh=${Date.now()}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : t.dashSaveRecordError;
       setSaveStatus("error");
