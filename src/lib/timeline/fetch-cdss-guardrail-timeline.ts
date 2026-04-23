@@ -21,14 +21,17 @@ export async function fetchCdssTimelineRows(
   chartPatientId: string,
 ): Promise<{ rows: CdssGuardrailTimelineRow[]; error: { message: string } | null }> {
   const patientId = String(chartPatientId ?? "").trim();
-  if (!patientId || patientId === "null" || patientId === "undefined") {
+  const cleanPatientId = patientId.toLowerCase().trim();
+  if (!cleanPatientId || cleanPatientId === "null" || cleanPatientId === "undefined") {
     return { rows: [], error: { message: "invalid chartPatientId" } };
   }
+  console.log("🔍 [Fetch] 원본 환자 ID:", patientId);
+  console.log("🔍 [Fetch] 정제된 환자 ID:", cleanPatientId);
 
   const { data, error } = await supabase
     .from("cdss_guardrail_logs")
     .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, payload")
-    .eq("patient_id", patientId)
+    .eq("patient_id", cleanPatientId)
     .order("created_at", { ascending: false });
 
   if (error) {
