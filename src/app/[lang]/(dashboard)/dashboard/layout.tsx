@@ -19,11 +19,19 @@ export default async function DashboardSectionLayout({
       <DashboardSidebar
         base={base}
         labels={{
+          core: "CORE",
           home: dict.dashboard.title,
           patients: dict.dashboard.patientList,
           newSoap: dict.dashboard.newChart,
+          insights: "INSIGHTS",
+          analytics: locale === "en" ? "Clinical Analytics" : "임상 분석 통계",
+          library: locale === "en" ? "Clinical Library" : "임상 자료실",
+          communityGroup: "COMMUNITY",
           community: dict.dashboard.communityNav,
+          activity: locale === "en" ? "My Activity" : "내 활동 내역",
+          system: "SYSTEM",
           settings: dict.dashboard.settingsNav,
+          help: locale === "en" ? "Help Center" : "지원 센터",
         }}
       />
 
