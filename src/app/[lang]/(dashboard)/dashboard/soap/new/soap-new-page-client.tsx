@@ -924,15 +924,16 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       modalityEntries,
       educationHep,
     };
+    const supabasePayload = {
+      patient_id: normalizedPatientId,
+      draft_data: payload,
+      last_saved_at: now.toISOString(),
+    };
+    console.log("임시 저장 시도 Payload:", supabasePayload);
     try {
-      const { error } = await supabase.from("temp_records").upsert(
-        {
-          patient_id: normalizedPatientId,
-          draft_data: payload,
-          last_saved_at: now.toISOString(),
-        } as never,
-        { onConflict: "patient_id" },
-      );
+      const { error } = await supabase.from("temp_records").upsert(supabasePayload as never, {
+        onConflict: "patient_id",
+      });
       if (error) throw error;
       const hhmm = now.toLocaleTimeString(locale === "en" ? "en-US" : "ko-KR", {
         hour: "2-digit",
@@ -941,7 +942,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       });
       setDraftSavedAt(hhmm);
     } catch (error) {
-      console.error("temp_records upsert failed:", error);
+      console.error("Supabase 임시 저장 에러 상세:", error);
       alert(locale === "en" ? "Failed to save draft." : "임시 저장에 실패했습니다.");
     } finally {
       setIsDraftSaving(false);
