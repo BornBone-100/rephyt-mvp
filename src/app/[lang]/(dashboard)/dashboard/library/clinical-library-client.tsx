@@ -25,7 +25,7 @@ type Props = {
   items: LibraryItem[];
 };
 
-const baseCategories = ["전체", "경추", "요추", "어깨", "무릎", "신경계", "레드플래그", "CPG", "이학적검사", "프로토콜"];
+const mainFilters = ["전체", "경추", "요추", "어깨", "무릎", "신경계"] as const;
 
 function getCategoryBadgeTone(item: LibraryItem) {
   const raw = `${item.category ?? ""} ${(item.tags ?? []).join(" ")}`.toLowerCase();
@@ -46,10 +46,15 @@ function getCategoryBadgeTone(item: LibraryItem) {
 
 export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
   const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("전체");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<string[]>([]);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!userId) return;
@@ -70,14 +75,6 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
     localStorage.setItem(`rephyt:library:favorites:${userId}`, JSON.stringify(favorites));
   }, [favorites, userId]);
 
-  const categories = useMemo(() => {
-    const fromData = items
-      .map((item) => item.category?.trim())
-      .filter((v): v is string => Boolean(v));
-    const tags = items.flatMap((item) => item.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
-    return [...new Set([...baseCategories, ...fromData, ...tags])];
-  }, [items]);
-
   const filteredItems = useMemo(() => {
     const lowered = query.trim().toLowerCase();
     return items.filter((item) => {
@@ -85,8 +82,7 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
       const title = item.title ?? "";
       const content = item.content_md ?? "";
       const tags = item.tags?.join(" ") ?? "";
-      const tagMatched = (item.tags ?? []).some((tag) => tag === activeCategory);
-      const categoryOk = activeCategory === "전체" || category === activeCategory || tagMatched;
+      const categoryOk = activeCategory === "전체" || category === activeCategory;
       const searchOk =
         !lowered ||
         title.toLowerCase().includes(lowered) ||
@@ -103,7 +99,35 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
     [filteredItems, items, selectedItemId],
   );
 
+  const selectedBody = useMemo(() => {
+    if (!selectedItem) return { main: "", tip: "" };
+    const raw =
+      selectedItem.content_md ||
+      (selectedItem.summary ? `## ${selectedItem.title ?? "자료"}\n\n${selectedItem.summary}` : "콘텐츠가 준비 중입니다.");
+    const tipHeadingRegex = /^###\s*\[?3\.[^\n]*$/m;
+    const match = raw.match(tipHeadingRegex);
+    if (!match || match.index == null) return { main: raw, tip: "" };
+    return {
+      main: raw.slice(0, match.index).trim(),
+      tip: raw.slice(match.index).trim(),
+    };
+  }, [selectedItem]);
+
   const isEmpty = items.length === 0;
+
+  if (!isMounted) {
+    return (
+      <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+        <div className="h-6 w-56 animate-pulse rounded bg-slate-100" />
+        <div className="mt-3 h-4 w-80 animate-pulse rounded bg-slate-100" />
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, idx) => (
+            <div key={idx} className="h-40 animate-pulse rounded-2xl border border-slate-100 bg-slate-50" />
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -128,7 +152,7 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
             />
           </label>
           <div className="flex flex-wrap gap-2">
-            {categories.map((category) => {
+            {mainFilters.map((category) => {
               const active = activeCategory === category;
               return (
                 <button
@@ -138,7 +162,7 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
                   className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
                     active
                       ? "border-indigo-600 bg-indigo-600 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-white"
                   }`}
                 >
                   {category}
@@ -160,7 +184,7 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
         </section>
       ) : (
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredItems.map((item) => {
+          {filteredItems.map((item, index) => {
             const favorite = favorites.includes(item.id);
             const dateValue = item.updatedAt ?? item.updated_at ?? item.created_at ?? null;
             const dateLabel = dateValue ? new Date(dateValue).toLocaleDateString() : "-";
@@ -168,7 +192,7 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
             const previewSummary = item.summary || item.content_md || "요약 내용이 없습니다.";
 
             return (
-              <article key={item.id} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+              <article key={`${item.id}-${index}`} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between gap-2">
                   <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${badgeTone}`}>
                     {item.category || "분류 없음"}
@@ -191,7 +215,7 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
                 {!!item.tags?.length && (
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {item.tags.slice(0, 4).map((tag) => (
-                      <span key={`${item.id}-${tag}`} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                      <span key={`${item.id}-${tag}`} className="rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
                         #{tag}
                       </span>
                     ))}
@@ -236,12 +260,12 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
             ) : null}
 
             <div className="prose prose-slate max-w-none px-5 py-5 prose-headings:text-slate-900 prose-a:text-indigo-600">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {selectedItem.content_md ||
-                  (selectedItem.summary
-                    ? `## ${selectedItem.title ?? "자료"}\n\n${selectedItem.summary}`
-                    : "콘텐츠가 준비 중입니다.")}
-              </ReactMarkdown>
+              {selectedBody.main ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedBody.main}</ReactMarkdown> : null}
+              {selectedBody.tip ? (
+                <div className="mt-4 rounded-r-xl border-l-4 border-indigo-600 bg-indigo-50 p-4">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedBody.tip}</ReactMarkdown>
+                </div>
+              ) : null}
             </div>
 
             <div className="sticky bottom-0 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
