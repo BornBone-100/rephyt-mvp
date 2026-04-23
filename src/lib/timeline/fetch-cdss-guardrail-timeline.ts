@@ -30,7 +30,7 @@ export async function fetchCdssTimelineRows(
 
   const { data, error } = await supabase
     .from("cdss_guardrail_logs")
-    .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, payload")
+    .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, raw_ai_response")
     .eq("patient_id", cleanPatientId)
     .order("created_at", { ascending: false });
 
@@ -38,10 +38,15 @@ export async function fetchCdssTimelineRows(
     return { rows: [], error: { message: error.message } };
   }
 
-  const timelineData = (data ?? []) as Array<Omit<CdssGuardrailTimelineRow, "payload"> & { payload?: unknown }>;
+  const timelineData = (data ?? []) as Array<
+    Omit<CdssGuardrailTimelineRow, "payload"> & { raw_ai_response?: unknown }
+  >;
   const rows: CdssGuardrailTimelineRow[] = timelineData.map((row) => ({
     ...row,
-    payload: row.payload && typeof row.payload === "object" ? (row.payload as Record<string, unknown>) : null,
+    payload:
+      row.raw_ai_response && typeof row.raw_ai_response === "object"
+        ? (row.raw_ai_response as Record<string, unknown>)
+        : null,
   }));
 
   return { rows, error: null };
