@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabase } from "@/utils/supabase/server";
+
+/** 서비스 롤 등 DB 제네릭이 연결되지 않은 클라이언트와의 호환용 (createClient 반환 간 제네릭 불일치 방지) */
+export type UsageGateSupabaseAdmin = SupabaseClient<any, "public", "public", any, any>;
 
 export const FREE_TIER_MONTHLY_ANALYZE_LIMIT = 5;
 
@@ -40,7 +44,7 @@ function normalizePlanTier(raw: string | null | undefined): PlanTier {
 
 /** profiles.plan_type 우선, 없으면 plan_tier로 유료 여부 추정 */
 export async function fetchProfilePlan(
-  admin: ReturnType<typeof createClient>,
+  admin: UsageGateSupabaseAdmin,
   userId: string,
 ): Promise<{ planType: string | null; planTier: string | null }> {
   const { data, error } = await admin.from("profiles").select("plan_type, plan_tier").eq("id", userId).maybeSingle();
@@ -69,7 +73,7 @@ export function isUnlimitedPlan(planType: string | null, planTier: string | null
  * RPC 미배포·오류 시 0을 반환하고 콘솔에만 기록(개발 중 단절 방지).
  */
 export async function getMonthlyReportCountFromRpc(
-  admin: ReturnType<typeof createClient>,
+  admin: UsageGateSupabaseAdmin,
   userId: string,
 ): Promise<number> {
   const { data, error } = await admin.rpc("get_monthly_report_count", { p_user_id: userId });
@@ -95,7 +99,7 @@ export type MonthlyUsageSnapshot = {
   allowed: boolean;
 };
 
-export async function checkMonthlyUsage(admin: ReturnType<typeof createClient>, userId: string): Promise<MonthlyUsageSnapshot> {
+export async function checkMonthlyUsage(admin: UsageGateSupabaseAdmin, userId: string): Promise<MonthlyUsageSnapshot> {
   const { planType, planTier } = await fetchProfilePlan(admin, userId);
   const unlimited = isUnlimitedPlan(planType, planTier);
   const plan: PlanTier = unlimited ? "pro" : "free";
