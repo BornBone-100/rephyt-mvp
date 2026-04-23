@@ -266,6 +266,13 @@ export function PatientDetailClient({ dict }: Props) {
 
   const fetchTimelineLogs = useCallback(async () => {
     if (!normalizedPatientId || normalizedPatientId === "null" || normalizedPatientId === "undefined") return;
+    console.log(
+      "[ScreeningReportTab] cdss_guardrail_logs 쿼리 patient_id:",
+      normalizedPatientId,
+      "(useParams.patientId:",
+      patientId,
+      ")",
+    );
     setIsTimelineLogsLoading(true);
     try {
       const { data, error } = await supabase
@@ -291,7 +298,7 @@ export function PatientDetailClient({ dict }: Props) {
     } finally {
       setIsTimelineLogsLoading(false);
     }
-  }, [normalizedPatientId, supabase]);
+  }, [normalizedPatientId, patientId, supabase]);
 
   const fetchPatientAndRecords = useCallback(async () => {
     if (!patientId || patientId === "null" || patientId === "undefined") {
@@ -358,6 +365,9 @@ export function PatientDetailClient({ dict }: Props) {
       const eventPatientId = custom.detail?.patientId ? String(custom.detail.patientId).trim() : "";
       if (eventPatientId && eventPatientId !== normalizedPatientId) return;
       void fetchTimelineLogs();
+      queueMicrotask(() => {
+        void fetchTimelineLogs();
+      });
     };
     window.addEventListener("rephyt:timeline-log-saved", handler);
     return () => {
@@ -496,6 +506,10 @@ export function PatientDetailClient({ dict }: Props) {
 
   const sortedNotes = sortOrder === "desc" ? [...soapNotes] : [...soapNotes].reverse();
   const timelineCount = soapNotes.length + timelineLogs.length;
+  const screeningReportTimelineLoading =
+    isTimelineLogsLoading && soapNotes.length === 0 && timelineLogs.length === 0;
+  const screeningReportTimelineEmpty =
+    !isTimelineLogsLoading && soapNotes.length === 0 && timelineLogs.length === 0;
 
   const pastSoapShareCopy = useMemo(
     () => ({
@@ -616,7 +630,7 @@ export function PatientDetailClient({ dict }: Props) {
         </button>
       </div>
 
-      {/* 1. SOAP 진단 기록 탭 */}
+      {/* 1. 스크리닝 리포트 탭 (ScreeningReportTab: 임상 타임라인 + SOAP) */}
       {activeTab === "soap" && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="flex justify-between items-center mb-8">
@@ -632,8 +646,16 @@ export function PatientDetailClient({ dict }: Props) {
             )}
           </div>
 
-          {timelineCount === 0 ? (
-            <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 shadow-sm text-zinc-500 font-bold">아직 작성된 평가 기록이 없습니다.</div>
+          {screeningReportTimelineLoading ? (
+            <div className="rounded-3xl border border-zinc-200 bg-white p-12 text-center text-sm font-bold text-zinc-500 shadow-sm">
+              {isEnglish
+                ? "Loading clinical timeline (AI logs) and SOAP records…"
+                : "임상 타임라인(AI 분석 로그)과 SOAP 기록을 불러오는 중입니다…"}
+            </div>
+          ) : screeningReportTimelineEmpty ? (
+            <div className="rounded-3xl border border-zinc-200 bg-white p-12 text-center font-bold text-zinc-500 shadow-sm">
+              {isEnglish ? "No assessment records yet." : "아직 작성된 평가 기록이 없습니다."}
+            </div>
           ) : (
             <div className="relative pl-4 md:pl-8">
               <div className="absolute left-[11px] md:left-[27px] top-6 bottom-0 w-[2px] bg-blue-100"></div>

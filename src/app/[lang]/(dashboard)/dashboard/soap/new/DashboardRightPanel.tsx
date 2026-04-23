@@ -59,6 +59,8 @@ type Props = {
   result?: FinalReportResult | null;
   isLoading?: boolean;
   locale?: SoapLocale;
+  /** 저장 API에 실리는 patientId(폼+URL 병합값). 디버깅용 로그에 사용 */
+  savePayloadPatientId?: string | null;
   onSaveRecord?: () => void;
   onRetrySave?: () => void;
   isSaving?: boolean;
@@ -75,6 +77,7 @@ function levelBadge(level: "green" | "yellow" | "red") {
 function ReportBody({
   data,
   locale,
+  savePayloadPatientId = null,
   onSaveRecord,
   onRetrySave,
   isSaving = false,
@@ -83,6 +86,7 @@ function ReportBody({
 }: {
   data: FinalReportResult;
   locale: SoapLocale;
+  savePayloadPatientId?: string | null;
   onSaveRecord?: () => void;
   onRetrySave?: () => void;
   isSaving?: boolean;
@@ -270,7 +274,13 @@ function ReportBody({
       <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
         <button
           type="button"
-          onClick={onSaveRecord}
+          onClick={() => {
+            console.log(
+              "[FinalReportDashboard] 저장 클릭 — payload patientId(복원값):",
+              savePayloadPatientId && savePayloadPatientId.trim() ? savePayloadPatientId : "(없음)",
+            );
+            onSaveRecord?.();
+          }}
           disabled={isSaving}
           className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-900 px-4 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -292,7 +302,13 @@ function ReportBody({
             <p>{saveErrorMessage || ui.dashSaveRecordError}</p>
             <button
               type="button"
-              onClick={onRetrySave}
+              onClick={() => {
+                console.log(
+                  "[FinalReportDashboard] 재시도 저장 — payload patientId(복원값):",
+                  savePayloadPatientId && savePayloadPatientId.trim() ? savePayloadPatientId : "(없음)",
+                );
+                onRetrySave?.();
+              }}
               className="mt-2 inline-flex items-center rounded-md bg-rose-600 px-3 py-1.5 font-bold text-white hover:bg-rose-500"
             >
               {ui.dashSaveRecordRetry}
@@ -312,6 +328,7 @@ export default function FinalReportDashboard({
   result,
   isLoading = false,
   locale = "ko",
+  savePayloadPatientId = null,
   onSaveRecord,
   onRetrySave,
   isSaving = false,
@@ -357,6 +374,7 @@ export default function FinalReportDashboard({
       <ReportBody
         data={result}
         locale={locale}
+        savePayloadPatientId={savePayloadPatientId}
         onSaveRecord={onSaveRecord}
         onRetrySave={onRetrySave}
         isSaving={isSaving}

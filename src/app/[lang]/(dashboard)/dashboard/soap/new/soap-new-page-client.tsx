@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ClipboardList,
   Activity,
@@ -15,6 +16,14 @@ import {
 } from "lucide-react";
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import DashboardRightPanel from "./DashboardRightPanel";
+import {
+  ObjectiveEvaluation,
+  formatRomMmtLineForEvaluation,
+  romMmtRowHasAnyData,
+  type RomMmtBySide,
+  type RomMmtInput,
+  type Side,
+} from "./ObjectiveEvaluation";
 import { MeasureModal, type Step2OutcomePayload } from "./MeasureModal";
 import { createClient } from "@/utils/supabase/client";
 import { toast } from "sonner";
@@ -248,18 +257,7 @@ const SPECIAL_TESTS_DB: Record<string, string[]> = {
 type SpecialTestValue = "positive" | "negative" | "not_tested";
 
 
-const END_FEEL_OPTIONS = ["Normal", "Hard", "Soft", "Firm", "Empty"] as const;
-const MMT_OPTIONS = ["5", "4+", "4", "4-", "3+", "3", "3-", "2", "1", "0"] as const;
 const REHAB_POTENTIAL_OPTIONS = ["Excellent", "Good", "Fair", "Poor"] as const;
-
-type RomMmtInput = {
-  arom: string;
-  prom: string;
-  endFeel: string;
-  mmt: string;
-};
-type Side = "left" | "right";
-type RomMmtBySide = Record<Side, RomMmtInput>;
 
 type ManualTherapyEntry = {
   name: string;
@@ -616,6 +614,16 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const t = soapWizardCopy(locale);
   const dataLocale: SoapDataLocale = locale === "en" ? "en" : "ko";
   const prognosisWeekOptions = locale === "en" ? PROGNOSIS_WEEKS_EN : PROGNOSIS_WEEKS_KO;
+  const searchParams = useSearchParams();
+  const patientIdFromUrl = useMemo(() => {
+    const raw = searchParams.get("patientId");
+    if (!raw) return "";
+    try {
+      return decodeURIComponent(raw).trim();
+    } catch {
+      return raw.trim();
+    }
+  }, [searchParams]);
   const supabase = useMemo(() => createClient(), []);
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -640,6 +648,19 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     step2: null,
     step1: { redFlags: [] },
   });
+  const effectivePatientId = useMemo(
+    () => String(formData.patientId ?? "").trim() || patientIdFromUrl,
+    [formData.patientId, patientIdFromUrl],
+  );
+
+  useEffect(() => {
+    if (!patientIdFromUrl) return;
+    setFormData((prev) => {
+      if (prev.patientId.trim()) return prev;
+      return { ...prev, patientId: patientIdFromUrl };
+    });
+  }, [patientIdFromUrl]);
+
   const [examDraft, setExamDraft] = useState<ExamDraft>({
     chiefComplaint: "",
     onset: "Acute",
@@ -884,6 +905,10 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     }));
   };
 
+  const handleRomMmtReplaceRow = useCallback((movement: string, next: RomMmtBySide) => {
+    setRomMmtInputs((prev) => ({ ...prev, [movement]: next }));
+  }, []);
+
   const applyDraftPayload = (draft: TempDraftPayload) => {
     setStep(draft.step || 1);
     setFormData(draft.formData);
@@ -910,7 +935,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   };
 
   const handleDraftSave = async () => {
-    const normalizedPatientId = String(formData.patientId ?? "").trim();
+    const normalizedPatientId = effectivePatientId;
     if (!normalizedPatientId) {
       alert(locale === "en" ? "Please select a patient first." : "먼저 환자를 선택해 주세요.");
       return;
@@ -1060,14 +1085,14 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         educationHep,
       );
       const step4Json = safeJsonStringifyStep4(step4Obj);
-      const selectedPatient = patients.find((p) => p.id === formData.patientId);
+      const selectedPatient = patients.find((p) => p.id === effectivePatientId);
       const nameHints = [
         ...(selectedPatient?.name ? [selectedPatient.name] : []),
         ...MOCK_PATIENTS.map((p) => p.name),
         ...patients.map((p) => p.name),
       ];
       const payload: GuardrailPayload = {
-        patientId: formData.patientId,
+        patientId: effectivePatientId,
         diagnosisArea: formData.diagnosisArea,
         locale,
         examination: scrubClinicalTextForApi(formData.examination.trim(), nameHints),
@@ -1097,13 +1122,13 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       // 분석 완료와 저장 완료 상태를 분리: 저장은 버튼 클릭 시에만 수행
       setSaveStatus("idle");
       setSaveErrorMessage(null);
-      if (typeof window !== "undefined" && formData.patientId) {
+      if (typeof window !== "undefined" && effectivePatientId) {
         const cautionLines =
           data.cpgCompliance
             ?.filter((item) => item.level === "yellow" || item.level === "red")
             .map((item) => `${item.intervention}: ${item.reasoning}`) ?? [];
         window.localStorage.setItem(
-          `rephyt:treatment-draft:${formData.patientId}`,
+          `rephyt:treatment-draft:${effectivePatientId}`,
           JSON.stringify({
             content: treatmentText || formData.intervention.trim(),
             cautions: cautionLines,
@@ -1121,9 +1146,20 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   };
 
   const handleSaveDiagnosisRecord = async () => {
-    if (!reportResult || !formData.patientId) return;
-    const normalizedPatientId = String(formData.patientId).trim();
-    console.log("[handleSaveDiagnosisRecord] patientId:", formData.patientId, "normalized:", normalizedPatientId);
+    if (!reportResult) return;
+    const normalizedPatientId = effectivePatientId;
+    if (!normalizedPatientId) {
+      alert(locale === "en" ? "Please select a patient first." : "먼저 환자를 선택해 주세요.");
+      return;
+    }
+    console.log(
+      "[handleSaveDiagnosisRecord] formData.patientId:",
+      formData.patientId,
+      "patientIdFromUrl:",
+      patientIdFromUrl || "(없음)",
+      "effective(normalized):",
+      normalizedPatientId,
+    );
     setIsSaving(true);
     setSaveStatus("saving");
     setSaveErrorMessage(null);
@@ -1153,10 +1189,10 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         console.warn("temp_records delete failed:", deleteDraftError);
       }
       setSaveStatus("saved");
-      alert(t.dashSaveRecordSaved);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: normalizedPatientId } }));
       }
+      alert(t.dashSaveRecordSaved);
     } catch (error) {
       const message = error instanceof Error ? error.message : t.dashSaveRecordError;
       setSaveStatus("error");
@@ -1194,7 +1230,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     : null;
 
   useEffect(() => {
-    const normalizedPatientId = String(formData.patientId ?? "").trim();
+    const normalizedPatientId = effectivePatientId;
     if (!normalizedPatientId) {
       setPendingCloudDraft(null);
       setShowCloudDraftPrompt(false);
@@ -1235,7 +1271,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     return () => {
       cancelled = true;
     };
-  }, [formData.patientId, locale, supabase]);
+  }, [effectivePatientId, locale, supabase]);
 
   useEffect(() => {
     const opts = selectedDiagnosisKey ? getJosptOutcomeDb(dataLocale)[regionKey] ?? [] : [];
@@ -1252,18 +1288,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
   useEffect(() => {
     const autoRomLines = Object.entries(romMmtInputs)
-      .filter(([, row]) => {
-        const l = row.left;
-        const r = row.right;
-        return Boolean(l?.arom || l?.prom || l?.mmt || r?.arom || r?.prom || r?.mmt);
-      })
-      .map(
-        ([movement, row]) => {
-          const left = row.left ?? { arom: "", prom: "", endFeel: "Normal", mmt: "" };
-          const right = row.right ?? { arom: "", prom: "", endFeel: "Normal", mmt: "" };
-          return `${t.tagRomMmt} ${movement} | L-AROM: ${left.arom || "-"} | L-PROM: ${left.prom || "-"} | L-End Feel: ${left.endFeel || "-"} | L-MMT: ${left.mmt || "-"} | R-AROM: ${right.arom || "-"} | R-PROM: ${right.prom || "-"} | R-End Feel: ${right.endFeel || "-"} | R-MMT: ${right.mmt || "-"}`;
-        },
-      );
+      .filter(([movement, row]) => romMmtRowHasAnyData(movement, row))
+      .map(([movement, row]) => formatRomMmtLineForEvaluation(movement, row, t.tagRomMmt));
     const autoOutcomeLines = selectedOutcomeOptions
       .map((o) => {
         const score = (outcomeScores[o.id] ?? "").trim();
@@ -1763,101 +1789,13 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                        <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">ROM / PROM + End Feel + MMT (L / R)</p>
-                        <div className="space-y-3">
-                          {selectedRegionEvidence.rom.map((movement) => {
-                            const row = romMmtInputs[movement] ?? {
-                              left: { arom: "", prom: "", endFeel: "Normal", mmt: "" },
-                              right: { arom: "", prom: "", endFeel: "Normal", mmt: "" },
-                            };
-                            const endFeelTooltip = locale === "en"
-                              ? [
-                                  "Soft: Soft feel from tissue approximation (e.g., knee flexion)",
-                                  "Firm: Elastic resistance from capsule/ligament stretch (e.g., hip rotation)",
-                                  "Hard: Solid bony stop from bone-to-bone contact (e.g., elbow extension)",
-                                  "Empty: Motion stopped by pain before end-range (clinical caution)",
-                                ]
-                              : [
-                                  "Soft: 조직의 근접(Tissue approximation)으로 인한 부드러운 느낌 (예: 무릎 굴곡)",
-                                  "Firm: 관절낭이나 인대의 신장으로 인한 탄력 있는 저항감 (예: 고관절 회전)",
-                                  "Hard: 뼈와 뼈의 접촉으로 인한 단단한 멈춤 (예: 주관절 신전)",
-                                  "Empty: 통증 때문에 끝범위에 도달하기 전 환자가 저지함 (임상적 주의 필요)",
-                                ];
-                            const sideLabel = (side: Side) => (side === "left" ? "Left (L)" : "Right (R)");
-                            return (
-                              <div key={movement} className="rounded-xl border border-slate-100 bg-white p-3">
-                                <p className="mb-3 text-sm font-semibold text-slate-700">{movement}</p>
-                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                                  {(["left", "right"] as Side[]).map((side) => {
-                                    const sideRow = row[side];
-                                    return (
-                                      <div key={`${movement}-${side}`} className="rounded-lg border border-slate-200 bg-white p-3">
-                                        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">{sideLabel(side)}</p>
-                                        <div className="grid grid-cols-2 gap-2">
-                                          <input
-                                            value={sideRow.arom}
-                                            onChange={(e) => handleRomMmtChange(movement, side, { arom: e.target.value })}
-                                            placeholder="AROM"
-                                            className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
-                                          />
-                                          <input
-                                            value={sideRow.prom}
-                                            onChange={(e) => handleRomMmtChange(movement, side, { prom: e.target.value })}
-                                            placeholder="PROM"
-                                            className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
-                                          />
-                                          <div className="group relative">
-                                            <select
-                                              value={sideRow.endFeel}
-                                              onChange={(e) => handleRomMmtChange(movement, side, { endFeel: e.target.value })}
-                                              className="h-9 w-full rounded-lg border border-slate-200 px-2 pr-8 text-sm outline-none focus:border-rose-300"
-                                            >
-                                              {END_FEEL_OPTIONS.map((opt) => (
-                                                <option key={opt} value={opt}>
-                                                  {opt}
-                                                </option>
-                                              ))}
-                                            </select>
-                                            <span
-                                              className="absolute right-2 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 cursor-help items-center justify-center rounded-full border border-slate-300 bg-white text-[11px] font-bold text-slate-500"
-                                              aria-label="End Feel guide"
-                                            >
-                                              !
-                                            </span>
-                                            <div
-                                              role="tooltip"
-                                              className="pointer-events-none absolute bottom-full right-0 z-50 mb-2 w-72 translate-y-1 rounded-lg bg-slate-800 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-all duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100"
-                                            >
-                                              {endFeelTooltip.map((line) => (
-                                                <p key={line} className="mb-1 last:mb-0">
-                                                  {line}
-                                                </p>
-                                              ))}
-                                            </div>
-                                          </div>
-                                          <select
-                                            value={sideRow.mmt}
-                                            onChange={(e) => handleRomMmtChange(movement, side, { mmt: e.target.value })}
-                                            className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-rose-300"
-                                          >
-                                            <option value="">MMT</option>
-                                            {MMT_OPTIONS.map((opt) => (
-                                              <option key={opt} value={opt}>
-                                                {opt}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <ObjectiveEvaluation
+                        movements={selectedRegionEvidence.rom}
+                        romMmtInputs={romMmtInputs}
+                        onPatchSide={handleRomMmtChange}
+                        onReplaceMovementRow={handleRomMmtReplaceRow}
+                        locale={locale}
+                      />
 
                       <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                         <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800">
@@ -2499,6 +2437,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
               locale={locale}
               result={dashboardResult}
               isLoading={isLoading}
+              savePayloadPatientId={effectivePatientId || null}
               onSaveRecord={() => void handleSaveDiagnosisRecord()}
               onRetrySave={() => void handleSaveDiagnosisRecord()}
               isSaving={isSaving}
