@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   ClipboardCheck,
   Info,
+  Trash2,
 } from "lucide-react";
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import DashboardRightPanel from "./DashboardRightPanel";
@@ -256,6 +257,12 @@ const SPECIAL_TESTS_DB: Record<string, string[]> = {
 };
 
 type SpecialTestValue = "positive" | "negative" | "not_tested";
+type CustomSpecialTestResult = "양성" | "음성" | null;
+type CustomSpecialTestEntry = {
+  id: string;
+  name: string;
+  result: CustomSpecialTestResult;
+};
 
 
 const REHAB_POTENTIAL_OPTIONS = ["Excellent", "Good", "Fair", "Poor"] as const;
@@ -290,6 +297,7 @@ type TempDraftPayload = {
   formData: FormData;
   examDraft: ExamDraft;
   specialTestSelection: Record<string, SpecialTestValue>;
+  customSpecialTests: CustomSpecialTestEntry[];
   selectedTbcTags: string[];
   romMmtInputs: Record<string, RomMmtBySide>;
   outcomeScores: Record<string, string>;
@@ -326,6 +334,11 @@ type GuardrailPayload = {
   intervention: string;
   step4: string;
   language: string;
+  special_tests?: {
+    recommended: Array<{ name: string; result: "positive" | "negative" | "not_tested" }>;
+    custom: Array<{ id: string; name: string; result: "양성" | "음성" }>;
+    merged: Array<{ name: string; result: string; source: "recommended" | "custom" }>;
+  };
 };
 
 /** OpenAI 전송 전: 실명·생년월일·연락처 등 식별 가능 정보 완화 */
@@ -355,14 +368,19 @@ function resolveDiagnosisKey(raw: string): keyof typeof SPECIAL_TESTS_DB | null 
   return (v in SPECIAL_TESTS_DB ? (v as keyof typeof SPECIAL_TESTS_DB) : null);
 }
 
-function upsertSpecialTestLine(text: string, testName: string, valueLabel: string) {
-  const line = `${testName}: ${valueLabel}`;
-  const escaped = testName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`^${escaped}:.*$`, "m");
-  if (re.test(text)) {
-    return text.replace(re, line);
+function removeSpecialTestLines(text: string, testNames: string[]) {
+  let next = text;
+  for (const testName of testNames) {
+    const escaped = testName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`^${escaped}:.*\\n?`, "gm");
+    next = next.replace(re, "");
   }
-  return text.trim() ? `${text.trim()}\n${line}` : line;
+  return next
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line, idx, arr) => !(line === "" && arr[idx - 1] === ""))
+    .join("\n")
+    .trim();
 }
 
 function appendUniqueLine(text: string, line: string) {
@@ -691,6 +709,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     otherNotes: "",
   });
   const [specialTestSelection, setSpecialTestSelection] = useState<Record<string, SpecialTestValue>>({});
+  const [customSpecialTests, setCustomSpecialTests] = useState<CustomSpecialTestEntry[]>([]);
   const [selectedTbcTags, setSelectedTbcTags] = useState<string[]>([]);
   const [romMmtInputs, setRomMmtInputs] = useState<Record<string, RomMmtBySide>>({});
   const [outcomeScores, setOutcomeScores] = useState<Record<string, string>>({});
@@ -904,10 +923,29 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const handleSpecialTestToggle = (testName: string, value: SpecialTestValue) => {
     if (step !== 2) return;
     setSpecialTestSelection((prev) => ({ ...prev, [testName]: value }));
-    setFormData((prev) => ({
+  };
+
+  const addCustomSpecialTest = () => {
+    setCustomSpecialTests((prev) => [
       ...prev,
-      evaluation: upsertSpecialTestLine(prev.evaluation, testName, specialTestLabel[value]),
-    }));
+      {
+        id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: "",
+        result: null,
+      },
+    ]);
+  };
+
+  const updateCustomSpecialTestName = (id: string, name: string) => {
+    setCustomSpecialTests((prev) => prev.map((row) => (row.id === id ? { ...row, name } : row)));
+  };
+
+  const updateCustomSpecialTestResult = (id: string, result: CustomSpecialTestResult) => {
+    setCustomSpecialTests((prev) => prev.map((row) => (row.id === id ? { ...row, result } : row)));
+  };
+
+  const removeCustomSpecialTest = (id: string) => {
+    setCustomSpecialTests((prev) => prev.filter((row) => row.id !== id));
   };
 
   const handleRomMmtChange = (movement: string, side: Side, patch: Partial<RomMmtInput>) => {
@@ -936,6 +974,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     setFormData(draft.formData);
     setExamDraft(draft.examDraft);
     setSpecialTestSelection(draft.specialTestSelection ?? {});
+    setCustomSpecialTests(draft.customSpecialTests ?? []);
     setSelectedTbcTags(draft.selectedTbcTags ?? []);
     setRomMmtInputs(draft.romMmtInputs ?? {});
     setOutcomeScores(draft.outcomeScores ?? {});
@@ -971,6 +1010,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       formData,
       examDraft,
       specialTestSelection,
+      customSpecialTests,
       selectedTbcTags,
       romMmtInputs,
       outcomeScores,
@@ -1147,6 +1187,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         intervention: scrubClinicalTextForApi(treatmentText || formData.intervention.trim(), nameHints),
         step4: scrubClinicalTextForApi(step4Json, nameHints),
         language: formData.language,
+        special_tests: mergedSpecialTests,
       };
       const res = await fetch("/api/cdss-guardrail", {
         method: "POST",
@@ -1332,6 +1373,40 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const selectedIcfOptions = selectedDiagnosisKey
     ? getJosptIcfDb(dataLocale)[regionKey] ?? null
     : null;
+  const mergedSpecialTests = useMemo(() => {
+    const recommended = Object.entries(specialTestSelection)
+      .filter(([, result]) => Boolean(result))
+      .map(([name, result]) => ({
+        name: name.trim(),
+        result,
+      }))
+      .filter((row): row is { name: string; result: "positive" | "negative" | "not_tested" } => Boolean(row.name));
+
+    const custom = customSpecialTests
+      .map((row) => ({
+        id: row.id,
+        name: row.name.trim(),
+        result: row.result,
+      }))
+      .filter((row): row is { id: string; name: string; result: "양성" | "음성" } => Boolean(row.name) && Boolean(row.result));
+
+    return {
+      recommended,
+      custom,
+      merged: [
+        ...recommended.map((row) => ({
+          name: row.name,
+          result: specialTestLabel[row.result],
+          source: "recommended" as const,
+        })),
+        ...custom.map((row) => ({
+          name: row.name,
+          result: row.result,
+          source: "custom" as const,
+        })),
+      ],
+    };
+  }, [customSpecialTests, specialTestLabel, specialTestSelection]);
 
   useEffect(() => {
     const normalizedPatientId = effectivePatientId;
@@ -1431,6 +1506,26 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     t.tagIcfAct,
     t.tagIcfPart,
   ]);
+
+  useEffect(() => {
+    const trackedNames = [...recommendedTests, ...customSpecialTests.map((row) => row.name.trim()).filter(Boolean)];
+    const specialLines = [
+      ...Object.entries(specialTestSelection)
+        .filter(([, result]) => Boolean(result))
+        .map(([name, result]) => `${name}: ${specialTestLabel[result]}`),
+      ...customSpecialTests
+        .map((row) => ({ name: row.name.trim(), result: row.result }))
+        .filter((row): row is { name: string; result: "양성" | "음성" } => Boolean(row.name) && Boolean(row.result))
+        .map((row) => `${row.name}: ${row.result}`),
+    ];
+
+    setFormData((prev) => {
+      const stripped = removeSpecialTestLines(prev.evaluation, trackedNames);
+      const nextEvaluation = [...(stripped ? [stripped] : []), ...specialLines].join("\n").trim();
+      if (nextEvaluation === prev.evaluation) return prev;
+      return { ...prev, evaluation: nextEvaluation };
+    });
+  }, [customSpecialTests, recommendedTests, specialTestLabel, specialTestSelection]);
 
   useEffect(() => {
     const lines = [
@@ -1906,6 +2001,61 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                               </div>
                             );
                           })}
+                        </div>
+                        <div className="mt-3 space-y-3">
+                          <button
+                            type="button"
+                            onClick={addCustomSpecialTest}
+                            className="w-full rounded-xl border border-dashed border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-indigo-500 hover:bg-indigo-50/40"
+                          >
+                            + 추가 이학적 검사 기입
+                          </button>
+
+                          {customSpecialTests.map((row) => (
+                            <div
+                              key={row.id}
+                              className="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[minmax(0,1fr)_auto_auto]"
+                            >
+                              <input
+                                value={row.name}
+                                onChange={(e) => updateCustomSpecialTestName(row.id, e.target.value)}
+                                placeholder="검사명 입력 (예: Thessaly Test)"
+                                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                              />
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => updateCustomSpecialTestResult(row.id, "양성")}
+                                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                                    row.result === "양성"
+                                      ? "border border-indigo-200 bg-indigo-100 text-indigo-700"
+                                      : "border border-slate-200 bg-white text-slate-600 hover:bg-indigo-50"
+                                  }`}
+                                >
+                                  양성
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateCustomSpecialTestResult(row.id, "음성")}
+                                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                                    row.result === "음성"
+                                      ? "border border-indigo-200 bg-indigo-100 text-indigo-700"
+                                      : "border border-slate-200 bg-white text-slate-600 hover:bg-indigo-50"
+                                  }`}
+                                >
+                                  음성
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeCustomSpecialTest(row.id)}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+                                aria-label="추가 검사 삭제"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       </div>
 

@@ -259,11 +259,49 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
               <img src={selectedItem.image_url} alt={selectedItem.title || "clinical material"} className="h-48 w-full object-cover" />
             ) : null}
 
-            <div className="prose prose-slate max-w-none px-5 py-5 prose-headings:text-slate-900 prose-a:text-indigo-600">
-              {selectedBody.main ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedBody.main}</ReactMarkdown> : null}
+            <div className="prose prose-sm prose-indigo prose-slate max-w-none whitespace-pre-wrap leading-relaxed px-5 py-5 prose-headings:text-slate-900 prose-a:text-indigo-600">
+              {selectedBody.main ? (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h3: ({ node: _node, ...props }) => (
+                      <h3
+                        className="my-4 text-base font-bold text-slate-800"
+                        {...props}
+                      />
+                    ),
+                    blockquote: ({ node: _node, ...props }) => (
+                      <blockquote
+                        className="mt-6 border-l-4 border-indigo-600 bg-indigo-50 px-4 py-3 leading-relaxed text-slate-700"
+                        {...props}
+                      />
+                    ),
+                  }}
+                >
+                  {selectedBody.main}
+                </ReactMarkdown>
+              ) : null}
               {selectedBody.tip ? (
-                <div className="mt-4 rounded-r-xl border-l-4 border-indigo-600 bg-indigo-50 p-4">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedBody.tip}</ReactMarkdown>
+                <div className="mt-6 rounded-r-xl border-l-4 border-indigo-600 bg-indigo-50 p-4 whitespace-pre-wrap leading-relaxed">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h3: ({ node: _node, ...props }) => (
+                        <h3
+                          className="my-4 text-base font-bold text-slate-800"
+                          {...props}
+                        />
+                      ),
+                      blockquote: ({ node: _node, ...props }) => (
+                        <blockquote
+                          className="mt-6 border-l-4 border-indigo-600 bg-indigo-100 px-4 py-3 leading-relaxed text-slate-700"
+                          {...props}
+                        />
+                      ),
+                    }}
+                  >
+                    {selectedBody.tip}
+                  </ReactMarkdown>
                 </div>
               ) : null}
             </div>

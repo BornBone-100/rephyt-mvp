@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SoapLocale } from "./soap-copy";
 
 const END_FEEL_OPTIONS = ["Normal", "Hard", "Soft", "Firm", "Empty"] as const;
@@ -15,6 +15,26 @@ export type RomMmtInput = {
 
 export type Side = "left" | "right";
 export type RomMmtBySide = Record<Side, RomMmtInput>;
+type EvalSide = "Left" | "Right" | "Bilateral" | "None";
+interface ROM {
+  flex?: number;
+  ext?: number;
+  abd?: number;
+  add?: number;
+  ir?: number;
+  er?: number;
+}
+
+const BODY_PART_OPTIONS = ["경추", "흉추", "요추", "골반", "어깨", "팔꿈치", "손목", "고관절", "무릎", "발목"] as const;
+const LIMB_PARTS = new Set(["어깨", "팔꿈치", "손목", "고관절", "무릎", "발목"]);
+const ROM_FIELDS: Array<{ key: keyof ROM; label: string }> = [
+  { key: "flex", label: "굴곡 (Flexion)" },
+  { key: "ext", label: "신전 (Extension)" },
+  { key: "abd", label: "외전 (Abduction)" },
+  { key: "add", label: "내전 (Adduction)" },
+  { key: "ir", label: "내회전 (Internal Rotation)" },
+  { key: "er", label: "외회전 (External Rotation)" },
+];
 
 const DEFAULT_ROW: RomMmtInput = { arom: "", prom: "", endFeel: "Normal", mmt: "" };
 
@@ -268,6 +288,33 @@ export function ObjectiveEvaluation({
   onReplaceMovementRow,
   locale,
 }: Props) {
+  const [selectedBodyPart, setSelectedBodyPart] = useState<string>("어깨");
+  const [selectedEvalSide, setSelectedEvalSide] = useState<EvalSide>("Left");
+  const [romSingle, setRomSingle] = useState<ROM>({});
+  const [romBySide, setRomBySide] = useState<{ Left: ROM; Right: ROM }>({ Left: {}, Right: {} });
+  const isLimbPart = LIMB_PARTS.has(selectedBodyPart);
+
+  useEffect(() => {
+    if (!isLimbPart) {
+      setSelectedEvalSide("None");
+      return;
+    }
+    if (selectedEvalSide === "None") setSelectedEvalSide("Left");
+  }, [isLimbPart, selectedEvalSide]);
+
+  const updateSingleRom = (field: keyof ROM, value: string) => {
+    const next = value.trim() === "" ? undefined : Number(value);
+    setRomSingle((prev) => ({ ...prev, [field]: Number.isFinite(next as number) ? next : undefined }));
+  };
+
+  const updateSideRom = (side: "Left" | "Right", field: keyof ROM, value: string) => {
+    const next = value.trim() === "" ? undefined : Number(value);
+    setRomBySide((prev) => ({
+      ...prev,
+      [side]: { ...prev[side], [field]: Number.isFinite(next as number) ? next : undefined },
+    }));
+  };
+
   const endFeelTooltip = useMemo(
     () =>
       locale === "en"
@@ -289,38 +336,159 @@ export function ObjectiveEvaluation({
   const title =
     locale === "en" ? "ROM / PROM + End Feel + MMT" : "ROM / PROM + End Feel + MMT";
 
+  const renderRomInput = (
+    value: number | undefined,
+    onChange: (value: string) => void,
+    label: string,
+    key: string,
+  ) => (
+    <label key={key} className="space-y-1">
+      <span className="text-xs font-semibold text-slate-600">{label}</span>
+      <input
+        type="number"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="°"
+        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+      />
+    </label>
+  );
+
   return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5 sm:p-3">
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:text-xs">{title}</p>
-      <div className="space-y-2 sm:space-y-2.5">
-        {movements.map((movement) => {
-          const row = romMmtInputs[movement] ?? {
-            left: { ...DEFAULT_ROW },
-            right: { ...DEFAULT_ROW },
-          };
-          if (isSagittalNoLrMovement(movement)) {
+    <div className="space-y-3">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <h3 className="text-sm font-black tracking-wide text-slate-900">PRACTICE SAFETY & CLINICAL FILTER 입력</h3>
+
+        <div className="mt-4 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-600">부위 (Body Part)</label>
+            <select
+              value={selectedBodyPart}
+              onChange={(e) => setSelectedBodyPart(e.target.value)}
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+            >
+              {BODY_PART_OPTIONS.map((part) => (
+                <option key={part} value={part}>
+                  {part}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {isLimbPart ? (
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold text-slate-600">측별 선택</p>
+              <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white">
+                {(["Left", "Right", "Bilateral"] as const).map((side) => {
+                  const active = selectedEvalSide === side;
+                  const label = side === "Left" ? "왼쪽 (L)" : side === "Right" ? "오른쪽 (R)" : "양측 (Bilateral)";
+                  return (
+                    <button
+                      key={side}
+                      type="button"
+                      onClick={() => setSelectedEvalSide(side)}
+                      className={`px-3 py-2 text-xs font-bold transition sm:text-sm ${
+                        active
+                          ? "bg-indigo-600 text-white"
+                          : "border-l border-slate-200 bg-white text-slate-700 first:border-l-0 hover:bg-slate-50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-slate-600">가동범위 (ROM)</p>
+            {selectedEvalSide === "Bilateral" && isLimbPart ? (
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="mb-2 text-xs font-black text-slate-700">Left ROM</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {ROM_FIELDS.map((field) =>
+                      renderRomInput(
+                        romBySide.Left[field.key],
+                        (value) => updateSideRom("Left", field.key, value),
+                        field.label,
+                        `left-${field.key}`,
+                      ),
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="mb-2 text-xs font-black text-slate-700">Right ROM</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {ROM_FIELDS.map((field) =>
+                      renderRomInput(
+                        romBySide.Right[field.key],
+                        (value) => updateSideRom("Right", field.key, value),
+                        field.label,
+                        `right-${field.key}`,
+                      ),
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="mb-2 text-xs font-black text-slate-700">
+                  {isLimbPart
+                    ? selectedEvalSide === "Right"
+                      ? "Right ROM"
+                      : "Left ROM"
+                    : "중앙 ROM"}
+                </p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {ROM_FIELDS.map((field) =>
+                    renderRomInput(
+                      romSingle[field.key],
+                      (value) => updateSingleRom(field.key, value),
+                      field.label,
+                      `single-${field.key}`,
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5 sm:p-3">
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:text-xs">{title}</p>
+        <div className="space-y-2 sm:space-y-2.5">
+          {movements.map((movement) => {
+            const row = romMmtInputs[movement] ?? {
+              left: { ...DEFAULT_ROW },
+              right: { ...DEFAULT_ROW },
+            };
+            if (isSagittalNoLrMovement(movement)) {
+              return (
+                <SagittalMovementCard
+                  key={movement}
+                  movement={movement}
+                  row={row}
+                  onReplaceMovementRow={onReplaceMovementRow}
+                  endFeelTooltip={endFeelTooltip}
+                  locale={locale}
+                />
+              );
+            }
             return (
-              <SagittalMovementCard
+              <BilateralMovementCard
                 key={movement}
                 movement={movement}
                 row={row}
-                onReplaceMovementRow={onReplaceMovementRow}
-                endFeelTooltip={endFeelTooltip}
+                onPatchSide={onPatchSide}
                 locale={locale}
+                endFeelTooltip={endFeelTooltip}
               />
             );
-          }
-          return (
-            <BilateralMovementCard
-              key={movement}
-              movement={movement}
-              row={row}
-              onPatchSide={onPatchSide}
-              locale={locale}
-              endFeelTooltip={endFeelTooltip}
-            />
-          );
-        })}
+          })}
+        </div>
       </div>
     </div>
   );

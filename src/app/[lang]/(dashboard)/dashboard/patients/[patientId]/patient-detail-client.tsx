@@ -53,6 +53,13 @@ type TimelineLog = {
   payload: Record<string, unknown> | null;
 };
 
+type OriginalAssessmentSections = {
+  step1ChiefComplaint: string;
+  step2OnsetMechanism: string;
+  step3PainPatternVas: string;
+  step4AggravatingRelieving: string;
+};
+
 const MANUAL_GRADE_OPTIONS: ManualTherapyEntry["grade"][] = [
   "Grade I",
   "Grade II",
@@ -241,6 +248,97 @@ function sanitizeFileNameSegment(raw: string): string {
   return raw.replace(/[/\\?%*:|"<>]/g, "_").trim() || "timeline-report";
 }
 
+function safeText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
+function joinList(values: unknown): string {
+  if (!Array.isArray(values)) return "";
+  return values
+    .map((value) => safeText(value))
+    .filter(Boolean)
+    .join(", ");
+}
+
+function extractOriginalAssessmentData(payload: Record<string, unknown> | null): OriginalAssessmentSections {
+  if (!payload) {
+    return {
+      step1ChiefComplaint: "",
+      step2OnsetMechanism: "",
+      step3PainPatternVas: "",
+      step4AggravatingRelieving: "",
+    };
+  }
+
+  const examDraft =
+    payload.examDraft && typeof payload.examDraft === "object"
+      ? (payload.examDraft as Record<string, unknown>)
+      : null;
+  const step1 =
+    payload.step1 && typeof payload.step1 === "object"
+      ? (payload.step1 as Record<string, unknown>)
+      : null;
+  const subjective =
+    payload.subjective && typeof payload.subjective === "object"
+      ? (payload.subjective as Record<string, unknown>)
+      : null;
+
+  const chiefComplaint =
+    safeText(examDraft?.chiefComplaint) ||
+    safeText(step1?.chiefComplaint) ||
+    safeText(subjective?.chiefComplaint) ||
+    safeText(payload.chiefComplaint);
+
+  const onsetValue =
+    safeText(examDraft?.onset) ||
+    safeText(step1?.onset) ||
+    safeText(payload.onset);
+  const traumaValue =
+    safeText(examDraft?.traumaType) ||
+    safeText(step1?.traumaType) ||
+    safeText(payload.traumaType);
+  const step2OnsetMechanism = [onsetValue, traumaValue].filter(Boolean).join(" / ");
+
+  const painQualities =
+    joinList(examDraft?.painQualities) ||
+    joinList(step1?.painQualities) ||
+    joinList(payload.painQualities);
+  const vasValue =
+    safeText(examDraft?.vas) ||
+    safeText(step1?.vas) ||
+    safeText(payload.vas);
+  const step3PainPatternVas = [
+    painQualities ? `통증 양상: ${painQualities}` : "",
+    vasValue ? `VAS: ${vasValue}` : "",
+  ]
+    .filter(Boolean)
+    .join(" / ");
+
+  const aggravating =
+    safeText(examDraft?.aggravatingFactors) ||
+    safeText(step1?.aggravatingFactors) ||
+    safeText(payload.aggravatingFactors);
+  const relieving =
+    safeText(examDraft?.relievingFactors) ||
+    safeText(step1?.relievingFactors) ||
+    safeText(payload.relievingFactors);
+  const step4AggravatingRelieving = [
+    aggravating ? `악화 요인: ${aggravating}` : "",
+    relieving ? `완화 요인: ${relieving}` : "",
+  ]
+    .filter(Boolean)
+    .join(" / ");
+
+  return {
+    step1ChiefComplaint: chiefComplaint,
+    step2OnsetMechanism,
+    step3PainPatternVas,
+    step4AggravatingRelieving,
+  };
+}
+
 export function PatientDetailClient({ dict }: Props) {
   const pd = dict.dashboard.patients;
   const params = useParams();
@@ -270,6 +368,7 @@ export function PatientDetailClient({ dict }: Props) {
   const [isTimelineLogsLoading, setIsTimelineLogsLoading] = useState(false);
   const [screeningRefreshTick, setScreeningRefreshTick] = useState(0);
   const [sharingTimelineIds, setSharingTimelineIds] = useState<Record<string, boolean>>({});
+  const [originalDataModalLog, setOriginalDataModalLog] = useState<TimelineLog | null>(null);
   const isTimelineFetchInFlightRef = useRef(false);
   const lastTimelineFetchAtRef = useRef(0);
   
@@ -926,7 +1025,18 @@ export function PatientDetailClient({ dict }: Props) {
                           ) : null}
                         </aside>
                       </div>
-                      <div className="mt-4 flex justify-end gap-3 border-t border-indigo-50 pt-4">
+                      <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-indigo-50 pt-4">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOriginalDataModalLog(item);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          <span aria-hidden>📋</span>
+                          검사 원본 보기
+                        </button>
                         <SOAPExportButton
                           fileName={exportFileName}
                           label="📄 PDF 저장"
@@ -1222,6 +1332,72 @@ export function PatientDetailClient({ dict }: Props) {
           )}
         </div>
       )}
+
+      {originalDataModalLog ? (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/45 p-4"
+          onClick={() => setOriginalDataModalLog(null)}
+        >
+          <div
+            className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <h3 className="text-lg font-black text-slate-900">환자 검사 데이터 원본</h3>
+              <button
+                type="button"
+                onClick={() => setOriginalDataModalLog(null)}
+                className="rounded-lg border border-slate-200 px-2.5 py-1 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+              >
+                X
+              </button>
+            </div>
+            <div className="max-h-[70vh] space-y-3 overflow-y-auto p-5">
+              {(() => {
+                const source = extractOriginalAssessmentData(originalDataModalLog.payload);
+                const blockClass = "rounded-lg bg-slate-50 p-4";
+                const emptyClass = "text-sm text-slate-400";
+                return (
+                  <>
+                    <section className={blockClass}>
+                      <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                        Step 1. 주호소 증상 (Chief Complaint)
+                      </p>
+                      <p className={`mt-2 text-sm ${source.step1ChiefComplaint ? "text-slate-700" : emptyClass}`}>
+                        {source.step1ChiefComplaint || "입력된 데이터가 없습니다"}
+                      </p>
+                    </section>
+                    <section className={blockClass}>
+                      <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                        Step 2. 발병 시기 및 기전 (Onset & Mechanism)
+                      </p>
+                      <p className={`mt-2 text-sm ${source.step2OnsetMechanism ? "text-slate-700" : emptyClass}`}>
+                        {source.step2OnsetMechanism || "입력된 데이터가 없습니다"}
+                      </p>
+                    </section>
+                    <section className={blockClass}>
+                      <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                        Step 3. 통증 양상 및 강도 (Pain Pattern & VAS)
+                      </p>
+                      <p className={`mt-2 whitespace-pre-wrap text-sm ${source.step3PainPatternVas ? "text-slate-700" : emptyClass}`}>
+                        {source.step3PainPatternVas || "입력된 데이터가 없습니다"}
+                      </p>
+                    </section>
+                    <section className={blockClass}>
+                      <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                        Step 4. 통증 악화 및 완화 요인 (Aggravating & Relieving)
+                      </p>
+                      <p className={`mt-2 whitespace-pre-wrap text-sm ${source.step4AggravatingRelieving ? "text-slate-700" : emptyClass}`}>
+                        {source.step4AggravatingRelieving || "입력된 데이터가 없습니다"}
+                      </p>
+                    </section>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
