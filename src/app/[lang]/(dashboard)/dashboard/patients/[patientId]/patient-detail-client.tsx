@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { fetchCdssTimelineRows } from "@/lib/timeline/fetch-cdss-guardrail-timeline";
@@ -259,7 +259,8 @@ export function PatientDetailClient({ dict }: Props) {
     },
     [params.patientId],
   );
-  const supabase = useMemo(() => createClient(), []);
+  const supabaseRef = useRef(createClient());
+  const supabase = supabaseRef.current;
   const localeApi = lang === "en" ? "en" : "ko";
 
   const [patient, setPatient] = useState<Tables<"patients"> | null>(null);
@@ -269,6 +270,8 @@ export function PatientDetailClient({ dict }: Props) {
   const [isTimelineLogsLoading, setIsTimelineLogsLoading] = useState(false);
   const [screeningRefreshTick, setScreeningRefreshTick] = useState(0);
   const [sharingTimelineIds, setSharingTimelineIds] = useState<Record<string, boolean>>({});
+  const isTimelineFetchInFlightRef = useRef(false);
+  const lastTimelineFetchAtRef = useRef(0);
   
   const [isLoading, setIsLoading] = useState(true);
   
@@ -298,8 +301,13 @@ export function PatientDetailClient({ dict }: Props) {
   const [modalityEntries, setModalityEntries] = useState<ModalityEntry[]>([]);
   const [educationHep, setEducationHep] = useState("");
 
-  const fetchTimelineLogs = useCallback(async () => {
+  const fetchTimelineLogs = useCallback(async (force = false) => {
     if (!chartPatientId || chartPatientId === "null" || chartPatientId === "undefined") return;
+    if (isTimelineFetchInFlightRef.current) return;
+    const now = Date.now();
+    if (!force && now - lastTimelineFetchAtRef.current < 300) return;
+    lastTimelineFetchAtRef.current = now;
+    isTimelineFetchInFlightRef.current = true;
     setIsTimelineLogsLoading(true);
     try {
       const { rows, error } = await fetchCdssTimelineRows(supabase, chartPatientId);
@@ -315,6 +323,7 @@ export function PatientDetailClient({ dict }: Props) {
       console.error("Fetch Error:", error);
       setTimelineLogs([]);
     } finally {
+      isTimelineFetchInFlightRef.current = false;
       setIsTimelineLogsLoading(false);
     }
   }, [chartPatientId, supabase]);
@@ -351,8 +360,9 @@ export function PatientDetailClient({ dict }: Props) {
   }, [chartPatientId, supabase]);
 
   useEffect(() => {
+    if (!chartPatientId || chartPatientId === "null" || chartPatientId === "undefined") return;
     void fetchPatientAndRecords();
-    void fetchTimelineLogs();
+    void fetchTimelineLogs(true);
   }, [chartPatientId, fetchPatientAndRecords, fetchTimelineLogs]);
 
   useEffect(() => {
@@ -371,7 +381,7 @@ export function PatientDetailClient({ dict }: Props) {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [fetchTimelineLogs, chartPatientId, supabase]);
+  }, [fetchTimelineLogs, chartPatientId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -381,8 +391,7 @@ export function PatientDetailClient({ dict }: Props) {
         ? normalizePatientId(String(custom.detail.patientId))
         : "";
       if (eventPatientId && eventPatientId !== chartPatientId) return;
-      setScreeningRefreshTick((prev) => prev + 1);
-      await fetchTimelineLogs();
+      await fetchTimelineLogs(true);
     };
     window.addEventListener("rephyt:timeline-log-saved", handler);
     return () => {

@@ -620,7 +620,7 @@ function outcomeMeasureChipLabel(outcomeId: string): string {
 }
 
 function RedFlagMentor({ locale }: { locale: SoapLocale }) {
-  const t = soapWizardCopy(locale);
+  const t = useMemo(() => soapWizardCopy(locale), [locale]);
   const dataLocale: SoapDataLocale = locale === "en" ? "en" : "ko";
   const prognosisWeekOptions = locale === "en" ? PROGNOSIS_WEEKS_EN : PROGNOSIS_WEEKS_KO;
   const router = useRouter();
@@ -1409,11 +1409,29 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       ...icfSelection.participation.map((item) => `${t.tagIcfPart} ${item}`),
     ];
     const autoLines = [...autoRomLines, ...autoOutcomeLines, ...autoTbcLines, ...autoIcfLines];
-    setFormData((prev) => ({
-      ...prev,
-      evaluation: upsertAutoObjectiveBlock(prev.evaluation, autoLines),
-    }));
-  }, [icfSelection, outcomeScores, romMmtInputs, selectedOutcomeOptions, selectedTbcTags, t]);
+    setFormData((prev) => {
+      const newEvaluation = upsertAutoObjectiveBlock(prev.evaluation, autoLines);
+      if (JSON.stringify(prev.evaluation) === JSON.stringify(newEvaluation)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        evaluation: newEvaluation,
+      };
+    });
+  }, [
+    icfSelection,
+    outcomeScores,
+    romMmtInputs,
+    selectedOutcomeOptions,
+    selectedTbcTags,
+    t.tagRomMmt,
+    t.tagOutcome,
+    t.tagTbc,
+    t.tagIcfBf,
+    t.tagIcfAct,
+    t.tagIcfPart,
+  ]);
 
   useEffect(() => {
     const lines = [
