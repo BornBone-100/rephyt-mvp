@@ -22,9 +22,23 @@ type Props = {
 
 const READ_MORE_THRESHOLD = 140;
 
+function getPostAuthorId(post: CommunityPost): string | null {
+  const p = post as unknown as { user_id?: unknown; author_id?: unknown };
+  if (typeof p.user_id === "string" && p.user_id.trim()) return p.user_id;
+  if (typeof p.author_id === "string" && p.author_id.trim()) return p.author_id;
+  return null;
+}
+
 function previewText(content: CommunityPost["content"]): string {
   const pickFromObject = (obj: Record<string, unknown>): string => {
-    const chunk = obj.assessment ?? obj.anonymized_subjective ?? obj.subjective ?? obj.objective ?? obj.plan;
+    const chunk =
+      obj.body ??
+      obj.text ??
+      obj.assessment ??
+      obj.anonymized_subjective ??
+      obj.subjective ??
+      obj.objective ??
+      obj.plan;
     return typeof chunk === "string" ? chunk.trim() : "";
   };
 
@@ -196,6 +210,7 @@ function FeedPostCard({
 
 export function CommunityFeedClient({ dict, lang }: Props) {
   const d = dict.dashboard.community;
+  const isEnglish = lang === "en";
   const dateLocale = lang === "en" ? enUS : ko;
   const supabase = useMemo(() => createSupabaseClient(), []);
 
@@ -207,6 +222,8 @@ export function CommunityFeedClient({ dict, lang }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [expandedById, setExpandedById] = useState<Record<string, boolean>>({});
+  const [draftText, setDraftText] = useState("");
+  const [isPosting, setIsPosting] = useState(false);
 
   const pageRef = useRef(1);
   const loadingRef = useRef(false);
@@ -326,6 +343,37 @@ export function CommunityFeedClient({ dict, lang }: Props) {
     }
   }, [inView, initialLoading, appendNext]);
 
+  const handleCreatePost = useCallback(async () => {
+    const text = draftText.trim();
+    if (!text) {
+      alert(isEnglish ? "Please enter content." : "게시글 내용을 입력해 주세요.");
+      return;
+    }
+    if (!currentUserId) {
+      alert(isEnglish ? "Login is required." : "로그인이 필요합니다.");
+      return;
+    }
+    setIsPosting(true);
+    try {
+      const res = await fetch("/api/community/post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = (await res.json()) as { success?: boolean; message?: string; post?: CommunityPost };
+      if (!res.ok || !data.success || !data.post) {
+        alert(data.message ?? (isEnglish ? "Failed to save post." : "게시글 저장에 실패했습니다."));
+        return;
+      }
+      setPosts((prev) => [data.post as CommunityPost, ...prev]);
+      setDraftText("");
+    } catch {
+      alert(isEnglish ? "Failed to save post." : "게시글 저장에 실패했습니다.");
+    } finally {
+      setIsPosting(false);
+    }
+  }, [currentUserId, draftText, isEnglish]);
+
   return (
     <div className="mx-auto min-h-screen max-w-lg bg-gradient-to-b from-zinc-100 via-zinc-50 to-white pb-24">
       <header className="sticky top-0 z-20 flex border-b border-zinc-200/80 bg-white/85 px-1 text-center text-[15px] font-semibold shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/70">
@@ -355,6 +403,27 @@ export function CommunityFeedClient({ dict, lang }: Props) {
         </button>
       </header>
 
+      <section className="border-b border-zinc-200/80 bg-white/80 px-3 py-3 sm:px-4">
+        <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
+          <textarea
+            value={draftText}
+            onChange={(e) => setDraftText(e.target.value)}
+            placeholder={isEnglish ? "Share your clinical insight..." : "임상 인사이트를 자유롭게 작성해 보세요."}
+            className="min-h-[88px] w-full resize-y rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+          />
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleCreatePost()}
+              disabled={isPosting || !draftText.trim()}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isPosting ? (isEnglish ? "Posting..." : "게시 중...") : isEnglish ? "Post" : "게시하기"}
+            </button>
+          </div>
+        </div>
+      </section>
+
       {initialLoading ? (
         <div className="flex flex-col items-center gap-3 px-4 py-16">
           <div className="h-9 w-9 animate-spin rounded-full border-2 border-zinc-200 border-t-indigo-600" aria-hidden />
@@ -378,7 +447,7 @@ export function CommunityFeedClient({ dict, lang }: Props) {
                     [post.id]: !prev[post.id],
                   }))
                 }
-                canDelete={currentUserId != null && post.user_id === currentUserId}
+                canDelete={currentUserId != null && getPostAuthorId(post) === currentUserId}
                 deleting={deletingPostId === post.id}
                 onDelete={() => {
                   if (!window.confirm("이 케이스를 커뮤니티에서 정말 삭제하시겠습니까?")) return;
