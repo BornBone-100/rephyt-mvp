@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 type SaveRequest = {
   patientId?: string;
+  userId?: string;
   diagnosisArea?: string;
   locale?: string;
   language?: string;
@@ -27,6 +28,7 @@ type SaveRequest = {
 const TABLE = "cdss_guardrail_logs";
 const ALLOWED_COLUMNS = [
   "patient_id",
+  "user_id",
   "diagnosis_area",
   "overall_score",
   "clinical_reasoning",
@@ -88,6 +90,7 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as SaveRequest;
     const patientId = String(body.patientId ?? "").trim();
+    const userId = String(body.userId ?? "").trim();
     console.log("[cdss-guardrail/save] incoming patientId:", body.patientId, "normalized:", patientId);
     if (!patientId) {
       return NextResponse.json({ error: "patientId is required" }, { status: 400 });
@@ -105,6 +108,7 @@ export async function POST(req: Request) {
 
     const row: Record<string, unknown> = {
       patient_id: patientId,
+      user_id: userId || null,
       diagnosis_area: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,
       overall_score: overallScore,
       clinical_reasoning:

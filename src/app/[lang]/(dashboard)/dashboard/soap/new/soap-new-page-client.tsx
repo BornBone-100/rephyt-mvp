@@ -1230,9 +1230,13 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     setSaveStatus("saving");
     setSaveErrorMessage(null);
     try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       console.log("🚀 [SAVE] 쏠 준비 완료. Patient ID:", chartPatientId);
       const payload = {
         patientId: chartPatientId,
+        userId: user?.id,
         diagnosisArea: formData.diagnosisArea,
         locale,
         language: formData.language,
