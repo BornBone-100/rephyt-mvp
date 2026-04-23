@@ -232,10 +232,12 @@ export type Database = {
         Row: {
           id: string;
           plan_tier: string | null;
+          plan_type: string | null;
         };
         Insert: {
           id: string;
           plan_tier?: string | null;
+          plan_type?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
         Relationships: [];

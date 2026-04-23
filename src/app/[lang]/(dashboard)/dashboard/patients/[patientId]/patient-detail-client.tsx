@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { fetchCdssTimelineRows } from "@/lib/timeline/fetch-cdss-guardrail-timeline";
 import { createClient } from "@/utils/supabase/client";
 import type { Tables } from "@/types/supabase";
 import type { getDictionary } from "@/dictionaries/getDictionary";
@@ -225,8 +226,11 @@ export function PatientDetailClient({ dict }: Props) {
   const lang = params.lang as string;
   const isEnglish = lang === "en";
   const base = `/${lang}`;
-  const patientId = params.patientId as string;
-  const normalizedPatientId = decodeURIComponent(String(patientId ?? "")).trim();
+  /** 차트·타임라인·저장 조회에 공통으로 쓰는 환자 ID (URL useParams 단일 진실 공급원) */
+  const chartPatientId = useMemo(
+    () => decodeURIComponent(String((params.patientId as string) ?? "")).trim(),
+    [params.patientId],
+  );
   const supabase = useMemo(() => createClient(), []);
   const localeApi = lang === "en" ? "en" : "ko";
 
@@ -265,43 +269,27 @@ export function PatientDetailClient({ dict }: Props) {
   const [educationHep, setEducationHep] = useState("");
 
   const fetchTimelineLogs = useCallback(async () => {
-    if (!normalizedPatientId || normalizedPatientId === "null" || normalizedPatientId === "undefined") return;
-    console.log(
-      "[ScreeningReportTab] cdss_guardrail_logs 쿼리 patient_id:",
-      normalizedPatientId,
-      "(useParams.patientId:",
-      patientId,
-      ")",
-    );
+    if (!chartPatientId || chartPatientId === "null" || chartPatientId === "undefined") return;
     setIsTimelineLogsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("cdss_guardrail_logs")
-        .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, payload")
-        .eq("patient_id", normalizedPatientId)
-        .order("created_at", { ascending: false });
+      const { rows, error } = await fetchCdssTimelineRows(supabase, chartPatientId);
       if (error) {
-        console.error("Fetch Error:", error);
+        console.error("Fetch Error:", error.message);
         setTimelineLogs([]);
         return;
       }
-      const timelineData = (data ?? []) as Array<Omit<TimelineLog, "payload"> & { payload?: unknown }>;
-      const rows = timelineData.map((row) => ({
-        ...row,
-        payload: row.payload && typeof row.payload === "object" ? (row.payload as Record<string, unknown>) : null,
-      }));
-      console.log("Fetched Timeline Data:", rows);
-      setTimelineLogs(rows);
+      console.log("🔄 [FETCH] 타임라인 다시 가져옴. 데이터 개수:", rows.length);
+      setTimelineLogs(rows as TimelineLog[]);
     } catch (error) {
       console.error("Fetch Error:", error);
       setTimelineLogs([]);
     } finally {
       setIsTimelineLogsLoading(false);
     }
-  }, [normalizedPatientId, patientId, supabase]);
+  }, [chartPatientId, supabase]);
 
   const fetchPatientAndRecords = useCallback(async () => {
-    if (!patientId || patientId === "null" || patientId === "undefined") {
+    if (!chartPatientId || chartPatientId === "null" || chartPatientId === "undefined") {
       console.warn("환자 ID가 정상적으로 전달되지 않았습니다.");
       setIsLoading(false); return;
     }
@@ -309,18 +297,18 @@ export function PatientDetailClient({ dict }: Props) {
 
     try {
       const { data: patientData, error: patientError } = await supabase
-        .from("patients").select("*").eq("id", patientId).maybeSingle();
+        .from("patients").select("*").eq("id", chartPatientId).maybeSingle();
 
       if (patientError) throw patientError;
       if (!patientData) throw new Error(`DB에서 해당 환자를 찾을 수 없습니다.`);
       setPatient(patientData);
 
       const { data: soapData } = await supabase
-        .from("soap_notes").select("*").eq("patient_id", patientId).order("created_at", { ascending: false });
+        .from("soap_notes").select("*").eq("patient_id", chartPatientId).order("created_at", { ascending: false });
       if (soapData) setSoapNotes(soapData);
 
       const { data: treatmentData } = await supabase
-        .from("treatments").select("*").eq("patient_id", patientId).order("created_at", { ascending: false });
+        .from("treatments").select("*").eq("patient_id", chartPatientId).order("created_at", { ascending: false });
       if (treatmentData) setTreatments(treatmentData);
 
     } catch (err: unknown) {
@@ -329,26 +317,22 @@ export function PatientDetailClient({ dict }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [patientId, supabase]);
+  }, [chartPatientId, supabase]);
 
   useEffect(() => {
     void fetchPatientAndRecords();
     void fetchTimelineLogs();
-  }, [fetchPatientAndRecords, fetchTimelineLogs]);
+  }, [chartPatientId, fetchPatientAndRecords, fetchTimelineLogs]);
 
   useEffect(() => {
-    if (!normalizedPatientId || normalizedPatientId === "null" || normalizedPatientId === "undefined") return;
+    if (!chartPatientId || chartPatientId === "null" || chartPatientId === "undefined") return;
+    const filter = `patient_id=eq.${chartPatientId}`;
     const channel = supabase
-      .channel(`cdss-guardrail-timeline-${normalizedPatientId}`)
+      .channel(`cdss-guardrail-timeline-${chartPatientId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "cdss_guardrail_logs" },
-        (payload) => {
-          const row = payload.new as Partial<TimelineLog> & { payload?: Record<string, unknown> };
-          const rowPatientId = typeof (row as { patient_id?: string }).patient_id === "string"
-            ? (row as { patient_id?: string }).patient_id
-            : null;
-          if (rowPatientId !== normalizedPatientId) return;
+        { event: "INSERT", schema: "public", table: "cdss_guardrail_logs", filter },
+        () => {
           void fetchTimelineLogs();
         },
       )
@@ -356,33 +340,30 @@ export function PatientDetailClient({ dict }: Props) {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [fetchTimelineLogs, normalizedPatientId, supabase]);
+  }, [fetchTimelineLogs, chartPatientId, supabase]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const handler = (event: Event) => {
+    const handler = async (event: Event) => {
       const custom = event as CustomEvent<{ patientId?: string }>;
       const eventPatientId = custom.detail?.patientId ? String(custom.detail.patientId).trim() : "";
-      if (eventPatientId && eventPatientId !== normalizedPatientId) return;
-      void fetchTimelineLogs();
-      queueMicrotask(() => {
-        void fetchTimelineLogs();
-      });
+      if (eventPatientId && eventPatientId !== chartPatientId) return;
+      await fetchTimelineLogs();
     };
     window.addEventListener("rephyt:timeline-log-saved", handler);
     return () => {
       window.removeEventListener("rephyt:timeline-log-saved", handler);
     };
-  }, [fetchTimelineLogs, normalizedPatientId]);
+  }, [fetchTimelineLogs, chartPatientId]);
 
   const latestSoap = soapNotes[0] ?? null;
   const autoPlanPrefill = useMemo(() => formatPlanToTreatmentLog(latestSoap?.plan ?? null), [latestSoap?.plan]);
   const cautionFromLatestSoap = useMemo(() => extractCautionNote(latestSoap), [latestSoap]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !patientId) return;
+    if (typeof window === "undefined" || !chartPatientId) return;
     try {
-      const raw = window.localStorage.getItem(`rephyt:treatment-draft:${patientId}`);
+      const raw = window.localStorage.getItem(`rephyt:treatment-draft:${chartPatientId}`);
       if (!raw) return;
       const parsed = JSON.parse(raw) as { content?: string; cautions?: string[] };
       const cautionLines = (parsed.cautions ?? []).map((line) => `[주의사항] ${line}`);
@@ -391,7 +372,7 @@ export function PatientDetailClient({ dict }: Props) {
     } catch (error) {
       console.error("treatment draft parse error:", error);
     }
-  }, [patientId]);
+  }, [chartPatientId]);
 
   const isStep4InputEmpty =
     manualEntries.length === 0 &&
@@ -459,7 +440,7 @@ export function PatientDetailClient({ dict }: Props) {
     const contentToSave = formattedTreatment.trim();
 
     const { error } = await supabase.from("treatments").insert([{
-      patient_id: patientId,
+      patient_id: chartPatientId,
       content: contentToSave,
       created_by: user?.id
     }]);
@@ -475,7 +456,7 @@ export function PatientDetailClient({ dict }: Props) {
       setDidTouchTreatmentInput(false);
       const optimistic: Tables<"treatments"> = {
         id: crypto.randomUUID(),
-        patient_id: patientId,
+        patient_id: chartPatientId,
         content: contentToSave,
         created_by: user?.id ?? null,
         created_at: new Date().toISOString(),

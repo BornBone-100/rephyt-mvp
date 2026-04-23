@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   ClipboardList,
@@ -25,6 +26,7 @@ import {
   type Side,
 } from "./ObjectiveEvaluation";
 import { MeasureModal, type Step2OutcomePayload } from "./MeasureModal";
+import { fetchCdssTimelineRows } from "@/lib/timeline/fetch-cdss-guardrail-timeline";
 import { createClient } from "@/utils/supabase/client";
 import { toast } from "sonner";
 import {
@@ -718,6 +720,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const [isDraftSaving, setIsDraftSaving] = useState(false);
   const [pendingCloudDraft, setPendingCloudDraft] = useState<TempDraftPayload | null>(null);
   const [showCloudDraftPrompt, setShowCloudDraftPrompt] = useState(false);
+  const [showProPaywall, setShowProPaywall] = useState(false);
+  const [paywallUsage, setPaywallUsage] = useState<{ used: number; limit: number } | null>(null);
 
   const specialTestLabel = useMemo(
     (): Record<SpecialTestValue, string> => ({
@@ -1070,7 +1074,31 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
   const handleAnalyze = async () => {
     setIsLoading(true);
+    setShowProPaywall(false);
     try {
+      const usageRes = await fetch("/api/usage/monthly-cdss", { method: "GET", credentials: "include" });
+      if (usageRes.ok) {
+        const usageJson = (await usageRes.json()) as {
+          allowed?: boolean;
+          reportCount?: number;
+          logCount?: number;
+          distinctPatientCount?: number;
+          limit?: number;
+        };
+        if (usageJson.allowed === false) {
+          const lim = typeof usageJson.limit === "number" ? usageJson.limit : 5;
+          const rc =
+            typeof usageJson.reportCount === "number"
+              ? usageJson.reportCount
+              : typeof usageJson.logCount === "number"
+                ? usageJson.logCount
+                : 0;
+          setPaywallUsage({ used: rc, limit: lim });
+          setShowProPaywall(true);
+          return;
+        }
+      }
+
       const treatmentText = formatPlanToTreatment(
         manualEntries,
         exerciseEntries,
@@ -1106,7 +1134,22 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: buildGuardrailRequestPayload(payload),
+        credentials: "include",
       });
+
+      if (res.status === 403) {
+        const errBody = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          requiresUpgrade?: boolean;
+        };
+        if (errBody.requiresUpgrade) {
+          const lim = 5;
+          setPaywallUsage({ used: lim, limit: lim });
+          setShowProPaywall(true);
+          return;
+        }
+        throw new Error(errBody.error ?? "Forbidden");
+      }
 
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string; stage?: string };
@@ -1147,8 +1190,9 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
   const handleSaveDiagnosisRecord = async () => {
     if (!reportResult) return;
-    const normalizedPatientId = effectivePatientId;
-    if (!normalizedPatientId) {
+    /** 저장·조회·이벤트에 동일하게 쓰는 환자 ID (폼 + URL 단일화 결과) */
+    const chartPatientId = effectivePatientId;
+    if (!chartPatientId) {
       alert(locale === "en" ? "Please select a patient first." : "먼저 환자를 선택해 주세요.");
       return;
     }
@@ -1157,42 +1201,62 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       formData.patientId,
       "patientIdFromUrl:",
       patientIdFromUrl || "(없음)",
-      "effective(normalized):",
-      normalizedPatientId,
+      "chartPatientId:",
+      chartPatientId,
     );
     setIsSaving(true);
     setSaveStatus("saving");
     setSaveErrorMessage(null);
     try {
+      console.log("🚀 [SAVE] 쏠 준비 완료. Patient ID:", chartPatientId);
       const payload = {
-        patientId: normalizedPatientId,
+        patientId: chartPatientId,
         diagnosisArea: formData.diagnosisArea,
         locale,
         language: formData.language,
         result: reportResult,
       };
-      console.log("저장되는 payload:", payload);
       const res = await fetch("/api/cdss-guardrail/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        credentials: "include",
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const response = { ok: res.ok, status: res.status, body };
+      console.log("✅ [DB INSERT] 성공 여부:", response);
       if (!res.ok) {
         throw new Error(body.error || t.dashSaveRecordError);
       }
       const { error: deleteDraftError } = await supabase
         .from("temp_records")
         .delete()
-        .eq("patient_id", normalizedPatientId);
+        .eq("patient_id", chartPatientId);
       if (deleteDraftError) {
         console.warn("temp_records delete failed:", deleteDraftError);
       }
+
+      const { rows: timelineRows, error: timelineErr } = await fetchCdssTimelineRows(supabase, chartPatientId);
+      if (timelineErr) {
+        console.error("타임라인 재조회 실패:", timelineErr.message);
+        setSaveStatus("saved");
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: chartPatientId } }));
+        }
+        toast.error(
+          locale === "en"
+            ? "Saved, but the timeline could not be refreshed. Please reopen the chart."
+            : "저장은 완료되었으나 타임라인 새로고침에 실패했습니다. 차트를 다시 열어 확인해 주세요.",
+        );
+        return;
+      }
+      console.log("🔄 [FETCH] 타임라인 다시 가져옴. 데이터 개수:", timelineRows.length);
+
       setSaveStatus("saved");
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: normalizedPatientId } }));
+        window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: chartPatientId } }));
       }
-      alert(t.dashSaveRecordSaved);
+      toast.success(locale === "en" ? "Clinical report saved." : t.dashSaveRecordSaved);
     } catch (error) {
       const message = error instanceof Error ? error.message : t.dashSaveRecordError;
       setSaveStatus("error");
@@ -2464,6 +2528,59 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
             }
           }}
         />
+
+        {showProPaywall ? (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pro-paywall-title"
+          >
+            <div className="w-full max-w-[420px] rounded-2xl border border-slate-200/90 bg-white p-8 shadow-2xl ring-1 ring-slate-900/5">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#0f172a]/70">
+                {locale === "en" ? "Re:PhyT Pro" : "Re:PhyT Pro"}
+              </p>
+              <h2 id="pro-paywall-title" className="mt-2 text-xl font-black tracking-tight text-[#0f172a]">
+                {locale === "en" ? "Unlock unlimited reports" : "무제한 리포트 이용"}
+              </h2>
+              <p className="mt-5 text-[15px] font-medium leading-relaxed text-slate-600">
+                {locale === "en" ? (
+                  <>
+                    You&apos;ve used all free report generations for this month. Upgrade to Pro for unlimited
+                    reports and stronger audit-defense insights.
+                  </>
+                ) : (
+                  <>
+                    한 달 무료 이용 횟수를 모두 소진하셨습니다. 무제한 리포트와 삭감 방어 기능을 위해 Pro 플랜으로 업그레이드하세요!
+                  </>
+                )}
+              </p>
+              {paywallUsage ? (
+                <p className="mt-3 text-xs font-semibold text-slate-400">
+                  {locale === "en" ? "This month: " : "이번 달 사용: "}
+                  <span className="font-mono text-[#0f172a]">
+                    {paywallUsage.used}/{paywallUsage.limit}
+                  </span>
+                </p>
+              ) : null}
+              <div className="mt-8 flex flex-col gap-3">
+                <Link
+                  href={`/${locale}/pricing`}
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-[#0f172a] px-6 py-3.5 text-center text-[15px] font-black text-white shadow-md transition hover:bg-[#1e293b] active:scale-[0.99]"
+                >
+                  {locale === "en" ? "Upgrade to Pro" : "Pro 업그레이드 하기"}
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setShowProPaywall(false)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+                >
+                  {locale === "en" ? "Not now" : "나중에"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

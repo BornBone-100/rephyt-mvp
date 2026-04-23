@@ -55,6 +55,7 @@ export async function POST(request: Request) {
       billing_key: bid,
       grade: 'Pro',
       plan_tier: 'trial',
+      plan_type: 'trial',
       next_billing_date: nextBillingDate,
     };
 

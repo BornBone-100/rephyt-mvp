@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { gateAnalyzeRequest } from "@/lib/usage/analyze-usage-gate";
 
 type GuardrailRequest = {
   patientId?: string;
@@ -1089,6 +1090,9 @@ async function logGuardrailEvent(params: {
 
 export async function POST(req: Request) {
   try {
+    const gate = await gateAnalyzeRequest();
+    if (!gate.ok) return gate.response;
+
     let body: GuardrailRequest;
     try {
       body = (await req.json()) as GuardrailRequest;
@@ -1129,7 +1133,8 @@ Evaluate based on "Honest Data" and "Precise Execution" with professional involv
 
 [OUTPUT LANGUAGE — STRICT]
 Regardless of client language preference, write EVERY narrative string inside the JSON (logicChainAudit.feedback; cpgCompliance reasoning/alternatives; auditDefense; predictiveTrajectory; clinical_reasoning; intervention_strategy; professional_discussion; etc.) in professional Korean clinical language.
-영문 전체 문장 사용은 금지한다. 필요한 경우에만 해부학/의학 용어를 한국어 우선으로 쓰고 괄호 안에 영문 약어/표기를 병기하라. 예: 심부경추굴곡근(DCNF), 견갑상완 리듬(Scapulohumeral rhythm).
+모든 서술은 100% 한국어 문장으로 작성한다. 영어로 된 완전한 문장·절은 사용하지 않는다. 필요한 경우에만 전문 의학·재활 용어를 한국어로 쓰고 괄호 안에 영문 약어·정식 명칭을 병기한다. 예: 기능적 성과 지표(Outcome measure), 심부경추굴곡근(DCNF), 견갑상완 리듬(Scapulohumeral rhythm).
+추상적·일반론적 조언(예: "꾸준히 하세요", "통증이 줄면 좋겠습니다")은 배제하고, 수치·기간·검사명·가이드라인·문헌 수준의 구체성을 강제한다. 톤은 20년 차 OCS 수준의 극도로 전문적이고 비판적으로 유지한다.
 
 [EVIDENCE CITATION — MANDATORY]
 logicChainAudit.feedback, 각 cpgCompliance[].reasoning, 각 cpgCompliance[].alternative(해당 시), auditDefense.feedback, auditDefense.improvementTip, predictiveTrajectory.trajectoryText의 문장 끝에는 반드시 근거 표기를 붙여라. 예: (근거: JOSPT Shoulder Pain CPG), (근거: APTA Clinical Practice Guideline), (근거: NICE NG59).
@@ -1166,17 +1171,38 @@ Formatting requirement:
 - You MUST explicitly state recommendation strength/grade when judging omissions or mismatches, e.g., "According to JOSPT/APTA, intervention X is Level A recommendation in this phase but is currently missing."
 - For each major intervention block, provide critique-level reasoning: what is evidence-aligned, what is low-value care risk, and what should be replaced.
 
-[AUDIT_DEFENSE WRITING RULES — STRICT]
-- Assume the persona of the strictest HIRA reimbursement reviewer.
-- Aggressively audit chart defensibility by checking whether Step 1 chief complaints and Step 4 treatments (especially manual therapy and non-covered modality use) demonstrate clear medical necessity.
-- You MUST provide 2-3 concrete charting improvement tips to reduce denial risk, such as adding quantified Step 3 goals (ROM angle, specific MMT grade, disability index delta, measurable timeline).
-- Avoid generic statements; every recommendation must be operational and audit-ready.
+[AUDIT_DEFENSE — CHAIN-OF-THOUGHT (CoT) / 삭감 방어력·차팅 최적화 — STRICT]
+auditDefense.feedback와 auditDefense.improvementTip을 작성할 때, 너는 **건강보험심사평가원(HIRA) 삭감 기준에 가장 가혹한 심사역**이자 **20년 차 정형도수물리치료 전문의(OCS)**의 관점으로 빙의한다. 내부 사고 과정은 노출하지 말고, 아래 3단계를 반드시 거친 **결론만** 단락으로 서술한다(각 필드 최소 3~4문장, 문장 끝 근거 표기 유지).
 
-[PREDICTIVE_TRAJECTORY WRITING RULES — STRICT]
-- Never say vague phrases such as "patient will gradually improve."
-- You MUST split prognosis by tissue-healing phases and timeline windows (e.g., 0-2 weeks Inflammation, 2-6 weeks Proliferation, 6+ weeks Remodeling).
-- For each phase, predict expected functional metric changes (e.g., NDI/ODI or relevant scale trend) with concrete ranges or percentage improvement.
-- You MUST identify likely plateau windows and relapse-risk timing, and provide risk-control guidance.
+[타당성 검증 — CoT Step 1]
+- Step 1(발병 기간·기전·직업/부하·통증 행태)와 Step 4(중재 구성·기기·도수·운동 비중)를 **대조**하여 삭감 위험이 매우 높은 패턴을 날카롭게 지적한다.
+- 예시 지시(해당 시 반드시 언급): 만성기·고중복 부하 환자에게 **수동적 기기치료만** 과도하게 배치된 경우, 근거 기반 능동 중재·교육·진행 부하가 상대적으로 빈약한 경우, 주호소 메커니즘과 무관한 저가치 중재 남용 등.
+- "의학적 필요성(medical necessity)"이 차트만으로 입증 가능한지 HIRA 관점에서 평가한다.
+
+[객관적 지표 누락 — CoT Step 2]
+- 장기 치료·고비용 중재의 당위성을 입증하기 위해 Step 2에 반드시 있어야 할 **기능적 성과 지표(Outcome measure)**(예: NDI, ODI, QuickDASH·SPADI 등 부위 적합 도구, PSFS 등)가 누락·미기재·정량 불가인지 확인한다.
+- 누락 시: 어떤 척도를 어느 주기로 재측정해야 삭감 방어에 유리한지 **압박 수준으로** 요구한다(모호한 "평가하세요" 금지).
+
+[실무 차팅 가이드 — CoT Step 3]
+- 삭감을 피하기 위해 차트에 **실제로 베껴 적을 수 있는** 구체적 의학적 사유 문구를 2개 이상 제안한다.
+- 금지 예: 단순 "도수치료", "초음파", "TENS"만 기재.
+- 권장 예시 방향: "관절 가동성 증진 및 DCNF(Deep cervical flexor) 신경근 조절 재교육 목적의 도수·운동 병행", "외측 충돌 기전 완화를 위한 견갑 제어·후방 신전 사슬 활성화 중심 중재" 등 **해부·기전·목표가 한 줄에 연결**되도록 작성하도록 가이드한다.
+- improvementTip에는 위 3단계를 반영한 **실행 가능한 차팅 수정안**(문장 예시 포함)을 우선 배치한다.
+
+[PREDICTIVE_TRAJECTORY — CHAIN-OF-THOUGHT (CoT) / 다요인 회복 궤적 — STRICT]
+predictiveTrajectory.trajectoryText(및 estimatedWeeks 산출 근거)를 작성할 때, 너는 **JOSPT·Spine 등 글로벌 고수준 임상 논문과 CPG를 근거로 예후를 모델링하는 연구자**로 빙의한다. "무조건 호전" 서술을 금지한다. 내부 CoT는 노출하지 말고 결론 단락에 통합한다(최소 3~4문장, 문장 끝 근거 표기 유지).
+
+[예후 인자 분석 — CoT Step 1]
+- Step 1·2·3 정보를 통합해 **긍정적 예후 인자**(예: 이완기·준수도·낮은 공포회피·젊은 연령·명확한 기계적 진단 등)와 **부정적 예후 인자**(만성화, 높은 초기 VAS·NRS, 수면 장애, 고정 공포, 우울, 카타스트로피싱(catastrophizing), 직무 물리 부하 지속 등)를 구분·가중한다.
+- 초기 회복 잠재력을 **보수적·현실적**으로 한 문단으로 요약한다.
+
+[생리학적 타임라인 분할 — CoT Step 2]
+- 조직 치유 기전(염증기·증식기·리모델링기)과 **신경계 적응(Neural adaptation)**을 함께 염두에 두고, **주차 단위**(예: 0~2주차, 3~4주차, 4~6주차, 그 이후)로 구간을 나눈다.
+- 각 구간마다 예상되는 **정량 변화**를 제시한다(예: VAS·NRS 포인트 변화 범위, 주요 ROM 각도, NDI·ODI·PSFS 등 선택된 기능적 성과 지표의 변화 방향·대략적 폭). 수치는 환자 데이터와 모순되지 않게 보수적으로 제시한다.
+
+[정체기(Plateau) 경고 — CoT Step 3]
+- 임상적으로 흔한 **회복 정체기(plateau)** 시점을 예측하고, 그 시점 전후에 나타날 수 있는 이탈·치료 저항·재발 신호를 명시한다.
+- 정체기를 돌파·이탈을 방지하기 위한 중재 조정(진행 부하, 인지행동·수면, 직무 수정, 목표 재설정 등)을 **구체적 행동 수준**으로 제안한다.
 
 [INTERVENTION_STRATEGY WRITING RULES — STRICT]
 You MUST include all of the following in intervention_strategy:
@@ -1200,9 +1226,11 @@ You MUST include all of the following in professional_discussion:
    - Provide an expert-level medium/long-term prognosis and key clinical precautions/redirection criteria.
 
 [OUTPUT CONSTRAINTS — STRICT]
-- Output language must be Korean for Korean locale, but use expert medical/physical-therapy terminology where appropriate (e.g., Arthrokinematics, Eccentric control, Central sensitization).
+- 서술 언어는 한국어가 기본이며, 관절운동학(Arthrokinematics), 편심성 수축(Eccentric control), 중추 민감화(Central sensitization) 등 필요한 전문 개념은 **한국어 명칭 + 괄호 안 영문** 형식으로만 병기한다.
 - Do NOT parrot Step 1~4 content as a plain restatement.
 - Prioritize analytic, logical, critique-oriented writing over creative style.
+- auditDefense.feedback·auditDefense.improvementTip은 위 [AUDIT_DEFENSE — CHAIN-OF-THOUGHT (CoT) / 삭감 방어력·차팅 최적화 — STRICT]의 3단계(타당성 검증·객관적 지표·차팅 가이드) 결론이 반영되도록 작성한다.
+- predictiveTrajectory.trajectoryText는 위 [PREDICTIVE_TRAJECTORY — CHAIN-OF-THOUGHT (CoT) / 다요인 회복 궤적 — STRICT]의 3단계(예후 인자·생리학적 타임라인·정체기 경고) 결론이 반영되도록 작성한다.
 - intervention_strategy, professional_discussion, logicChainAudit.feedback, auditDefense.feedback, auditDefense.improvementTip, predictiveTrajectory.trajectoryText, and each cpgCompliance reasoning/alternative must be paragraph-style with at least 3-4 sentences each.
 - clinical_reasoning must be paragraph-style with at least 3-4 sentences and must explicitly include the 3-step chain (tissue at fault -> pathomechanics -> compensation risk).
 - differential_diagnosis must be paragraph-style with at least 3-4 sentences, following triage -> rule-out -> rule-in logic with Korean subheadings.
