@@ -41,6 +41,14 @@ type TimelineLog = {
   detected_condition_id: string | null;
   diagnosis_area: string | null;
   logic_audit: unknown;
+  clinical_reasoning?: string | null;
+  differential_diagnosis?: string | null;
+  intervention_strategy?: string | null;
+  professional_discussion?: string | null;
+  cpg_compliance?: unknown;
+  audit_defense?: unknown;
+  predictive_trajectory?: unknown;
+  compliance_score?: number | null;
   payload: Record<string, unknown> | null;
 };
 
@@ -687,6 +695,46 @@ export function PatientDetailClient({ dict }: Props) {
                         typeof (item.logic_audit as { feedback?: unknown }).feedback === "string"
                         ? String((item.logic_audit as { feedback?: string }).feedback)
                         : "임상 논리 요약 데이터 없음";
+                  const hasAnyDetail =
+                    Boolean(item.differential_diagnosis?.trim()) ||
+                    Boolean(item.clinical_reasoning?.trim()) ||
+                    Boolean(item.intervention_strategy?.trim()) ||
+                    Boolean(item.professional_discussion?.trim());
+                  const complianceScore =
+                    typeof item.compliance_score === "number" ? Math.max(0, Math.min(100, Math.round(item.compliance_score))) : null;
+                  const cpgComplianceText =
+                    item.cpg_compliance == null
+                      ? null
+                      : typeof item.cpg_compliance === "string"
+                        ? item.cpg_compliance
+                        : Array.isArray(item.cpg_compliance)
+                          ? `${item.cpg_compliance.length}개 중재 항목이 검증됨`
+                          : JSON.stringify(item.cpg_compliance);
+                  const auditDefenseText =
+                    item.audit_defense == null
+                      ? null
+                      : typeof item.audit_defense === "string"
+                        ? item.audit_defense
+                        : typeof item.audit_defense === "object" &&
+                            item.audit_defense !== null &&
+                            typeof (item.audit_defense as { feedback?: unknown }).feedback === "string"
+                          ? String((item.audit_defense as { feedback?: string }).feedback)
+                          : JSON.stringify(item.audit_defense);
+                  const predictiveTrajectoryText =
+                    item.predictive_trajectory == null
+                      ? null
+                      : typeof item.predictive_trajectory === "string"
+                        ? item.predictive_trajectory
+                        : typeof item.predictive_trajectory === "object" &&
+                            item.predictive_trajectory !== null
+                          ? JSON.stringify(item.predictive_trajectory)
+                          : null;
+                  const predictiveWeeks =
+                    typeof item.predictive_trajectory === "object" &&
+                    item.predictive_trajectory !== null &&
+                    typeof (item.predictive_trajectory as { estimatedWeeks?: unknown }).estimatedWeeks === "number"
+                      ? Number((item.predictive_trajectory as { estimatedWeeks: number }).estimatedWeeks)
+                      : null;
                   return (
                     <div key={`guardrail-${item.id}`} className="relative rounded-3xl border border-indigo-200 bg-indigo-50/70 p-6 shadow-sm">
                       <div className="mb-3 flex items-center justify-between gap-3">
@@ -720,7 +768,93 @@ export function PatientDetailClient({ dict }: Props) {
                       </div>
                       <div className="mt-3 rounded-xl border border-indigo-100 bg-white px-4 py-3">
                         <p className="text-[11px] font-black text-zinc-400">핵심 요약</p>
-                        <p className="mt-1 line-clamp-2 text-sm font-medium leading-relaxed text-zinc-700">{logicSummary}</p>
+                        <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-700 whitespace-pre-wrap">{logicSummary}</p>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-6 lg:grid-cols-3">
+                        <div className="space-y-3 lg:col-span-2">
+                          {hasAnyDetail ? (
+                            <>
+                              {item.differential_diagnosis?.trim() ? (
+                                <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                                  <p className="text-xs font-black text-indigo-700">🔍 감별 진단 및 스크리닝</p>
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+                                    {item.differential_diagnosis}
+                                  </p>
+                                </div>
+                              ) : null}
+                              {item.clinical_reasoning?.trim() ? (
+                                <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                                  <p className="text-xs font-black text-indigo-700">🧠 임상 추론 및 역학적 원인</p>
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+                                    {item.clinical_reasoning}
+                                  </p>
+                                </div>
+                              ) : null}
+                              {item.intervention_strategy?.trim() ? (
+                                <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                                  <p className="text-xs font-black text-indigo-700">🎯 중재 전략 심층 분석</p>
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+                                    {item.intervention_strategy}
+                                  </p>
+                                </div>
+                              ) : null}
+                              {item.professional_discussion?.trim() ? (
+                                <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                                  <p className="text-xs font-black text-indigo-700">💡 임상 전문가 고찰</p>
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+                                    {item.professional_discussion}
+                                  </p>
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
+                        <aside className="space-y-3 lg:col-span-1">
+                          {complianceScore !== null ? (
+                            <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                              <p className="text-xs font-black text-indigo-700">🛡️ 삭감 방어력 (실시간)</p>
+                              <div className="mt-2 flex items-center justify-between text-xs font-bold text-zinc-600">
+                                <span>Compliance Score</span>
+                                <span>{complianceScore}/100</span>
+                              </div>
+                              <div className="mt-2 h-2.5 w-full rounded-full bg-indigo-100">
+                                <div
+                                  className="h-2.5 rounded-full bg-indigo-500 transition-all"
+                                  style={{ width: `${complianceScore}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : null}
+                          {cpgComplianceText ? (
+                            <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                              <p className="text-xs font-black text-indigo-700">⚖️ CPG 가이드라인 준수율</p>
+                              <span className="mt-2 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                                {cpgComplianceText}
+                              </span>
+                            </div>
+                          ) : null}
+                          {auditDefenseText ? (
+                            <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                              <p className="text-xs font-black text-indigo-700">🩺 임상 추론 심층 검증</p>
+                              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+                                {auditDefenseText}
+                              </p>
+                            </div>
+                          ) : null}
+                          {predictiveTrajectoryText ? (
+                            <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                              <p className="text-xs font-black text-indigo-700">⏳ 회복 궤적 예측</p>
+                              {predictiveWeeks !== null ? (
+                                <span className="mt-2 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                                  예상 회복 기간 {predictiveWeeks}주
+                                </span>
+                              ) : null}
+                              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+                                {predictiveTrajectoryText}
+                              </p>
+                            </div>
+                          ) : null}
+                        </aside>
                       </div>
                     </div>
                   );

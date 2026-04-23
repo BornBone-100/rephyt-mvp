@@ -9,6 +9,14 @@ export type CdssGuardrailTimelineRow = {
   detected_condition_id: string | null;
   diagnosis_area: string | null;
   logic_audit: unknown;
+  clinical_reasoning?: string | null;
+  differential_diagnosis?: string | null;
+  intervention_strategy?: string | null;
+  professional_discussion?: string | null;
+  cpg_compliance?: unknown;
+  audit_defense?: unknown;
+  predictive_trajectory?: unknown;
+  compliance_score?: number | null;
   payload: Record<string, unknown> | null;
 };
 
@@ -30,7 +38,9 @@ export async function fetchCdssTimelineRows(
 
   const { data, error } = await supabase
     .from("cdss_guardrail_logs")
-    .select("id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, raw_ai_response")
+    .select(
+      "id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, clinical_reasoning, differential_diagnosis, intervention_strategy, professional_discussion, cpg_compliance, audit_defense, predictive_trajectory, compliance_score, raw_ai_response",
+    )
     .eq("patient_id", cleanPatientId)
     .order("created_at", { ascending: false });
 
