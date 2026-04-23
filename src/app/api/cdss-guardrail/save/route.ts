@@ -60,6 +60,10 @@ function clampScore(v: unknown) {
   return Math.max(0, Math.min(100, Math.round(v)));
 }
 
+function normalizePatientId(raw: unknown) {
+  return String(raw ?? "").trim().toLowerCase();
+}
+
 function sanitizeInsertPayload(row: Record<string, unknown>, aiResult: unknown) {
   const sanitizedPayload: Record<string, unknown> = {};
   const droppedRowKeys: Record<string, unknown> = {};
@@ -89,7 +93,7 @@ function sanitizeInsertPayload(row: Record<string, unknown>, aiResult: unknown) 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as SaveRequest;
-    const patientId = String(body.patientId ?? "").trim();
+    const patientId = normalizePatientId(body.patientId);
     console.log("🕵️‍♂️ [디버깅] 백엔드가 전달받은 userId:", body.userId);
     const userId = String(body.userId ?? "").trim();
     console.log("[cdss-guardrail/save] incoming patientId:", body.patientId, "normalized:", patientId);
