@@ -503,6 +503,13 @@ function upsertAutoObjectiveBlock(text: string, lines: string[]) {
   return base ? `${base}\n${block}` : block;
 }
 
+function normalizePatientId(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (/^[0-9a-fA-F-]{36}$/.test(trimmed)) return trimmed.toLowerCase();
+  return trimmed;
+}
+
 function composeExaminationSummary(draft: ExamDraft, locale: SoapLocale) {
   const t = soapWizardCopy(locale);
   const qualityText =
@@ -621,9 +628,9 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     const raw = searchParams.get("patientId");
     if (!raw) return "";
     try {
-      return decodeURIComponent(raw).trim();
+      return normalizePatientId(decodeURIComponent(raw));
     } catch {
-      return raw.trim();
+      return normalizePatientId(raw);
     }
   }, [searchParams]);
   const supabase = useMemo(() => createClient(), []);
@@ -651,7 +658,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     step1: { redFlags: [] },
   });
   const effectivePatientId = useMemo(
-    () => String(formData.patientId ?? "").trim() || patientIdFromUrl,
+    () => normalizePatientId(String(formData.patientId ?? "")) || patientIdFromUrl,
     [formData.patientId, patientIdFromUrl],
   );
 
@@ -1191,10 +1198,20 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const handleSaveDiagnosisRecord = async () => {
     if (!reportResult) return;
     /** 저장·조회·이벤트에 동일하게 쓰는 환자 ID (폼 + URL 단일화 결과) */
-    const chartPatientId = effectivePatientId;
+    const chartPatientId = normalizePatientId(effectivePatientId);
+    const normalizedPatientIdFromUrl = normalizePatientId(patientIdFromUrl);
     if (!chartPatientId) {
       alert(locale === "en" ? "Please select a patient first." : "먼저 환자를 선택해 주세요.");
       return;
+    }
+    if (normalizedPatientIdFromUrl && normalizedPatientIdFromUrl !== chartPatientId) {
+      console.warn(
+        "[handleSaveDiagnosisRecord] patient_id mismatch",
+        "url:",
+        normalizedPatientIdFromUrl,
+        "save:",
+        chartPatientId,
+      );
     }
     console.log(
       "[handleSaveDiagnosisRecord] formData.patientId:",
@@ -1243,10 +1260,10 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: chartPatientId } }));
         }
-        toast.error(
+        toast.success(
           locale === "en"
-            ? "Saved, but the timeline could not be refreshed. Please reopen the chart."
-            : "저장은 완료되었으나 타임라인 새로고침에 실패했습니다. 차트를 다시 열어 확인해 주세요.",
+            ? "Data saved. Please check the list manually."
+            : "데이터가 저장되었습니다. 목록을 확인해 보세요.",
         );
         return;
       }

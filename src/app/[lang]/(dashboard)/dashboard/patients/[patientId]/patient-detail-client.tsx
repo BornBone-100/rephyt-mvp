@@ -220,6 +220,14 @@ function parseTreatmentTextToStep4(text: string): {
   };
 }
 
+function normalizePatientId(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  // UUID는 대소문자 구분 이슈를 피하기 위해 소문자로 정규화한다.
+  if (/^[0-9a-fA-F-]{36}$/.test(trimmed)) return trimmed.toLowerCase();
+  return trimmed;
+}
+
 export function PatientDetailClient({ dict }: Props) {
   const pd = dict.dashboard.patients;
   const params = useParams();
@@ -228,7 +236,14 @@ export function PatientDetailClient({ dict }: Props) {
   const base = `/${lang}`;
   /** 차트·타임라인·저장 조회에 공통으로 쓰는 환자 ID (URL useParams 단일 진실 공급원) */
   const chartPatientId = useMemo(
-    () => decodeURIComponent(String((params.patientId as string) ?? "")).trim(),
+    () => {
+      const raw = String((params.patientId as string) ?? "");
+      try {
+        return normalizePatientId(decodeURIComponent(raw));
+      } catch {
+        return normalizePatientId(raw);
+      }
+    },
     [params.patientId],
   );
   const supabase = useMemo(() => createClient(), []);
@@ -239,6 +254,7 @@ export function PatientDetailClient({ dict }: Props) {
   const [treatments, setTreatments] = useState<Tables<"treatments">[]>([]);
   const [timelineLogs, setTimelineLogs] = useState<TimelineLog[]>([]);
   const [isTimelineLogsLoading, setIsTimelineLogsLoading] = useState(false);
+  const [screeningRefreshTick, setScreeningRefreshTick] = useState(0);
   
   const [isLoading, setIsLoading] = useState(true);
   
@@ -280,6 +296,7 @@ export function PatientDetailClient({ dict }: Props) {
       }
       console.log("🔄 [FETCH] 타임라인 다시 가져옴. 데이터 개수:", rows.length);
       setTimelineLogs(rows as TimelineLog[]);
+      setScreeningRefreshTick((prev) => prev + 1);
     } catch (error) {
       console.error("Fetch Error:", error);
       setTimelineLogs([]);
@@ -346,8 +363,11 @@ export function PatientDetailClient({ dict }: Props) {
     if (typeof window === "undefined") return;
     const handler = async (event: Event) => {
       const custom = event as CustomEvent<{ patientId?: string }>;
-      const eventPatientId = custom.detail?.patientId ? String(custom.detail.patientId).trim() : "";
+      const eventPatientId = custom.detail?.patientId
+        ? normalizePatientId(String(custom.detail.patientId))
+        : "";
       if (eventPatientId && eventPatientId !== chartPatientId) return;
+      setScreeningRefreshTick((prev) => prev + 1);
       await fetchTimelineLogs();
     };
     window.addEventListener("rephyt:timeline-log-saved", handler);
@@ -638,7 +658,7 @@ export function PatientDetailClient({ dict }: Props) {
               {isEnglish ? "No assessment records yet." : "아직 작성된 평가 기록이 없습니다."}
             </div>
           ) : (
-            <div className="relative pl-4 md:pl-8">
+            <div key={screeningRefreshTick} className="relative pl-4 md:pl-8">
               <div className="absolute left-[11px] md:left-[27px] top-6 bottom-0 w-[2px] bg-blue-100"></div>
               <div className="space-y-10">
                 {isTimelineLogsLoading ? (
