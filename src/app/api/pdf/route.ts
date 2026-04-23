@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { z } from "zod";
+import { access, readFile } from "node:fs/promises";
+import path from "node:path";
 import { soapNoteSchema, patientSchema } from "@/features/soap/schema";
 
 const requestSchema = z.object({
@@ -10,18 +12,26 @@ const requestSchema = z.object({
   title: z.string().optional(),
 });
 
-const KOREAN_FONT_URL =
-  "https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/public/static/Pretendard-Regular.ttf";
-let koreanFontBytesPromise: Promise<ArrayBuffer> | null = null;
+const LOCAL_FONT_CANDIDATES = [
+  path.join(process.cwd(), "public", "fonts", "Pretendard-Regular.ttf"),
+  path.join(process.cwd(), "public", "fonts", "NotoSansKR-Regular.ttf"),
+];
 
-async function getKoreanFontBytes() {
+let koreanFontBytesPromise: Promise<Uint8Array | null> | null = null;
+
+async function getLocalKoreanFontBytes() {
   if (!koreanFontBytesPromise) {
-    koreanFontBytesPromise = fetch(KOREAN_FONT_URL).then(async (res) => {
-      if (!res.ok) {
-        throw new Error(`Failed to fetch Korean font: ${res.status}`);
+    koreanFontBytesPromise = (async () => {
+      for (const p of LOCAL_FONT_CANDIDATES) {
+        try {
+          await access(p);
+          return await readFile(p);
+        } catch {
+          // 다음 후보 경로를 시도한다.
+        }
       }
-      return res.arrayBuffer();
-    });
+      return null;
+    })();
   }
   return koreanFontBytesPromise;
 }
@@ -34,12 +44,29 @@ export async function POST(req: Request) {
     const pdfDoc = await PDFDocument.create();
     pdfDoc.registerFontkit(fontkit);
     let page = pdfDoc.addPage([595.28, 841.89]); // A4 (pt)
-    const fontBytes = await getKoreanFontBytes();
-    const font = await pdfDoc.embedFont(fontBytes);
+    let font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    let hasUnicodeFont = false;
+    try {
+      const fontBytes = await getLocalKoreanFontBytes();
+      if (fontBytes) {
+        font = await pdfDoc.embedFont(fontBytes);
+        hasUnicodeFont = true;
+      } else {
+        console.warn("[/api/pdf] local Korean font not found. Falling back to Helvetica.");
+      }
+    } catch (fontError) {
+      console.warn("[/api/pdf] failed to load local Korean font, fallback to Helvetica:", fontError);
+    }
 
     const margin = 48;
     let y = 841.89 - margin;
     const lineHeight = 14;
+
+    const normalizeTextForFont = (text: string) => {
+      if (hasUnicodeFont) return text;
+      // 표준 폰트는 유니코드 한글 글리프를 지원하지 않으므로 최소한 PDF 생성은 유지한다.
+      return text.replace(/[^\x20-\x7E]/g, "?");
+    };
 
     const newPage = () => {
       page = pdfDoc.addPage([595.28, 841.89]);
@@ -47,7 +74,7 @@ export async function POST(req: Request) {
     };
 
     const drawLine = (text: string, size = 11) => {
-      page.drawText(text, { x: margin, y, size, font });
+      page.drawText(normalizeTextForFont(text), { x: margin, y, size, font });
       y -= lineHeight + Math.max(0, size - 11);
     };
 
