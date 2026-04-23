@@ -11,7 +11,6 @@ import {
   ChevronRight,
   ChevronLeft,
   AlertTriangle,
-  Lock,
   ClipboardCheck,
   Info,
 } from "lucide-react";
@@ -1510,14 +1509,12 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     <div className="relative flex h-full flex-col bg-slate-50 font-sans">
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-4">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-800">
-            <AlertTriangle className="h-6 w-6 text-rose-600" /> {t.safetyTitle}
+          <h1 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+            <AlertTriangle className="h-6 w-6 text-indigo-600" /> {t.safetyTitle}
           </h1>
-          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{t.safetySubtitle}</p>
+          <p className="mt-1 text-sm font-medium text-slate-500">{t.safetySubtitle}</p>
         </div>
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-          <Lock className="h-3 w-3" /> PRO GLOBAL EDITION
-        </div>
+        <div />
       </div>
 
       <div className="grid flex-1 grid-cols-1">
@@ -1530,11 +1527,11 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                   <div
                     key={s.n}
                     className={`flex flex-1 flex-col items-center gap-1 py-4 transition-all ${
-                      step === s.n ? "border-b-2 border-rose-600 bg-rose-50" : "bg-white"
+                      step === s.n ? "border-b-2 border-indigo-600 bg-indigo-50" : "bg-white"
                     }`}
                   >
-                    <div className={step >= s.n ? "text-rose-600" : "text-slate-300"}>{s.icon}</div>
-                    <span className={`text-[10px] font-bold uppercase ${step >= s.n ? "text-rose-700" : "text-slate-300"}`}>
+                    <div className={step >= s.n ? "text-indigo-600" : "text-slate-300"}>{s.icon}</div>
+                    <span className={`text-[10px] font-bold uppercase ${step >= s.n ? "text-indigo-700" : "text-slate-300"}`}>
                       {s.label}
                     </span>
                   </div>

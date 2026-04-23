@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     // 3. DB 저장 실행
     const { data, error: insertError } = await supabase
       .from("community_posts")
-      .insert(insertData)
+      .insert(insertData as any)
       .select("*")
       .single();
 
@@ -77,7 +77,7 @@ export async function DELETE(request: Request) {
       .from("community_posts")
       .delete()
       .eq("id", postId)
-      .eq("author_id", user.id); // user_id 대신 author_id 사용
+      .eq("author_id" as any, user.id as any); // user_id 대신 author_id 사용
 
     if (deleteError) {
       console.error("❌ [Community DELETE] 삭제 실패:", deleteError.message);

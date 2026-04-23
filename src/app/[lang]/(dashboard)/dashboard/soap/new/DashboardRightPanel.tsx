@@ -71,7 +71,7 @@ type Props = {
 function levelBadge(level: "green" | "yellow" | "red") {
   if (level === "green") return "bg-emerald-100 text-emerald-700 border-emerald-200";
   if (level === "yellow") return "bg-amber-100 text-amber-700 border-amber-200";
-  return "bg-rose-100 text-rose-700 border-rose-200";
+  return "bg-indigo-100 text-indigo-700 border-indigo-200";
 }
 
 function ReportBody({
@@ -99,7 +99,7 @@ function ReportBody({
   const gaugeBg = { background: `conic-gradient(#2563eb ${score * 3.6}deg, #e2e8f0 0deg)` };
   const riskTone =
     data.auditDefense.riskLevel === "High"
-      ? "border-rose-200 bg-rose-50 text-rose-700"
+      ? "border-indigo-200 bg-indigo-50 text-indigo-700"
       : data.auditDefense.riskLevel === "Medium"
         ? "border-amber-200 bg-amber-50 text-amber-700"
         : "border-blue-200 bg-blue-50 text-blue-700";
@@ -107,7 +107,7 @@ function ReportBody({
     data.logicChainAudit.status === "pass"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : data.logicChainAudit.status === "fail"
-        ? "border-rose-200 bg-rose-50 text-rose-700"
+        ? "border-indigo-200 bg-indigo-50 text-indigo-700"
         : "border-amber-200 bg-amber-50 text-amber-700";
 
   return (

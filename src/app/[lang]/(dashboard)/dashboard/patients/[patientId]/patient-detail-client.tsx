@@ -809,8 +809,8 @@ export function PatientDetailClient({ dict }: Props) {
                     <div key={`guardrail-${item.id}`} className="relative rounded-3xl border border-indigo-200 bg-indigo-50/70 p-6 shadow-sm">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <p className="text-xs font-black uppercase tracking-wide text-indigo-600">AI 분석 로그</p>
-                        <span className={`rounded-full border px-3 py-1 text-xs font-black ${isRed ? "border-rose-200 bg-rose-100 text-rose-700" : "border-emerald-200 bg-emerald-100 text-emerald-700"}`}>
-                          {isRed ? "🚨 Red Flag 감지" : "Red Flag 없음"}
+                        <span className={`rounded-full border px-3 py-1 text-xs font-black ${isRed ? "border-indigo-200 bg-indigo-100 text-indigo-700" : "border-slate-200 bg-slate-100 text-slate-700"}`}>
+                          {isRed ? "⚠️ 임상 위험 신호 감지" : "임상 위험 신호 없음"}
                         </span>
                       </div>
                       <div className="grid gap-3 md:grid-cols-3">
