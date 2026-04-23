@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ClipboardList,
   Activity,
@@ -624,6 +624,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const dataLocale: SoapDataLocale = locale === "en" ? "en" : "ko";
   const prognosisWeekOptions = locale === "en" ? PROGNOSIS_WEEKS_EN : PROGNOSIS_WEEKS_KO;
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const patientIdFromUrl = useMemo(() => {
     const raw = searchParams.get("patientId");
@@ -734,6 +735,12 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const [showCloudDraftPrompt, setShowCloudDraftPrompt] = useState(false);
   const [showProPaywall, setShowProPaywall] = useState(false);
   const [paywallUsage, setPaywallUsage] = useState<{ used: number; limit: number } | null>(null);
+
+  useEffect(() => {
+    // 라우트가 바뀌면 클릭을 가로막는 오버레이 상태를 즉시 초기화한다.
+    setShowProPaywall(false);
+    setMeasureModalOpen(false);
+  }, [pathname]);
 
   const specialTestLabel = useMemo(
     (): Record<SpecialTestValue, string> => ({
@@ -1482,7 +1489,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     : null;
 
   return (
-    <div className="flex h-full flex-col bg-slate-50 font-sans">
+    <div className="relative flex h-full flex-col bg-slate-50 font-sans">
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-4">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold text-slate-800">
@@ -2565,7 +2572,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
         {showProPaywall ? (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+            className="absolute inset-0 z-[40] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="pro-paywall-title"
