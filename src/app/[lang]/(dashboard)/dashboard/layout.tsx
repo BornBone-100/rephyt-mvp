@@ -20,7 +20,6 @@ export default async function DashboardSectionLayout({
         base={base}
         labels={{
           core: "CORE",
-          home: dict.dashboard.title,
           patients: dict.dashboard.patientList,
           newSoap: dict.dashboard.newChart,
           insights: "INSIGHTS",

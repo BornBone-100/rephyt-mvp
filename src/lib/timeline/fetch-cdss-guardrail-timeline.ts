@@ -18,6 +18,8 @@ export type CdssGuardrailTimelineRow = {
   audit_defense?: unknown;
   predictive_trajectory?: unknown;
   compliance_score?: number | null;
+  assessment_data?: Record<string, unknown> | null;
+  original_data?: Record<string, unknown> | null;
   payload: Record<string, unknown> | null;
 };
 
@@ -40,7 +42,7 @@ export async function fetchCdssTimelineRows(
   const { data, error } = await supabase
     .from("cdss_guardrail_logs")
     .select(
-      "id, user_id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, clinical_reasoning, differential_diagnosis, intervention_strategy, professional_discussion, cpg_compliance, audit_defense, predictive_trajectory, compliance_score, raw_ai_response",
+      "id, user_id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, clinical_reasoning, differential_diagnosis, intervention_strategy, professional_discussion, cpg_compliance, audit_defense, predictive_trajectory, compliance_score, assessment_data, original_data, raw_ai_response",
     )
     .eq("patient_id", cleanPatientId)
     .order("created_at", { ascending: false });
@@ -56,8 +58,27 @@ export async function fetchCdssTimelineRows(
     ...row,
     payload:
       row.raw_ai_response && typeof row.raw_ai_response === "object"
-        ? (row.raw_ai_response as Record<string, unknown>)
-        : null,
+        ? ({
+            ...(row.raw_ai_response as Record<string, unknown>),
+            assessment_data:
+              row.assessment_data && typeof row.assessment_data === "object"
+                ? row.assessment_data
+                : (row.raw_ai_response as Record<string, unknown>).assessment_data ?? null,
+            original_data:
+              row.original_data && typeof row.original_data === "object"
+                ? row.original_data
+                : (row.raw_ai_response as Record<string, unknown>).original_data ?? null,
+          } as Record<string, unknown>)
+        : ({
+            assessment_data:
+              row.assessment_data && typeof row.assessment_data === "object"
+                ? row.assessment_data
+                : null,
+            original_data:
+              row.original_data && typeof row.original_data === "object"
+                ? row.original_data
+                : null,
+          } as Record<string, unknown>),
   }));
 
   return { rows, error: null };

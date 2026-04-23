@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 
 type SidebarLabels = {
   core: string;
-  home: string;
   patients: string;
   newSoap: string;
   insights: string;
@@ -42,12 +41,6 @@ export function DashboardSidebar({ base, labels }: Props) {
       <nav className="flex flex-col gap-4 p-4">
         <section className="space-y-1.5">
           <p className={groupTitleClass}>{labels.core}</p>
-          <Link href={`${base}/dashboard`} prefetch={true} className={linkClass(`${base}/dashboard`)}>
-            <span className="flex items-center gap-2 text-slate-900">
-              <span className="text-lg">🏠</span>
-              {labels.home}
-            </span>
-          </Link>
           <Link href={`${base}/dashboard/patients`} prefetch={true} className={linkClass(`${base}/dashboard/patients`)}>
             <span className="flex items-center gap-2 text-slate-900">
               <span className="text-lg">🧑‍⚕️</span>

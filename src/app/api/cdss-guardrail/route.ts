@@ -23,6 +23,7 @@ type GuardrailRequest = {
     custom?: Array<{ id?: string; name?: string; result?: string }>;
     merged?: Array<{ name?: string; result?: string; source?: string }>;
   } | null;
+  assessmentData?: Record<string, unknown> | null;
   language?: string;
 };
 
@@ -204,6 +205,7 @@ const TUNING_VERSION = "v1-feedback-weighted";
 const CDSS_GUARDRAIL_LOGS_TABLE = "cdss_guardrail_logs" as const;
 const ALLOWED_COLUMNS = [
   "patient_id",
+  "assessment_data",
   "diagnosis_area",
   "overall_score",
   "clinical_reasoning",
@@ -897,6 +899,10 @@ function buildGuardrailLogRow(params: {
   );
   return {
     patient_id: typeof params.request.patientId === "string" ? params.request.patientId : null,
+    assessment_data:
+      params.request.assessmentData && typeof params.request.assessmentData === "object"
+        ? params.request.assessmentData
+        : null,
     diagnosis_area: typeof params.request.diagnosisArea === "string" ? params.request.diagnosisArea : null,
     overall_score: overallScore,
     clinical_reasoning: params.result.clinicalReasoning ?? "",

@@ -38,9 +38,11 @@ export function SettingsPageClient({ dict }: Props) {
 
   const [loading, setLoading] = useState(true);
   const [displayName, setDisplayName] = useState("—");
+  const [editableName, setEditableName] = useState("");
   const [email, setEmail] = useState("—");
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [isCanceling, setIsCanceling] = useState(false);
+  const [isSavingName, setIsSavingName] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,12 +51,15 @@ export function SettingsPageClient({ dict }: Props) {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        const meta = user.user_metadata as { full_name?: string } | undefined;
+        const meta = user.user_metadata as { full_name?: string; name?: string } | undefined;
         const name =
           typeof meta?.full_name === "string" && meta.full_name.trim()
             ? meta.full_name.trim()
+            : typeof meta?.name === "string" && meta.name.trim()
+              ? meta.name.trim()
             : (user.email?.split("@")[0] ?? "—");
         setDisplayName(name);
+        setEditableName(name);
         setEmail(user.email ?? "—");
 
         const { data } = await supabase
@@ -125,6 +130,55 @@ export function SettingsPageClient({ dict }: Props) {
     }
   };
 
+  const handleSaveName = async () => {
+    const nextName = editableName.trim();
+    if (!nextName) {
+      alert(lang === "en" ? "Please enter your name." : "이름을 입력해 주세요.");
+      return;
+    }
+    setIsSavingName(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        alert(lang === "en" ? "Please log in again." : "로그인 세션이 만료되었습니다. 다시 로그인해 주세요.");
+        return;
+      }
+
+      const authRes = await supabase.auth.updateUser({
+        data: {
+          full_name: nextName,
+          name: nextName,
+        },
+      });
+      if (authRes.error) {
+        alert(`${s.alertErrorPrefix}${authRes.error.message}`);
+        return;
+      }
+
+      const { error: profileError } = await (supabase as any).from("profiles").upsert(
+        {
+          id: user.id,
+          name: nextName,
+          metadata: { name: nextName },
+        } as any,
+        { onConflict: "id" },
+      );
+      if (profileError) {
+        alert(`${s.alertErrorPrefix}${profileError.message}`);
+        return;
+      }
+
+      setDisplayName(nextName);
+      alert(lang === "en" ? "Name updated successfully." : "이름이 성공적으로 변경되었습니다.");
+    } catch {
+      alert(s.serverCommError);
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl p-8 text-sm text-zinc-500">{s.loading}</div>
@@ -139,8 +193,27 @@ export function SettingsPageClient({ dict }: Props) {
         <h2 className="mb-4 border-b border-zinc-100 pb-2 text-lg font-semibold text-zinc-900">
           {s.profileHeading}
         </h2>
-        <p className="mb-2 text-gray-600">
-          {s.nameLabel}: {displayName}
+        <div className="mb-4">
+          <label className="mb-1 block text-sm font-semibold text-zinc-700">{s.nameLabel}</label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              value={editableName}
+              onChange={(e) => setEditableName(e.target.value)}
+              className="h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              placeholder={lang === "en" ? "Enter your name" : "이름을 입력하세요"}
+            />
+            <button
+              type="button"
+              onClick={() => void handleSaveName()}
+              disabled={isSavingName}
+              className="h-10 shrink-0 rounded-lg bg-blue-950 px-4 text-sm font-semibold text-white transition hover:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSavingName ? (lang === "en" ? "Saving..." : "저장 중...") : (lang === "en" ? "Save" : "이름 저장")}
+            </button>
+          </div>
+        </div>
+        <p className="mb-2 text-xs text-zinc-500">
+          {lang === "en" ? `Current display name: ${displayName}` : `현재 표시 이름: ${displayName}`}
         </p>
         <p className="text-gray-600">
           {s.emailLabel}: {email}

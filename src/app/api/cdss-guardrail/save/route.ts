@@ -141,6 +141,9 @@ export async function POST(req: Request) {
     if (!reportId) {
       return NextResponse.json({ error: "reportId is required" }, { status: 400 });
     }
+    if (!userId) {
+      return NextResponse.json({ error: "userId is required" }, { status: 401 });
+    }
     const result = body.result ?? {};
     const overallScore = clampScore(result.overallScore ?? result.complianceScore ?? 0);
     const hasRedFlag = Boolean(result.hasRedFlag);
@@ -155,7 +158,7 @@ export async function POST(req: Request) {
     const row: Record<string, unknown> = {
       id: reportId,
       patient_id: patientId,
-      user_id: userId || null,
+      user_id: userId,
       diagnosis_area: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,
       overall_score: overallScore,
       clinical_reasoning:
@@ -221,7 +224,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     const activity = await logClinicalFilterActivity(supabase, {
-      userId: userId || null,
+      userId,
       patientId,
       reportId,
       diagnosisArea: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,

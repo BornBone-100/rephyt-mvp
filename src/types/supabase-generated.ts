@@ -228,6 +228,59 @@ export type Database = {
         Relationships: [];
       };
 
+      cdss_guardrail_logs: {
+        Row: {
+          id: string;
+          patient_id: string | null;
+          user_id: string | null;
+          diagnosis_area: string | null;
+          overall_score: number | null;
+          clinical_reasoning: string | null;
+          differential_diagnosis: string | null;
+          logic_audit: Json | null;
+          cpg_compliance: Json | null;
+          audit_defense: Json | null;
+          predictive_trajectory: Json | null;
+          compliance_score: number | null;
+          detected_condition_id: string | null;
+          has_red_flag: boolean | null;
+          matched_aliases: Json | null;
+          score_breakdown: Json | null;
+          intervention_strategy: string | null;
+          professional_discussion: string | null;
+          assessment_data: Json | null;
+          original_data: Json | null;
+          raw_ai_response: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id?: string | null;
+          user_id?: string | null;
+          diagnosis_area?: string | null;
+          overall_score?: number | null;
+          clinical_reasoning?: string | null;
+          differential_diagnosis?: string | null;
+          logic_audit?: Json | null;
+          cpg_compliance?: Json | null;
+          audit_defense?: Json | null;
+          predictive_trajectory?: Json | null;
+          compliance_score?: number | null;
+          detected_condition_id?: string | null;
+          has_red_flag?: boolean | null;
+          matched_aliases?: Json | null;
+          score_breakdown?: Json | null;
+          intervention_strategy?: string | null;
+          professional_discussion?: string | null;
+          assessment_data?: Json | null;
+          original_data?: Json | null;
+          raw_ai_response?: Json | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["cdss_guardrail_logs"]["Insert"]>;
+        Relationships: [];
+      };
+
       profiles: {
         Row: {
           id: string;

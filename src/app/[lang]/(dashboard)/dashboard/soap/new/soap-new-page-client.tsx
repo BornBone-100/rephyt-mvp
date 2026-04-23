@@ -334,6 +334,7 @@ type GuardrailPayload = {
   intervention: string;
   step4: string;
   language: string;
+  assessmentData?: Record<string, unknown>;
   rom_assessment?: {
     bodyPart: string;
     sideMode: "left" | "right" | "bilateral" | "none";
@@ -457,6 +458,10 @@ function buildGuardrailRequestPayload(payload: GuardrailPayload): string {
       intervention: String(payload.intervention ?? "").slice(0, 50000),
       step4: '{"manual":[],"exercise":[],"modalities":[],"education":""}',
       language: String(payload.language ?? "ko").slice(0, 16),
+      assessmentData:
+        payload.assessmentData && typeof payload.assessmentData === "object"
+          ? payload.assessmentData
+          : undefined,
     };
     return JSON.stringify(fallback);
   }
@@ -1200,6 +1205,30 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         intervention: scrubClinicalTextForApi(treatmentText || formData.intervention.trim(), nameHints),
         step4: scrubClinicalTextForApi(step4Json, nameHints),
         language: formData.language,
+        assessmentData: {
+          step1: {
+            chiefComplaint: examDraft.chiefComplaint,
+            onset: examDraft.onset,
+            traumaType: examDraft.traumaType,
+            vas: examDraft.vas,
+            painQualities: examDraft.painQualities,
+            aggravatingFactors: examDraft.aggravatingFactors,
+            relievingFactors: examDraft.relievingFactors,
+          },
+          step2: {
+            body_part: romAssessmentMeta?.bodyPart ?? formData.diagnosisArea,
+            diagnosisArea: formData.diagnosisArea,
+            evaluation: formData.evaluation,
+          },
+          step3: {
+            rom_assessment: romAssessmentMeta,
+          },
+          step4: {
+            plan: formData.intervention,
+            aggravatingFactors: examDraft.aggravatingFactors,
+            relievingFactors: examDraft.relievingFactors,
+          },
+        },
         rom_assessment: romAssessmentMeta ?? undefined,
         special_tests: mergedSpecialTests,
       };
@@ -1319,10 +1348,36 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         locale,
         language: formData.language,
         originalData: {
-          exam: formData.examination,
-          evaluation: formData.evaluation,
-          goal: formData.prognosis,
-          plan: formData.intervention,
+          exam: {
+            chiefComplaint: examDraft.chiefComplaint,
+            onset: examDraft.onset,
+            traumaType: examDraft.traumaType,
+            vas: examDraft.vas,
+            painQualities: examDraft.painQualities,
+            aggravatingFactors: examDraft.aggravatingFactors,
+            relievingFactors: examDraft.relievingFactors,
+            screeningRegion,
+            redFlags: examDraft.redFlags,
+            notes: examDraft.otherNotes,
+            summary: formData.examination,
+          },
+          evaluation: {
+            bodyPart: romAssessmentMeta?.bodyPart ?? formData.diagnosisArea,
+            diagnosisArea: formData.diagnosisArea,
+            onset: examDraft.onset,
+            traumaType: examDraft.traumaType,
+            clinicalReasoning: formData.evaluation,
+            summary: formData.evaluation,
+          },
+          goal: {
+            summary: formData.prognosis,
+            rom: romAssessmentMeta ?? null,
+          },
+          plan: {
+            summary: formData.intervention,
+            aggravatingFactors: examDraft.aggravatingFactors,
+            relievingFactors: examDraft.relievingFactors,
+          },
         },
         assessmentData: {
           step1: {

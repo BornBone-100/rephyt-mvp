@@ -308,6 +308,10 @@ function extractOriginalAssessmentData(log: TimelineLog): OriginalAssessmentSect
   const payload = log.payload;
   const requestPayload = asRecord(payload?.request_payload);
   const originalData = asRecord(payload?.original_data) ?? asRecord(requestPayload?.original_data);
+  const originalExam = asRecord(originalData?.exam);
+  const originalEvaluation = asRecord(originalData?.evaluation);
+  const originalGoal = asRecord(originalData?.goal);
+  const originalPlan = asRecord(originalData?.plan);
   const assessmentData = asRecord(payload?.assessment_data) ?? asRecord(requestPayload?.assessment_data);
   const assessmentStep1 = asRecord(assessmentData?.step1);
   const assessmentStep2 = asRecord(assessmentData?.step2);
@@ -331,14 +335,29 @@ function extractOriginalAssessmentData(log: TimelineLog): OriginalAssessmentSect
     return "";
   };
 
-  const step1Exam = [pickFirstText(originalData?.exam), pickFromSources("chiefComplaint"), pickFromSources("examination")]
+  const step1Exam = [
+    pickFirstText(originalExam?.summary, originalExam?.chiefComplaint, originalData?.exam),
+    pickFromSources("chiefComplaint"),
+    pickFromSources("examination"),
+  ]
     .filter(Boolean)
     .join("\n");
 
   const onset = pickFromSources("onset");
   const trauma = pickFromSources("traumaType");
-  const step2BodyPart = pickFirstText(assessmentStep2?.body_part, assessmentStep2?.diagnosisArea);
-  const reasoning = pickFirstText(originalData?.evaluation, assessmentStep2?.evaluation, pickFromSources("evaluation"));
+  const step2BodyPart = pickFirstText(
+    originalEvaluation?.bodyPart,
+    originalEvaluation?.diagnosisArea,
+    assessmentStep2?.body_part,
+    assessmentStep2?.diagnosisArea,
+  );
+  const reasoning = pickFirstText(
+    originalEvaluation?.summary,
+    originalEvaluation?.clinicalReasoning,
+    originalData?.evaluation,
+    assessmentStep2?.evaluation,
+    pickFromSources("evaluation"),
+  );
   const step2Evaluation = [
     step2BodyPart ? `평가 부위: ${step2BodyPart}` : "",
     onset || trauma ? [onset, trauma].filter(Boolean).join(" / ") : "",
@@ -348,6 +367,7 @@ function extractOriginalAssessmentData(log: TimelineLog): OriginalAssessmentSect
     .join("\n");
 
   const romAssessment =
+    asRecord(originalGoal?.rom) ??
     asRecord(assessmentStep3?.rom_assessment) ??
     asRecord(root.rom_assessment) ??
     asRecord(assessmentData?.rom_assessment) ??
@@ -369,10 +389,15 @@ function extractOriginalAssessmentData(log: TimelineLog): OriginalAssessmentSect
 
   const aggravating = pickFromSources("aggravatingFactors");
   const relieving = pickFromSources("relievingFactors");
-  const planText = pickFirstText(originalData?.plan, assessmentStep4?.plan, pickFromSources("intervention"));
+  const planText = pickFirstText(
+    originalPlan?.summary,
+    originalData?.plan,
+    assessmentStep4?.plan,
+    pickFromSources("intervention"),
+  );
   const step4Plan = [
-    aggravating ? `악화 요인: ${aggravating}` : "",
-    relieving ? `완화 요인: ${relieving}` : "",
+    pickFirstText(originalPlan?.aggravatingFactors, aggravating) ? `악화 요인: ${pickFirstText(originalPlan?.aggravatingFactors, aggravating)}` : "",
+    pickFirstText(originalPlan?.relievingFactors, relieving) ? `완화 요인: ${pickFirstText(originalPlan?.relievingFactors, relieving)}` : "",
     planText ? `중재 계획: ${planText}` : "",
   ]
     .filter(Boolean)
