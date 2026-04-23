@@ -17,6 +17,7 @@ import type { getDictionary } from "@/dictionaries/getDictionary";
 import DashboardRightPanel from "./DashboardRightPanel";
 import { MeasureModal, type Step2OutcomePayload } from "./MeasureModal";
 import { createClient } from "@/utils/supabase/client";
+import { toast } from "sonner";
 import {
   getJosptIcfDb,
   getJosptOutcomeDb,
@@ -303,6 +304,18 @@ type TempDraftPayload = {
   modalityEntries: ModalityEntry[];
   educationHep: string;
 };
+
+function formatSupabaseTempSaveError(error: unknown): string {
+  if (error !== null && typeof error === "object") {
+    const o = error as { message?: string; details?: string; hint?: string; code?: string };
+    const parts = [o.message, o.details, o.hint, o.code]
+      .map((s) => (typeof s === "string" ? s.trim() : ""))
+      .filter(Boolean);
+    if (parts.length) return [...new Set(parts)].join(" — ");
+  }
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
 
 type GuardrailPayload = {
   patientId: string;
@@ -942,8 +955,13 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       });
       setDraftSavedAt(hhmm);
     } catch (error) {
-      console.error("Supabase 임시 저장 에러 상세:", error);
-      alert(locale === "en" ? "Failed to save draft." : "임시 저장에 실패했습니다.");
+      console.error("Supabase 임시 저장 실패 — 원본 error 객체:", error);
+      const detail = formatSupabaseTempSaveError(error);
+      const title = locale === "en" ? "Failed to save draft." : "임시 저장에 실패했습니다.";
+      toast.error(title, {
+        description: detail || (locale === "en" ? "Unknown error" : "알 수 없는 오류"),
+        duration: 14_000,
+      });
     } finally {
       setIsDraftSaving(false);
     }

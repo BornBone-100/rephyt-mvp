@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SonnerToaster } from "@/components/SonnerToaster";
 
 const LOCALES = ["ko", "en"] as const;
 export type AppLocale = (typeof LOCALES)[number];
@@ -20,6 +21,7 @@ export default async function LangLayout({
 
   return (
     <>
+      <SonnerToaster />
       <main className="flex-grow">{children}</main>
 
       <footer className="bg-zinc-50 border-t border-zinc-200 py-12 px-6">
