@@ -1233,6 +1233,10 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      console.log("🕵️‍♂️ [디버깅] 프론트엔드에서 찾은 user_id:", user?.id);
+      if (!user?.id) {
+        alert("⚠️ 시스템 경고: 로그인 정보(user_id)를 찾을 수 없습니다! 백엔드로 null이 날아갑니다.");
+      }
       console.log("🚀 [SAVE] 쏠 준비 완료. Patient ID:", chartPatientId);
       const payload = {
         patientId: chartPatientId,
