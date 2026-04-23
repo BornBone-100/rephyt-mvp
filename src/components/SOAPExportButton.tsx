@@ -2,6 +2,8 @@
 
 interface Props {
   fileName: string;
+  label?: string;
+  className?: string;
   payload: {
     patient?: {
       patientId?: string;
@@ -19,7 +21,7 @@ interface Props {
 }
 
 /** 서버 PDF API 호출 후 파일 다운로드 */
-export default function SOAPExportButton({ fileName, payload }: Props) {
+export default function SOAPExportButton({ fileName, payload, label = "PDF 내보내기", className }: Props) {
   const handleDownloadPDF = async () => {
     try {
       const requestPayload = {
@@ -74,10 +76,12 @@ export default function SOAPExportButton({ fileName, payload }: Props) {
     <button
       type="button"
       onClick={() => void handleDownloadPDF()}
-      className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+      className={
+        className ??
+        "flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+      }
     >
-      <span aria-hidden>📄</span>
-      PDF 내보내기
+      {label}
     </button>
   );
 }

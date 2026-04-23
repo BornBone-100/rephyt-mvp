@@ -8,6 +8,7 @@ import { createClient } from "@/utils/supabase/client";
 import type { Tables } from "@/types/supabase";
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import { PastSoapCard } from "./past-soap-card";
+import SOAPExportButton from "@/components/SOAPExportButton";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -236,6 +237,10 @@ function normalizePatientId(raw: string): string {
   return trimmed;
 }
 
+function sanitizeFileNameSegment(raw: string): string {
+  return raw.replace(/[/\\?%*:|"<>]/g, "_").trim() || "timeline-report";
+}
+
 export function PatientDetailClient({ dict }: Props) {
   const pd = dict.dashboard.patients;
   const params = useParams();
@@ -263,6 +268,7 @@ export function PatientDetailClient({ dict }: Props) {
   const [timelineLogs, setTimelineLogs] = useState<TimelineLog[]>([]);
   const [isTimelineLogsLoading, setIsTimelineLogsLoading] = useState(false);
   const [screeningRefreshTick, setScreeningRefreshTick] = useState(0);
+  const [sharingTimelineIds, setSharingTimelineIds] = useState<Record<string, boolean>>({});
   
   const [isLoading, setIsLoading] = useState(true);
   
@@ -547,6 +553,57 @@ export function PatientDetailClient({ dict }: Props) {
     setSoapNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, is_shared: true } : n)));
   }, []);
 
+  const handleShareTimelineCase = useCallback(
+    async (item: TimelineLog) => {
+      const challengeTitle = item.diagnosis_area || item.detected_condition_id || "Clinical Reasoning Challenge";
+      const defenseHighlight =
+        (typeof item.audit_defense === "object" &&
+          item.audit_defense !== null &&
+          typeof (item.audit_defense as { feedback?: unknown }).feedback === "string" &&
+          (item.audit_defense as { feedback?: string }).feedback) ||
+        (typeof item.logic_audit === "object" &&
+          item.logic_audit !== null &&
+          typeof (item.logic_audit as { feedback?: unknown }).feedback === "string" &&
+          (item.logic_audit as { feedback?: string }).feedback) ||
+        "";
+      if (!window.confirm(pd.soapSharePastConfirm)) return;
+
+      setSharingTimelineIds((prev) => ({ ...prev, [item.id]: true }));
+      try {
+        const res = await fetch("/api/community/report-share", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "defense_tip",
+            payload: {
+              challengeTitle,
+              defenseHighlight,
+              anonymousData: {
+                diagnosisArea: item.diagnosis_area,
+                hasRedFlag: item.has_red_flag,
+                overallScore: item.overall_score,
+                complianceScore: item.compliance_score,
+              },
+              overallScore: item.overall_score ?? 0,
+              defenseScore: item.compliance_score ?? 0,
+            },
+          }),
+        });
+        const result = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+        if (!result.success) {
+          alert(result.message ?? pd.soapSharePastError);
+          return;
+        }
+        alert(pd.soapSharePastSuccess);
+      } catch {
+        alert(pd.soapSharePastError);
+      } finally {
+        setSharingTimelineIds((prev) => ({ ...prev, [item.id]: false }));
+      }
+    },
+    [pd.soapSharePastConfirm, pd.soapSharePastError, pd.soapSharePastSuccess],
+  );
+
   const isFirstVisit = patient?.is_first_visit === true;
   const hasPriorCareElsewhere = patient?.is_first_visit === false;
 
@@ -735,6 +792,10 @@ export function PatientDetailClient({ dict }: Props) {
                     typeof (item.predictive_trajectory as { estimatedWeeks?: unknown }).estimatedWeeks === "number"
                       ? Number((item.predictive_trajectory as { estimatedWeeks: number }).estimatedWeeks)
                       : null;
+                  const exportFileName = sanitizeFileNameSegment(
+                    `RePhyT_Timeline_${diagnosisLabel}_${new Date(item.created_at).toISOString().slice(0, 10)}`,
+                  );
+                  const isTimelineSharing = sharingTimelineIds[item.id] === true;
                   return (
                     <div key={`guardrail-${item.id}`} className="relative rounded-3xl border border-indigo-200 bg-indigo-50/70 p-6 shadow-sm">
                       <div className="mb-3 flex items-center justify-between gap-3">
@@ -855,6 +916,35 @@ export function PatientDetailClient({ dict }: Props) {
                             </div>
                           ) : null}
                         </aside>
+                      </div>
+                      <div className="mt-4 flex justify-end gap-3 border-t border-indigo-50 pt-4">
+                        <SOAPExportButton
+                          fileName={exportFileName}
+                          label="📄 PDF 저장"
+                          className="text-sm font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg"
+                          payload={{
+                            patient: {
+                              patientId: chartPatientId,
+                              name: patient?.name ?? "Unknown",
+                              visitDate: item.created_at,
+                            },
+                            soap: {
+                              subjective: item.differential_diagnosis ?? "",
+                              objective: item.clinical_reasoning ?? "",
+                              assessment: item.intervention_strategy ?? "",
+                              plan: item.professional_discussion ?? "",
+                            },
+                            title: "Re:PhyT Safety Net Timeline Report",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleShareTimelineCase(item)}
+                          disabled={isTimelineSharing}
+                          className="text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isTimelineSharing ? pd.soapSharePastButtonLoading : "🌐 커뮤니티에 공유하기"}
+                        </button>
                       </div>
                     </div>
                   );
