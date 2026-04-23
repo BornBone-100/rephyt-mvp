@@ -1,15 +1,18 @@
 import { createClient } from "@/utils/supabase/server";
+import { clinicalData } from "@/data/clinicalLibrary";
 import ClinicalLibraryClient from "./clinical-library-client";
 
 type LibraryRow = {
   id: string;
   category: string | null;
   title: string | null;
+  summary?: string | null;
   content_md: string | null;
   image_url: string | null;
   tags: string[] | null;
   updated_at?: string | null;
   created_at?: string | null;
+  updatedAt?: string | null;
 };
 
 export default async function ClinicalLibraryPage({
@@ -33,6 +36,21 @@ export default async function ClinicalLibraryPage({
 
   if (!error && Array.isArray(data)) {
     items = data as LibraryRow[];
+  }
+
+  if (items.length === 0) {
+    items = clinicalData.map((item) => ({
+      id: item.id,
+      category: item.category,
+      title: item.title,
+      summary: item.summary,
+      content_md: item.content_md,
+      image_url: null,
+      tags: item.tags,
+      updatedAt: item.updatedAt,
+      updated_at: null,
+      created_at: null,
+    }));
   }
 
   return (

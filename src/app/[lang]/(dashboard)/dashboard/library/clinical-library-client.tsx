@@ -10,11 +10,13 @@ type LibraryItem = {
   id: string;
   category: string | null;
   title: string | null;
+  summary?: string | null;
   content_md: string | null;
   image_url: string | null;
   tags: string[] | null;
   updated_at?: string | null;
   created_at?: string | null;
+  updatedAt?: string | null;
 };
 
 type Props = {
@@ -23,7 +25,24 @@ type Props = {
   items: LibraryItem[];
 };
 
-const baseCategories = ["전체", "경추", "요추", "어깨", "레드플래그", "CPG", "이학적검사", "프로토콜"];
+const baseCategories = ["전체", "경추", "요추", "어깨", "무릎", "신경계", "레드플래그", "CPG", "이학적검사", "프로토콜"];
+
+function getCategoryBadgeTone(item: LibraryItem) {
+  const raw = `${item.category ?? ""} ${(item.tags ?? []).join(" ")}`.toLowerCase();
+  if (raw.includes("레드플래그") || raw.includes("redflag")) {
+    return "bg-red-50 text-red-700 border-red-200";
+  }
+  if (raw.includes("cpg")) {
+    return "bg-indigo-50 text-indigo-700 border-indigo-200";
+  }
+  if (raw.includes("이학적검사")) {
+    return "bg-sky-50 text-sky-700 border-sky-200";
+  }
+  if (raw.includes("프로토콜")) {
+    return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  }
+  return "bg-slate-50 text-slate-700 border-slate-200";
+}
 
 export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
   const router = useRouter();
@@ -55,7 +74,8 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
     const fromData = items
       .map((item) => item.category?.trim())
       .filter((v): v is string => Boolean(v));
-    return [...new Set([...baseCategories, ...fromData])];
+    const tags = items.flatMap((item) => item.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
+    return [...new Set([...baseCategories, ...fromData, ...tags])];
   }, [items]);
 
   const filteredItems = useMemo(() => {
@@ -65,11 +85,13 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
       const title = item.title ?? "";
       const content = item.content_md ?? "";
       const tags = item.tags?.join(" ") ?? "";
-      const categoryOk = activeCategory === "전체" || category === activeCategory;
+      const tagMatched = (item.tags ?? []).some((tag) => tag === activeCategory);
+      const categoryOk = activeCategory === "전체" || category === activeCategory || tagMatched;
       const searchOk =
         !lowered ||
         title.toLowerCase().includes(lowered) ||
         content.toLowerCase().includes(lowered) ||
+        (item.summary ?? "").toLowerCase().includes(lowered) ||
         category.toLowerCase().includes(lowered) ||
         tags.toLowerCase().includes(lowered);
       return categoryOk && searchOk;
@@ -140,13 +162,15 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredItems.map((item) => {
             const favorite = favorites.includes(item.id);
-            const dateValue = item.updated_at ?? item.created_at ?? null;
+            const dateValue = item.updatedAt ?? item.updated_at ?? item.created_at ?? null;
             const dateLabel = dateValue ? new Date(dateValue).toLocaleDateString() : "-";
+            const badgeTone = getCategoryBadgeTone(item);
+            const previewSummary = item.summary || item.content_md || "요약 내용이 없습니다.";
 
             return (
               <article key={item.id} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700">
+                  <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${badgeTone}`}>
                     {item.category || "분류 없음"}
                   </span>
                   <button
@@ -163,7 +187,16 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
                   </button>
                 </div>
                 <h2 className="mt-3 line-clamp-2 text-base font-black text-slate-900">{item.title || "제목 없음"}</h2>
-                <p className="mt-2 line-clamp-3 text-sm text-slate-600">{item.content_md || "요약 내용이 없습니다."}</p>
+                <p className="mt-2 line-clamp-3 text-sm text-slate-600">{previewSummary}</p>
+                {!!item.tags?.length && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {item.tags.slice(0, 4).map((tag) => (
+                      <span key={`${item.id}-${tag}`} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
                   <span>업데이트 {dateLabel}</span>
                   <button
@@ -204,7 +237,10 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
 
             <div className="prose prose-slate max-w-none px-5 py-5 prose-headings:text-slate-900 prose-a:text-indigo-600">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {selectedItem.content_md || "콘텐츠가 준비 중입니다."}
+                {selectedItem.content_md ||
+                  (selectedItem.summary
+                    ? `## ${selectedItem.title ?? "자료"}\n\n${selectedItem.summary}`
+                    : "콘텐츠가 준비 중입니다.")}
               </ReactMarkdown>
             </div>
 
