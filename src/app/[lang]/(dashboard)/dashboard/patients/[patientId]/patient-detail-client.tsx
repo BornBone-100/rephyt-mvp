@@ -36,6 +36,7 @@ type ModalityEntry = {
 
 type TimelineLog = {
   id: string;
+  user_id?: string | null;
   created_at: string;
   overall_score: number | null;
   has_red_flag: boolean | null;
@@ -416,6 +417,7 @@ export function PatientDetailClient({ dict }: Props) {
   const [soapNotes, setSoapNotes] = useState<Tables<"soap_notes">[]>([]);
   const [treatments, setTreatments] = useState<Tables<"treatments">[]>([]);
   const [timelineLogs, setTimelineLogs] = useState<TimelineLog[]>([]);
+  const [authorProfileMap, setAuthorProfileMap] = useState<Record<string, { name?: string; hospital?: string; specialties?: string[] }>>({});
   const [isTimelineLogsLoading, setIsTimelineLogsLoading] = useState(false);
   const [screeningRefreshTick, setScreeningRefreshTick] = useState(0);
   const [sharingTimelineIds, setSharingTimelineIds] = useState<Record<string, boolean>>({});
@@ -532,6 +534,52 @@ export function PatientDetailClient({ dict }: Props) {
       void supabase.removeChannel(channel);
     };
   }, [fetchTimelineLogs, chartPatientId]);
+
+  useEffect(() => {
+    const authorIds = Array.from(
+      new Set(
+        timelineLogs
+          .map((row) => (typeof row.user_id === "string" ? row.user_id.trim() : ""))
+          .filter(Boolean),
+      ),
+    );
+    if (authorIds.length === 0) {
+      setAuthorProfileMap({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("profiles")
+        .select("id, name, hospital_name, specialties, metadata")
+        .in("id", authorIds);
+      if (cancelled) return;
+      const rows = Array.isArray(data) ? data : [];
+      const next = rows.reduce<Record<string, { name?: string; hospital?: string; specialties?: string[] }>>((acc, row: any) => {
+        const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+        acc[String(row.id)] = {
+          name: typeof row?.name === "string" ? row.name : typeof metadata?.name === "string" ? metadata.name : undefined,
+          hospital:
+            typeof row?.hospital_name === "string"
+              ? row.hospital_name
+              : typeof metadata?.hospital_name === "string"
+                ? metadata.hospital_name
+                : undefined,
+          specialties:
+            Array.isArray(row?.specialties)
+              ? row.specialties
+              : Array.isArray(metadata?.specialties)
+                ? metadata.specialties
+                : [],
+        };
+        return acc;
+      }, {});
+      setAuthorProfileMap(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, timelineLogs]);
 
   useEffect(() => {
     if (!reportIdFromQuery || timelineLogs.length === 0) return;
@@ -963,6 +1011,7 @@ export function PatientDetailClient({ dict }: Props) {
                     `RePhyT_Timeline_${diagnosisLabel}_${new Date(item.created_at).toISOString().slice(0, 10)}`,
                   );
                   const isTimelineSharing = sharingTimelineIds[item.id] === true;
+                  const author = item.user_id ? authorProfileMap[item.user_id] : undefined;
                   return (
                     <div key={`guardrail-${item.id}`} className="relative rounded-3xl border border-indigo-200 bg-indigo-50/70 p-6 shadow-sm">
                       <div className="mb-3 flex items-center justify-between gap-3">
@@ -1123,6 +1172,16 @@ export function PatientDetailClient({ dict }: Props) {
                         >
                           {isTimelineSharing ? pd.soapSharePastButtonLoading : "🌐 커뮤니티에 공유하기"}
                         </button>
+                      </div>
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                        <p className="font-bold text-slate-700">작성자 정보</p>
+                        <p className="mt-1">
+                          {author?.name || "미등록 작성자"}
+                          {author?.hospital ? ` · ${author.hospital}` : ""}
+                          {author?.specialties && author.specialties.length > 0
+                            ? ` · ${author.specialties.slice(0, 2).join(", ")}`
+                            : ""}
+                        </p>
                       </div>
                     </div>
                   );

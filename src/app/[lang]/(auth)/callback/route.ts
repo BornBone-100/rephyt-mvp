@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { upsertProfessionalProfile } from "@/lib/profile/upsert-professional-profile";
 
 type RouteContext = { params: Promise<{ lang: string }> };
 
@@ -41,9 +42,26 @@ export async function GET(request: Request, context: RouteContext) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      return NextResponse.redirect(`${origin}/${lang}/dashboard/patients`);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const profileName = typeof user?.user_metadata?.name === "string" ? user.user_metadata.name : "";
+      if (user) {
+        await upsertProfessionalProfile({
+          userId: user.id,
+          name: user.user_metadata?.name ?? null,
+          licenseNo: user.user_metadata?.license_no ?? null,
+          experienceYears: user.user_metadata?.experience_years ?? null,
+          specialties: Array.isArray(user.user_metadata?.specialties) ? user.user_metadata.specialties : [],
+          hospitalName: user.user_metadata?.hospital_name ?? null,
+          blogUrl: user.user_metadata?.blog_url ?? null,
+          bio: user.user_metadata?.bio ?? null,
+        });
+      }
+      const welcomeQuery = profileName ? `?welcomeName=${encodeURIComponent(profileName)}` : "";
+      return NextResponse.redirect(`${origin}/${lang}/dashboard${welcomeQuery}`);
     }
   }
 
-  return NextResponse.redirect(`${origin}/${lang}/dashboard/patients`);
+  return NextResponse.redirect(`${origin}/${lang}/dashboard`);
 }

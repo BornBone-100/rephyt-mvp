@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /** cdss_guardrail_logs 타임라인 조회용 최소 행 타입 (차트 UI와 동일 스키마) */
 export type CdssGuardrailTimelineRow = {
   id: string;
+  user_id?: string | null;
   created_at: string;
   overall_score: number | null;
   has_red_flag: boolean | null;
@@ -39,7 +40,7 @@ export async function fetchCdssTimelineRows(
   const { data, error } = await supabase
     .from("cdss_guardrail_logs")
     .select(
-      "id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, clinical_reasoning, differential_diagnosis, intervention_strategy, professional_discussion, cpg_compliance, audit_defense, predictive_trajectory, compliance_score, raw_ai_response",
+      "id, user_id, created_at, overall_score, has_red_flag, detected_condition_id, diagnosis_area, logic_audit, clinical_reasoning, differential_diagnosis, intervention_strategy, professional_discussion, cpg_compliance, audit_defense, predictive_trajectory, compliance_score, raw_ai_response",
     )
     .eq("patient_id", cleanPatientId)
     .order("created_at", { ascending: false });
