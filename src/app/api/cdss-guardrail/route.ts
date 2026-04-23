@@ -12,6 +12,12 @@ type GuardrailRequest = {
   intervention?: string;
   /** JSON 문자열 또는 { manual, exercise, modalities, education } 객체 */
   step4?: string | Record<string, unknown>;
+  rom_assessment?: {
+    bodyPart?: string;
+    sideMode?: string;
+    motions?: string[];
+    data?: Record<string, unknown>;
+  } | null;
   special_tests?: {
     recommended?: Array<{ name?: string; result?: string }>;
     custom?: Array<{ id?: string; name?: string; result?: string }>;
@@ -87,6 +93,18 @@ function buildSpecialTestsSummary(raw: GuardrailRequest["special_tests"]): strin
     .filter(Boolean);
   if (lines.length === 0) return "Special tests: (없음)";
   return ["Special tests (merged):", ...lines].join("\n");
+}
+
+function buildRomAssessmentSummary(raw: GuardrailRequest["rom_assessment"]): string {
+  if (!raw || typeof raw !== "object") return "ROM assessment: (없음)";
+  const bodyPart = typeof raw.bodyPart === "string" ? raw.bodyPart.trim() : "";
+  const sideMode = typeof raw.sideMode === "string" ? raw.sideMode.trim() : "";
+  const motions = Array.isArray(raw.motions) ? raw.motions.filter((v): v is string => typeof v === "string" && v.trim().length > 0) : [];
+  return [
+    `Body part: ${bodyPart || "-"}`,
+    `Side mode: ${sideMode || "-"}`,
+    `Motions: ${motions.join(", ") || "-"}`,
+  ].join("\n");
 }
 
 /** API 경계에서 PHI 패턴 추가 제거 (클라이언트 스크럽 보완) */
@@ -1130,6 +1148,7 @@ export async function POST(req: Request) {
     const step4Normalized = normalizeStep4Payload(body.step4);
     const planSummaryRaw = buildPlanSummaryFromStep4(step4Normalized);
     const planSummary = scrubClinicalTextServer(planSummaryRaw);
+    const romAssessmentSummary = scrubClinicalTextServer(buildRomAssessmentSummary(body.rom_assessment));
     const specialTestsSummary = scrubClinicalTextServer(buildSpecialTestsSummary(body.special_tests));
 
     if (!examination || !evaluation || !prognosis || !intervention) {
@@ -1138,7 +1157,7 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const fullInput = `${examination}\n${evaluation}\n${prognosis}\n${intervention}\n${specialTestsSummary}`;
+    const fullInput = `${examination}\n${evaluation}\n${prognosis}\n${intervention}\n${romAssessmentSummary}\n${specialTestsSummary}`;
     const tuningMap = await loadAliasTuningMap();
     const detected = detectConditionRule(evaluation, fullInput, tuningMap);
     const detectedRule = detected.rule;
@@ -1324,6 +1343,10 @@ ${intervention}
 [Step 4 구조화 치료계획 — 배열/객체 원본 요약]
 아래는 Manual·Exercise·Modalities 배열과 Education 텍스트를 JSON 문자열로 정리한 것이다. Intervention 본문과 함께 CPG 적합성을 판단하라.
 ${planSummary}
+
+[ROM/MMT 구조화 원본]
+아래는 부위, 측별 모드, 동작 목록을 구조화한 입력 데이터다. Evaluation의 관절운동학적 정합성을 함께 검증하라.
+${romAssessmentSummary}
 
 [Special Tests 구조화 원본]
 아래는 추천/직접 추가 이학적 검사를 병합한 원본 결과다. Evaluation 본문과 함께 임상 추론 정확도를 판단하라.

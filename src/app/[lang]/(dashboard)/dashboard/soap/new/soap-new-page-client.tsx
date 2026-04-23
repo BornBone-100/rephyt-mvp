@@ -334,6 +334,12 @@ type GuardrailPayload = {
   intervention: string;
   step4: string;
   language: string;
+  rom_assessment?: {
+    bodyPart: string;
+    sideMode: "left" | "right" | "bilateral" | "none";
+    motions: string[];
+    data: Record<string, RomMmtBySide>;
+  };
   special_tests?: {
     recommended: Array<{ name: string; result: "positive" | "negative" | "not_tested" }>;
     custom: Array<{ id: string; name: string; result: "양성" | "음성" }>;
@@ -658,6 +664,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const [reportResult, setReportResult] = useState<RedFlagResult | null>(null);
   const [evaluationResult, setEvaluationResult] = useState<RedFlagResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeReportId, setActiveReportId] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error" | "duplicated">("idle");
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [patients, setPatients] = useState<Patient[]>(MOCK_PATIENTS);
@@ -710,6 +717,12 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   });
   const [specialTestSelection, setSpecialTestSelection] = useState<Record<string, SpecialTestValue>>({});
   const [customSpecialTests, setCustomSpecialTests] = useState<CustomSpecialTestEntry[]>([]);
+  const [romAssessmentMeta, setRomAssessmentMeta] = useState<{
+    bodyPart: string;
+    sideMode: "left" | "right" | "bilateral" | "none";
+    motions: string[];
+    data: Record<string, RomMmtBySide>;
+  } | null>(null);
   const [selectedTbcTags, setSelectedTbcTags] = useState<string[]>([]);
   const [romMmtInputs, setRomMmtInputs] = useState<Record<string, RomMmtBySide>>({});
   const [outcomeScores, setOutcomeScores] = useState<Record<string, string>>({});
@@ -1187,6 +1200,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         intervention: scrubClinicalTextForApi(treatmentText || formData.intervention.trim(), nameHints),
         step4: scrubClinicalTextForApi(step4Json, nameHints),
         language: formData.language,
+        rom_assessment: romAssessmentMeta ?? undefined,
         special_tests: mergedSpecialTests,
       };
       const res = await fetch("/api/cdss-guardrail", {
@@ -1221,6 +1235,11 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       }
       setReportResult(data);
       setEvaluationResult(data);
+      const nextReportId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `report-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setActiveReportId(nextReportId);
       // 분석 완료와 저장 완료 상태를 분리: 저장은 버튼 클릭 시에만 수행
       setSaveStatus("idle");
       setSaveErrorMessage(null);
@@ -1249,6 +1268,7 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
   const handleSaveDiagnosisRecord = async () => {
     if (!reportResult) return;
+    if (isSaving) return;
     /** 저장·조회·이벤트에 동일하게 쓰는 환자 ID (폼 + URL 단일화 결과) */
     const chartPatientId = normalizePatientId(effectivePatientId);
     const normalizedPatientIdFromUrl = normalizePatientId(patientIdFromUrl);
@@ -1273,6 +1293,12 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       "chartPatientId:",
       chartPatientId,
     );
+    const reportId =
+      activeReportId ||
+      (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `report-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    if (!activeReportId) setActiveReportId(reportId);
     setIsSaving(true);
     setSaveStatus("saving");
     setSaveErrorMessage(null);
@@ -1286,11 +1312,43 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       }
       console.log("🚀 [SAVE] 쏠 준비 완료. Patient ID:", chartPatientId);
       const payload = {
+        reportId,
         patientId: chartPatientId,
         userId: user?.id,
         diagnosisArea: formData.diagnosisArea,
         locale,
         language: formData.language,
+        originalData: {
+          exam: formData.examination,
+          evaluation: formData.evaluation,
+          goal: formData.prognosis,
+          plan: formData.intervention,
+        },
+        assessmentData: {
+          step1: {
+            chiefComplaint: examDraft.chiefComplaint,
+            onset: examDraft.onset,
+            traumaType: examDraft.traumaType,
+            vas: examDraft.vas,
+            painQualities: examDraft.painQualities,
+            aggravatingFactors: examDraft.aggravatingFactors,
+            relievingFactors: examDraft.relievingFactors,
+          },
+          step2: {
+            body_part: romAssessmentMeta?.bodyPart ?? formData.diagnosisArea,
+            diagnosisArea: formData.diagnosisArea,
+            evaluation: formData.evaluation,
+          },
+          step3: {
+            rom_assessment: romAssessmentMeta,
+          },
+          step4: {
+            plan: formData.intervention,
+            aggravatingFactors: examDraft.aggravatingFactors,
+            relievingFactors: examDraft.relievingFactors,
+          },
+        },
+        rom_assessment: romAssessmentMeta,
         result: reportResult,
       };
       const res = await fetch("/api/cdss-guardrail/save", {
@@ -1299,7 +1357,17 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         body: JSON.stringify(payload),
         credentials: "include",
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        activity?: {
+          id: string;
+          type: "report";
+          createdAt: string;
+          title: string;
+          description: string;
+          metadata?: { report_id?: string; patient_id?: string };
+        };
+      };
       const response = { ok: res.ok, status: res.status, body };
       console.log("✅ [DB INSERT] 성공 여부:", response);
       if (!res.ok) {
@@ -1332,6 +1400,10 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       console.log("🔄 [FETCH] 타임라인 다시 가져옴. 데이터 개수:", timelineRows.length);
 
       setSaveStatus("saved");
+      if (typeof window !== "undefined" && body.activity) {
+        window.dispatchEvent(new CustomEvent("rephyt:activity-created", { detail: body.activity }));
+        window.localStorage.setItem("rephyt:latest-activity", JSON.stringify(body.activity));
+      }
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("rephyt:timeline-log-saved", { detail: { patientId: chartPatientId } }));
       }
@@ -2064,6 +2136,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                         romMmtInputs={romMmtInputs}
                         onPatchSide={handleRomMmtChange}
                         onReplaceMovementRow={handleRomMmtReplaceRow}
+                        selectedDiagnosisArea={formData.diagnosisArea}
+                        onAssessmentMetaChange={setRomAssessmentMeta}
                         locale={locale}
                       />
 

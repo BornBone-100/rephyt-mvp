@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
+import ActivityTimelineClient from "./activity-timeline-client";
 
 type ActivityItem = {
   id: string;
@@ -7,8 +8,12 @@ type ActivityItem = {
   createdAt: string;
   title: string;
   description: string;
+  reportId?: string;
+  patientId?: string;
   href?: string;
 };
+
+export const dynamic = "force-dynamic";
 
 function formatRelative(iso: string, locale: string) {
   const date = new Date(iso);
@@ -91,6 +96,13 @@ export default async function ActivityPage({
   const reports = Array.isArray(reportRes.data) ? reportRes.data : [];
   const posts = Array.isArray(postRes.data) ? postRes.data : [];
   const exports = Array.isArray(exportRes.data) ? exportRes.data : [];
+  const activityRes = await (supabase as any)
+    .from("patient_activities")
+    .select("id, created_at, activity_type, title, description, metadata, patient_id")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  const activityLogs = Array.isArray(activityRes.data) ? activityRes.data : [];
 
   const totalReports = reports.length;
   const riskDetectedCases = reports.filter((row: any) => Boolean(row?.has_red_flag)).length;
@@ -108,6 +120,21 @@ export default async function ActivityPage({
   const cpg = scoreBadge(avgCpg);
 
   const timeline: ActivityItem[] = [
+    ...activityLogs.map((row: any) => ({
+      id: `activity-${row.id}`,
+      type: "report" as const,
+      createdAt: row.created_at,
+      title: row.title ?? (locale === "en" ? "Clinical filter report generated" : "임상 필터 리포트를 생성했습니다."),
+      description: row.description ?? "",
+      reportId: row.metadata?.report_id ?? undefined,
+      patientId: row.patient_id ?? row.metadata?.patient_id ?? undefined,
+      href:
+        row.patient_id && row.metadata?.report_id
+          ? `${base}/dashboard/patients/${encodeURIComponent(String(row.patient_id))}?reportId=${encodeURIComponent(String(row.metadata.report_id))}`
+          : row.patient_id
+            ? `${base}/dashboard/patients/${encodeURIComponent(String(row.patient_id))}`
+            : undefined,
+    })),
     ...reports.map((row: any) => ({
       id: `report-${row.id}`,
       type: "report" as const,
@@ -117,7 +144,9 @@ export default async function ActivityPage({
         locale === "en"
           ? `Patient ID: ${row.patient_id ?? "-"}`
           : `환자 ID: ${row.patient_id ?? "-"}`,
-      href: `${base}/dashboard/patients/${encodeURIComponent(String(row.patient_id ?? ""))}`,
+      reportId: row.id,
+      patientId: row.patient_id ?? undefined,
+      href: `${base}/dashboard/patients/${encodeURIComponent(String(row.patient_id ?? ""))}?reportId=${encodeURIComponent(String(row.id ?? ""))}`,
     })),
     ...posts.map((row: any) => ({
       id: `community-${row.id}`,
@@ -240,30 +269,7 @@ export default async function ActivityPage({
                 리포트 작성하기
               </Link>
             </div>
-          ) : (
-            <ul className="mt-4 space-y-2">
-              {timeline.slice(0, 20).map((item) => (
-                <li key={item.id} className="rounded-xl border border-slate-100 px-3 py-3 hover:bg-slate-50">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-slate-900">
-                        {item.type === "report" ? "📋" : item.type === "community" ? "🌐" : "📄"} {item.title}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-slate-500">{item.description}</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-xs text-slate-400">{formatRelative(item.createdAt, locale)}</p>
-                      {item.href ? (
-                        <Link href={item.href} className="mt-1 inline-block text-xs font-bold text-indigo-600">
-                          보기
-                        </Link>
-                      ) : null}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          ) : <ActivityTimelineClient initialTimeline={timeline.slice(0, 20)} locale={locale} />}
         </section>
       </div>
     </div>

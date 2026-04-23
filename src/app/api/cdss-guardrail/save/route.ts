@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 type SaveRequest = {
+  reportId?: string;
   patientId?: string;
   userId?: string;
   diagnosisArea?: string;
   locale?: string;
   language?: string;
+  originalData?: Record<string, unknown>;
+  assessmentData?: Record<string, unknown>;
+  rom_assessment?: Record<string, unknown> | null;
   result?: {
     overallScore?: number;
     complianceScore?: number;
@@ -27,6 +31,7 @@ type SaveRequest = {
 
 const TABLE = "cdss_guardrail_logs";
 const ALLOWED_COLUMNS = [
+  "id",
   "patient_id",
   "user_id",
   "diagnosis_area",
@@ -44,6 +49,8 @@ const ALLOWED_COLUMNS = [
   "intervention_strategy",
   "professional_discussion",
   "score_breakdown",
+  "assessment_data",
+  "original_data",
   "raw_ai_response",
 ] as const;
 const ALLOWED_COLUMN_SET = new Set<string>(ALLOWED_COLUMNS);
@@ -90,15 +97,49 @@ function sanitizeInsertPayload(row: Record<string, unknown>, aiResult: unknown) 
   return sanitizedPayload;
 }
 
+async function logClinicalFilterActivity(
+  supabase: any,
+  payload: {
+    userId: string | null;
+    patientId: string;
+    reportId: string;
+    diagnosisArea: string | null;
+    clinicalReasoning: string;
+  },
+) {
+  const description = `${payload.diagnosisArea ?? "미분류"} | ${
+    payload.clinicalReasoning.trim().slice(0, 140) || "주요 소견 요약 없음"
+  }`;
+  const row = {
+    user_id: payload.userId,
+    patient_id: payload.patientId,
+    report_id: payload.reportId,
+    activity_type: "CLINICAL_FILTER_REPORT",
+    title: "PRACTICE SAFETY & CLINICAL FILTER 리포트 생성",
+    description,
+    metadata: { report_id: payload.reportId, patient_id: payload.patientId },
+  };
+  const upsertRes = await supabase.from("patient_activities").upsert(row as never, { onConflict: "report_id" });
+  if (!upsertRes.error) {
+    return row;
+  }
+  await supabase.from("user_logs").insert(row as never);
+  return row;
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as SaveRequest;
     const patientId = normalizePatientId(body.patientId);
+    const reportId = String(body.reportId ?? "").trim();
     console.log("🕵️‍♂️ [디버깅] 백엔드가 전달받은 userId:", body.userId);
     const userId = String(body.userId ?? "").trim();
     console.log("[cdss-guardrail/save] incoming patientId:", body.patientId, "normalized:", patientId);
     if (!patientId) {
       return NextResponse.json({ error: "patientId is required" }, { status: 400 });
+    }
+    if (!reportId) {
+      return NextResponse.json({ error: "reportId is required" }, { status: 400 });
     }
     const result = body.result ?? {};
     const overallScore = clampScore(result.overallScore ?? result.complianceScore ?? 0);
@@ -112,6 +153,7 @@ export async function POST(req: Request) {
     }
 
     const row: Record<string, unknown> = {
+      id: reportId,
       patient_id: patientId,
       user_id: userId || null,
       diagnosis_area: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,
@@ -141,6 +183,10 @@ export async function POST(req: Request) {
         result.detectionMeta?.scoreBreakdown && typeof result.detectionMeta.scoreBreakdown === "object"
           ? result.detectionMeta.scoreBreakdown
           : {},
+      assessment_data:
+        body.assessmentData && typeof body.assessmentData === "object" ? body.assessmentData : {},
+      original_data:
+        body.originalData && typeof body.originalData === "object" ? body.originalData : {},
       intervention_strategy:
         typeof (result as { interventionStrategy?: unknown; intervention_strategy?: unknown }).interventionStrategy === "string"
           ? (result as { interventionStrategy?: string }).interventionStrategy
@@ -159,14 +205,40 @@ export async function POST(req: Request) {
       ...result,
       locale: body.locale ?? null,
       language: body.language ?? null,
+      request_payload: {
+        reportId: body.reportId ?? null,
+        patientId: body.patientId ?? null,
+        diagnosisArea: body.diagnosisArea ?? null,
+        original_data: body.originalData ?? null,
+        assessment_data: body.assessmentData ?? null,
+        rom_assessment: body.rom_assessment ?? null,
+      },
     };
     const sanitizedPayload = sanitizeInsertPayload(row, aiResultForBackup);
-    console.log("[cdss-guardrail/save] inserting row patient_id:", row.patient_id);
-    const { error } = await supabase.from(TABLE).insert(sanitizedPayload as never);
+    console.log("[cdss-guardrail/save] upserting row id:", row.id, "patient_id:", row.patient_id);
+    const { error } = await supabase.from(TABLE).upsert(sanitizedPayload as never, { onConflict: "id" });
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ ok: true });
+    const activity = await logClinicalFilterActivity(supabase, {
+      userId: userId || null,
+      patientId,
+      reportId,
+      diagnosisArea: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,
+      clinicalReasoning:
+        typeof row.clinical_reasoning === "string" ? row.clinical_reasoning : "",
+    });
+    return NextResponse.json({
+      ok: true,
+      activity: {
+        id: reportId,
+        type: "report",
+        createdAt: new Date().toISOString(),
+        title: activity.title,
+        description: activity.description,
+        metadata: activity.metadata,
+      },
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "unknown error" },
