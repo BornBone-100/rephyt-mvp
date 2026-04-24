@@ -568,7 +568,6 @@ export function PatientDetailClient({ dict }: Props) {
   const [authorProfileMap, setAuthorProfileMap] = useState<Record<string, { name?: string; hospital?: string; specialties?: string[] }>>({});
   const [isTimelineLogsLoading, setIsTimelineLogsLoading] = useState(false);
   const [screeningRefreshTick, setScreeningRefreshTick] = useState(0);
-  const [sharingTimelineIds, setSharingTimelineIds] = useState<Record<string, boolean>>({});
   const [deletingTimelineIds, setDeletingTimelineIds] = useState<Record<string, boolean>>({});
   const [originalDataModalLog, setOriginalDataModalLog] = useState<TimelineLog | null>(null);
   const isTimelineFetchInFlightRef = useRef(false);
@@ -977,65 +976,6 @@ export function PatientDetailClient({ dict }: Props) {
     [isEnglish, supabase],
   );
 
-  const handleShareTimelineCase = useCallback(
-    async (item: TimelineLog) => {
-      const challengeTitle = item.diagnosis_area || item.detected_condition_id || "Clinical Reasoning Challenge";
-      const defenseHighlight =
-        (typeof item.audit_defense === "object" &&
-          item.audit_defense !== null &&
-          typeof (item.audit_defense as { feedback?: unknown }).feedback === "string" &&
-          (item.audit_defense as { feedback?: string }).feedback) ||
-        (typeof item.logic_audit === "object" &&
-          item.logic_audit !== null &&
-          typeof (item.logic_audit as { feedback?: unknown }).feedback === "string" &&
-          (item.logic_audit as { feedback?: string }).feedback) ||
-        "";
-      if (!window.confirm(pd.soapSharePastConfirm)) return;
-
-      setSharingTimelineIds((prev) => ({ ...prev, [item.id]: true }));
-      try {
-        const res = await fetch("/api/community/report-share", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mode: "defense_tip",
-            payload: {
-              challengeTitle,
-              defenseHighlight,
-              anonymousData: {
-                diagnosisArea: item.diagnosis_area,
-                hasRedFlag: item.has_red_flag,
-                overallScore: item.overall_score,
-                complianceScore: resolveDefenseScoreOnRead({
-                  defense_score: item.defense_score,
-                  original_data: item.original_data ?? item.payload?.original_data,
-                  compliance_score: item.compliance_score,
-                }),
-              },
-              overallScore: item.overall_score ?? 0,
-              defenseScore: resolveDefenseScoreOnRead({
-                defense_score: item.defense_score,
-                original_data: item.original_data ?? item.payload?.original_data,
-                compliance_score: item.compliance_score,
-              }),
-            },
-          }),
-        });
-        const result = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
-        if (!result.success) {
-          alert(result.message ?? pd.soapSharePastError);
-          return;
-        }
-        alert(pd.soapSharePastSuccess);
-      } catch {
-        alert(pd.soapSharePastError);
-      } finally {
-        setSharingTimelineIds((prev) => ({ ...prev, [item.id]: false }));
-      }
-    },
-    [pd.soapSharePastConfirm, pd.soapSharePastError, pd.soapSharePastSuccess],
-  );
-
   const isFirstVisit = patient?.is_first_visit === true;
   const hasPriorCareElsewhere = patient?.is_first_visit === false;
 
@@ -1296,7 +1236,6 @@ export function PatientDetailClient({ dict }: Props) {
                   const exportFileName = sanitizeFileNameSegment(
                     `RePhyT_Timeline_${diagnosisLabel}_${new Date(item.created_at).toISOString().slice(0, 10)}`,
                   );
-                  const isTimelineSharing = sharingTimelineIds[item.id] === true;
                   const isTimelineDeleting = deletingTimelineIds[item.id] === true;
                   const author = item.user_id ? authorProfileMap[item.user_id] : undefined;
                   return (
@@ -1307,7 +1246,7 @@ export function PatientDetailClient({ dict }: Props) {
                           <button
                             type="button"
                             onClick={() => void handleDeleteTimelineReport(item.id)}
-                            disabled={isTimelineDeleting || isTimelineSharing}
+                            disabled={isTimelineDeleting}
                             title={isEnglish ? "Delete report" : "리포트 삭제"}
                             className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                           >
@@ -1561,14 +1500,6 @@ export function PatientDetailClient({ dict }: Props) {
                             title: "Re:PhyT Safety Net Timeline Report",
                           }}
                         />
-                        <button
-                          type="button"
-                          onClick={() => void handleShareTimelineCase(item)}
-                          disabled={isTimelineSharing}
-                          className="text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isTimelineSharing ? pd.soapSharePastButtonLoading : "🌐 커뮤니티에 공유하기"}
-                        </button>
                       </div>
                       <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
                         <p className="font-bold text-slate-700">작성자 정보</p>

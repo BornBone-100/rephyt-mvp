@@ -19,8 +19,8 @@ export default function CommunityFeedCard({ data }: Props) {
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-600">PT</div>
           <div>
-            <p className="text-sm font-bold text-slate-800">7년차 물리치료사</p>
-            <p className="text-xs text-slate-400">방금 전 · 부산</p>
+            <p className="text-sm font-bold text-slate-800">Senior Physical Therapist</p>
+            <p className="text-xs text-slate-400">Just now · Busan</p>
           </div>
         </div>
         <div className="rounded-full bg-blue-600 px-3 py-1 text-xs font-black italic text-white">SCORE: {data.overallScore}</div>
@@ -42,7 +42,7 @@ export default function CommunityFeedCard({ data }: Props) {
             <ShieldCheck size={18} /> {data.defenseHighlight}
           </div>
           <div className="flex items-center gap-2 text-sm font-bold text-blue-400">
-            <Award size={18} /> JOSPT 가이드라인 98% 일치
+            <Award size={18} /> 98% aligned with JOSPT guideline standards
           </div>
         </div>
       </div>
@@ -50,9 +50,9 @@ export default function CommunityFeedCard({ data }: Props) {
       <div className="flex items-center gap-4 p-4">
         <button className="flex items-center gap-1.5 text-slate-600 transition-colors hover:text-blue-600">
           <MessageCircle size={20} />
-          <span className="text-xs font-bold text-slate-500">토론 참여 {data.commentCount}</span>
+          <span className="text-xs font-bold text-slate-500">Join Discussion {data.commentCount}</span>
         </button>
-        <button className="ml-auto rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-600">이 케이스 분석해보기</button>
+        <button className="ml-auto rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-600">Analyze this case</button>
       </div>
     </div>
   );

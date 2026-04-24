@@ -169,6 +169,7 @@ export async function POST(req: Request) {
     const safeInsertRow = {
       id: reportId,
       patient_id: patientId || null,
+      author_id: body.authorId ?? body.author_id ?? null,
       diagnosis_area: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,
       overall_score: clampScore(result.overallScore ?? result.complianceScore ?? 0),
       clinical_reasoning:

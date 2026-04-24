@@ -13,7 +13,19 @@ export async function GET(request: Request) {
     const start = (page - 1) * limit;
     const end = start + limit - 1;
 
-    let query = supabase.from("community_posts").select("*", { count: "exact" });
+    let query = supabase.from("community_posts").select(
+      `
+        *,
+        report:report_id (
+          diagnosis_area,
+          overall_score,
+          clinical_reasoning,
+          created_at
+        )
+      `,
+      { count: "exact" },
+    );
+    query = query.eq("is_hidden", false);
 
     if (sort === "popular") {
       query = query.order("likes", { ascending: false }).order("created_at", { ascending: false });
