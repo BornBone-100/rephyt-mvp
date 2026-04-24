@@ -22,6 +22,13 @@ type Props = {
 
 const READ_MORE_THRESHOLD = 140;
 
+function createUuid() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function getPostAuthorId(post: CommunityPost): string | null {
   const p = post as unknown as { user_id?: unknown; author_id?: unknown };
   if (typeof p.user_id === "string" && p.user_id.trim()) return p.user_id;
@@ -355,18 +362,56 @@ export function CommunityFeedClient({ dict, lang }: Props) {
     }
     setIsPosting(true);
     try {
-      const res = await fetch("/api/community/post", {
+      const reportId = createUuid();
+      const patientId = createUuid();
+      const guardrailRes = await fetch("/api/cdss-guardrail/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportId,
+          patientId,
+          userId: currentUserId,
+          authorId: currentUserId,
+          diagnosisArea: "community",
+          locale: isEnglish ? "en" : "ko",
+          originalData: {
+            examination: text,
+            evaluation: "Community Post",
+            prognosis: "Community Post",
+            intervention: "Community Post",
+          },
+          result: {
+            overallScore: 0,
+            complianceScore: 0,
+            hasRedFlag: false,
+            clinicalReasoning: text,
+          },
+        }),
+      });
+      const guardrailData = (await guardrailRes.json()) as {
+        ok?: boolean;
+        error?: string;
+        activity?: { id?: string };
+      };
+      if (!guardrailRes.ok || !guardrailData.ok) {
+        alert(guardrailData.error ?? (isEnglish ? "Failed to save post." : "게시글 저장에 실패했습니다."));
+        return;
+      }
+
+      const communityRes = await fetch("/api/community/post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
-      const data = (await res.json()) as { success?: boolean; message?: string; post?: CommunityPost };
-      if (!res.ok || !data.success || !data.post) {
-        alert(data.message ?? (isEnglish ? "Failed to save post." : "게시글 저장에 실패했습니다."));
+      const communityData = (await communityRes.json()) as { success?: boolean; message?: string; post?: CommunityPost };
+      if (!communityRes.ok || !communityData.success || !communityData.post) {
+        alert(communityData.message ?? (isEnglish ? "Saved analysis, but failed to create feed post." : "분석 저장은 완료됐지만 피드 등록에 실패했습니다."));
         return;
       }
-      setPosts((prev) => [data.post as CommunityPost, ...prev]);
+
+      setPosts((prev) => [communityData.post as CommunityPost, ...prev]);
       setDraftText("");
+      alert(isEnglish ? "Saved successfully." : "저장되었습니다.");
     } catch {
       alert(isEnglish ? "Failed to save post." : "게시글 저장에 실패했습니다.");
     } finally {
