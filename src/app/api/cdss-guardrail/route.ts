@@ -1159,60 +1159,33 @@ async function logGuardrailEvent(params: {
   try {
     const supabase = getSupabaseAdmin();
     if (!supabase) return { ok: true };
-    const row = buildGuardrailLogRow(params);
-    const legacy = buildGuardrailLogRowLegacy(params);
-    let insertRow = sanitizeGuardrailInsertPayload(row, params.rawModelJson, params.request, params.result);
 
-    // DB 스키마와 불일치하는 컬럼이 있으면 컬럼 단위로 제거/격리하며 최대 4회 재시도.
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      const { error } = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(insertRow as never);
-      if (!error) {
-        await syncTreatmentLogIfPossible(supabase, params.request);
-        return { ok: true };
-      }
+    const safeInsertRow = {
+      patient_id: params.request.patientId || null,
+      diagnosis_area: params.request.diagnosisArea || null,
+      overall_score: params.result.overallScore || 0,
+      clinical_reasoning: params.result.clinicalReasoning || "",
+      has_red_flag: params.result.hasRedFlag || false,
+      raw_ai_response: {
+        full_request: params.request,
+        full_result: params.result,
+        model_json: params.rawModelJson,
+      },
+    };
 
-      const unknownColumn = extractUnknownColumnFromInsertError(error);
-      if (!unknownColumn) {
-        console.error("CDSS logGuardrailEvent insert failed:", error.code, error.message, error.details);
-        return { ok: false, message: error.message };
-      }
+    const { error } = await supabase
+      .from(CDSS_GUARDRAIL_LOGS_TABLE)
+      .insert(safeInsertRow as never);
 
-      const unknownValue = insertRow[unknownColumn];
-      delete insertRow[unknownColumn];
-
-      // raw_ai_response가 없거나 컬럼이 미지원이면 해당 키를 백업 객체에 병합 시도
-      if (unknownColumn !== "raw_ai_response" && unknownValue !== undefined) {
-        insertRow.raw_ai_response = {
-          ...(typeof insertRow.raw_ai_response === "object" && insertRow.raw_ai_response !== null
-            ? (insertRow.raw_ai_response as Record<string, unknown>)
-            : {}),
-          [`removed_column_${unknownColumn}`]: unknownValue,
-        };
-      }
-
-      console.warn("CDSS logGuardrailEvent: removed unknown DB column and retrying", {
-        unknownColumn,
-        attempt: attempt + 1,
-      });
+    if (error) {
+      console.error("최종 저장 실패:", error.message);
+      return { ok: false, message: error.message };
     }
 
-    const legacyInsert = sanitizeGuardrailInsertPayload(legacy, params.rawModelJson, params.request, params.result);
-    const fallback = await supabase.from(CDSS_GUARDRAIL_LOGS_TABLE).insert(legacyInsert as never);
-    if (fallback.error) {
-      console.error(
-        "CDSS logGuardrailEvent fallback legacy insert failed:",
-        fallback.error.code,
-        fallback.error.message,
-        fallback.error.details,
-      );
-      return { ok: false, message: fallback.error.message };
-    }
     await syncTreatmentLogIfPossible(supabase, params.request);
     return { ok: true };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    console.error("CDSS logGuardrailEvent exception:", message);
-    return { ok: false, message };
+    return { ok: false, message: "Internal Logic Error" };
   }
 }
 
