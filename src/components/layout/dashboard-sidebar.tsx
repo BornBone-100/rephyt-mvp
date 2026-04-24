@@ -25,7 +25,10 @@ type Props = {
 
 export function DashboardSidebar({ base, labels }: Props) {
   const pathname = usePathname();
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const isActive = (href: string) => {
+    if (href === `${base}/dashboard/patients` && pathname === `${base}/dashboard`) return true;
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   const linkClass = (href: string) =>
     `flex items-center justify-between gap-3 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${

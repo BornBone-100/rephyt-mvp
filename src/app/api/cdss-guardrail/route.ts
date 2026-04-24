@@ -108,6 +108,89 @@ function buildRomAssessmentSummary(raw: GuardrailRequest["rom_assessment"]): str
   ].join("\n");
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+}
+
+function stringifyCompact(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function buildAssessmentNeuroSummary(raw: GuardrailRequest["assessmentData"]): string {
+  const root = asRecord(raw);
+  if (!root) return "Structured neuro data: (없음)";
+
+  const step2 = asRecord(root.step2);
+  const step3 = asRecord(root.step3);
+  const evaluation = asRecord((asRecord(root.evaluation) ?? {}).evaluation) ?? asRecord(root.evaluation);
+  const goals = asRecord(root.goals);
+  const objectiveTests = asRecord(root.objective_tests);
+
+  const entrapmentHypothesis =
+    evaluation?.nerve_entrapment_hypothesis ??
+    step2?.nerve_entrapment_hypothesis ??
+    evaluation?.entrapment_hypothesis ??
+    step2?.entrapment_hypothesis ??
+    null;
+
+  const neuroExam =
+    evaluation?.neuro_exam ??
+    step2?.neuro_exam ??
+    step3?.neuro_exam ??
+    null;
+
+  const neuroSyndromeMap =
+    evaluation?.neuro_syndrome_map ??
+    step2?.neuro_syndrome_map ??
+    null;
+
+  const stg =
+    (typeof goals?.stg === "string" ? goals.stg : null) ??
+    (typeof step3?.stg === "string" ? step3.stg : null);
+  const ltg =
+    (typeof goals?.ltg === "string" ? goals.ltg : null) ??
+    (typeof step3?.ltg === "string" ? step3.ltg : null);
+
+  const specialTests =
+    objectiveTests?.special_tests ??
+    step3?.special_tests ??
+    null;
+
+  const neurodynamicTests =
+    objectiveTests?.neurodynamic_tests ??
+    step3?.neurodynamics ??
+    null;
+
+  const syndromePriorityTests = asStringArray(objectiveTests?.syndrome_priority_tests);
+
+  const lines = [
+    `evaluation.entrapment_hypothesis: ${entrapmentHypothesis ? stringifyCompact(entrapmentHypothesis) : "(없음)"}`,
+    `evaluation.neuro_exam: ${neuroExam ? stringifyCompact(neuroExam) : "(없음)"}`,
+    `evaluation.neuro_syndrome_map: ${
+      Array.isArray(neuroSyndromeMap) && neuroSyndromeMap.length > 0
+        ? neuroSyndromeMap.join(", ")
+        : "(없음)"
+    }`,
+    `objective_tests.special_tests: ${specialTests ? stringifyCompact(specialTests) : "(없음)"}`,
+    `objective_tests.neurodynamic_tests: ${neurodynamicTests ? stringifyCompact(neurodynamicTests) : "(없음)"}`,
+    `objective_tests.syndrome_priority_tests: ${syndromePriorityTests.length > 0 ? syndromePriorityTests.join(", ") : "(없음)"}`,
+    `goals.stg: ${stg?.trim() ? stg : "(없음)"}`,
+    `goals.ltg: ${ltg?.trim() ? ltg : "(없음)"}`,
+  ];
+
+  return ["Structured neuro data (original_data/latest):", ...lines].join("\n");
+}
+
 /** API 경계에서 PHI 패턴 추가 제거 (클라이언트 스크럽 보완) */
 function scrubClinicalTextServer(input: string): string {
   let s = input;
@@ -1156,6 +1239,7 @@ export async function POST(req: Request) {
     const planSummary = scrubClinicalTextServer(planSummaryRaw);
     const romAssessmentSummary = scrubClinicalTextServer(buildRomAssessmentSummary(body.rom_assessment));
     const specialTestsSummary = scrubClinicalTextServer(buildSpecialTestsSummary(body.special_tests));
+    const assessmentNeuroSummary = scrubClinicalTextServer(buildAssessmentNeuroSummary(body.assessmentData));
 
     if (!examination || !evaluation || !prognosis || !intervention) {
       return NextResponse.json(
@@ -1163,7 +1247,7 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const fullInput = `${examination}\n${evaluation}\n${prognosis}\n${intervention}\n${romAssessmentSummary}\n${specialTestsSummary}`;
+    const fullInput = `${examination}\n${evaluation}\n${prognosis}\n${intervention}\n${romAssessmentSummary}\n${specialTestsSummary}\n${assessmentNeuroSummary}`;
     const tuningMap = await loadAliasTuningMap();
     const detected = detectConditionRule(evaluation, fullInput, tuningMap);
     const detectedRule = detected.rule;
@@ -1190,6 +1274,21 @@ logicChainAudit.feedback, 각 cpgCompliance[].reasoning, 각 cpgCompliance[].alt
 - Evaluate whether Step 3 goals are realistic based on Step 1 (chief complaint/onset/duration) and Step 2 (functional measures/TBC findings).
 - Explain in concrete biomechanical and physiological terms why Step 4 interventions (manual therapy, exercise, modalities, education) are appropriate for Step 1/2 problems, and what is missing.
 - Return deep expert-level reasoning, not generic summaries.
+
+[NEURO DATA PRIORITY — CRITICAL]
+- When original_data latest structure contains evaluation.entrapment_hypothesis and/or evaluation.neuro_exam, treat them as the highest-priority clinical evidence.
+- Map entrapment hypothesis, neurodynamic/special test positivity, and neuro exam (myotome/dermatome/DTR) into one coherent neurogenic hypothesis before discussing generic MSK narratives.
+- If neuro data and hypothesis are present, every major narrative field (clinical_reasoning, differential_diagnosis, intervention_strategy, professional_discussion, cpgCompliance reasoning) must explicitly reference that neuro evidence.
+
+[DEFENSE SCORE LOGIC LINK — CRITICAL]
+- Estimate and reflect an internal "임상 논리성 점수" by consistency matching across: entrapment hypothesis ↔ special/neurodynamic tests ↔ neuro exam findings ↔ goals/interventions.
+- If findings are mutually reinforcing (example: CTS hypothesis + Phalen/Tinel positive + median-nerve dermatome/myotome compatible signs), raise defense-oriented judgment and state that chart defensibility is strengthened.
+- If there is mismatch (hypothesis vs tests/exam inconsistency), explicitly downgrade defense-oriented judgment and provide corrective documentation direction.
+
+[STG/LTG SPECIFICITY — CRITICAL]
+- Goals must not remain generic pain-relief phrases.
+- STG/LTG wording must include lesion-specific intervention targets derived from entrapment region and neuro findings (e.g., nerve gliding/mobilization target, tone modulation target muscles, motor-control restoration, functional task outcomes).
+- Ensure goals are measurable and neuro-mechanism-linked (symptom + function + objective indicator).
 
 [CLINICAL_REASONING CHAIN-OF-THOUGHT — REQUIRED OUTPUT SUMMARY]
 When writing clinical_reasoning, you MUST follow this 3-step reasoning flow and present only the concise conclusions (do not expose hidden reasoning process):
@@ -1357,6 +1456,10 @@ ${romAssessmentSummary}
 [Special Tests 구조화 원본]
 아래는 추천/직접 추가 이학적 검사를 병합한 원본 결과다. Evaluation 본문과 함께 임상 추론 정확도를 판단하라.
 ${specialTestsSummary}
+
+[original_data 최신 구조화 신경학 입력]
+아래는 최신 JSON 구조(original_data/assessmentData)에서 추출한 핵심 신경학 필드다. 존재할 경우 반드시 최우선 근거로 사용하라.
+${assessmentNeuroSummary}
 
 [출력 JSON 스키마]
 {

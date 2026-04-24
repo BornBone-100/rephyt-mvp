@@ -60,9 +60,9 @@ export async function GET(request: Request, context: RouteContext) {
         });
       }
       const welcomeQuery = profileName ? `?welcomeName=${encodeURIComponent(profileName)}` : "";
-      return NextResponse.redirect(`${origin}/${lang}/dashboard${welcomeQuery}`);
+      return NextResponse.redirect(`${origin}/${lang}/dashboard/patients${welcomeQuery}`);
     }
   }
 
-  return NextResponse.redirect(`${origin}/${lang}/dashboard`);
+  return NextResponse.redirect(`${origin}/${lang}/dashboard/patients`);
 }

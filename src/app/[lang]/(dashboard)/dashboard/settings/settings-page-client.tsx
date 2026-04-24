@@ -117,7 +117,7 @@ export function SettingsPageClient({ dict }: Props) {
 
       if (res.ok && result.success) {
         alert(s.cancelSuccessFree);
-        router.push(`${base}/dashboard`);
+        router.push(`${base}/dashboard/patients`);
         router.refresh();
         await load();
       } else {

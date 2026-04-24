@@ -89,7 +89,7 @@ function LoginForm({ dict }: Props) {
   const [verifiedPhoneE164, setVerifiedPhoneE164] = useState<string | null>(null);
   const [smsSessionToken, setSmsSessionToken] = useState<string | null>(null);
 
-  const nextPath = `/${lang}/dashboard`;
+  const nextPath = `/${lang}/dashboard/patients`;
   const progressPercent = Math.round((signupStep / 4) * 100);
 
   useEffect(() => {

@@ -584,30 +584,11 @@ type NerveHypothesisState = {
   peripheralOtherNote: string;
 };
 
-type LrCell = { L: string; R: string };
 type NeuroStatusValue = (typeof NEURO_STATUS_OPTIONS)[number];
 type NeuroStatusCell = { L: NeuroStatusValue; R: NeuroStatusValue };
 
-function emptyLr(): LrCell {
-  return { L: "", R: "" };
-}
-
 function emptyNeuroStatus(): NeuroStatusCell {
   return { L: "정상", R: "정상" };
-}
-
-function buildDefaultNeuroExamTable(): {
-  myotome: Record<string, LrCell>;
-  dermatomeSensory: Record<string, LrCell>;
-  dtr: Record<string, LrCell>;
-} {
-  const myotome: Record<string, LrCell> = {};
-  for (const lv of MYOTOME_LEVELS) myotome[lv] = emptyLr();
-  const dermatomeSensory: Record<string, LrCell> = {};
-  for (const lv of MYOTOME_LEVELS) dermatomeSensory[lv] = emptyLr();
-  const dtr: Record<string, LrCell> = {};
-  for (const r of DTR_ROWS) dtr[r.key] = emptyLr();
-  return { myotome, dermatomeSensory, dtr };
 }
 
 function buildDefaultEvaluationNeuroExamTable(): {
@@ -704,7 +685,6 @@ type TempDraftPayload = {
   examDraft: ExamDraft;
   nerveHypothesis: NerveHypothesisState;
   neurodynamicSelection: Record<string, SpecialTestValue>;
-  neuroExamTable: ReturnType<typeof buildDefaultNeuroExamTable>;
   evaluationNeuroExamTable: ReturnType<typeof buildDefaultEvaluationNeuroExamTable>;
   selectedNeuroSyndromes: string[];
   specialTestSelection: Record<string, SpecialTestValue>;
@@ -1142,7 +1122,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   );
   const [nerveHypothesis, setNerveHypothesis] = useState<NerveHypothesisState>(defaultNerveHypothesis);
   const [neurodynamicSelection, setNeurodynamicSelection] = useState<Record<string, SpecialTestValue>>({});
-  const [neuroExamTable, setNeuroExamTable] = useState(() => buildDefaultNeuroExamTable());
   const [evaluationNeuroExamTable, setEvaluationNeuroExamTable] = useState(() => buildDefaultEvaluationNeuroExamTable());
   const [selectedNeuroSyndromes, setSelectedNeuroSyndromes] = useState<string[]>([]);
   const nerveHepCautionDoneRef = useRef(false);
@@ -1440,24 +1419,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     }));
   };
 
-  const patchNeuroExamLr = (
-    section: "myotome" | "dermatomeSensory" | "dtr",
-    key: string,
-    side: "L" | "R",
-    value: string,
-  ) => {
-    setNeuroExamTable((prev) => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [key]: {
-          ...(prev[section][key] ?? emptyLr()),
-          [side]: value,
-        },
-      },
-    }));
-  };
-
   const addCustomSpecialTest = () => {
     setCustomSpecialTests((prev) => [
       ...prev,
@@ -1512,7 +1473,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     });
     setNerveHypothesis(draft.nerveHypothesis ?? { ...defaultNerveHypothesis });
     setNeurodynamicSelection(draft.neurodynamicSelection ?? {});
-    setNeuroExamTable(draft.neuroExamTable ?? buildDefaultNeuroExamTable());
     setEvaluationNeuroExamTable(draft.evaluationNeuroExamTable ?? buildDefaultEvaluationNeuroExamTable());
     setSelectedNeuroSyndromes(draft.selectedNeuroSyndromes ?? []);
     nerveHepCautionDoneRef.current = false;
@@ -1557,7 +1517,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       examDraft,
       nerveHypothesis,
       neurodynamicSelection,
-      neuroExamTable,
       evaluationNeuroExamTable,
       selectedNeuroSyndromes,
       specialTestSelection,
@@ -1802,7 +1761,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
           step3: {
             rom_assessment: romAssessmentMeta,
             neurodynamics: neurodynamicSelection,
-            neuro_exam: neuroExamTable,
           },
           step4: {
             plan: formData.intervention,
@@ -1974,7 +1932,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
             summary: formData.prognosis,
             rom: romAssessmentMeta ?? null,
             neurodynamics: neurodynamicSelection,
-            neuro_exam: neuroExamTable,
             special_tests: mergedSpecialTests.merged,
           },
           objective_tests: {
@@ -2021,7 +1978,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
           step3: {
             rom_assessment: romAssessmentMeta,
             neurodynamics: neurodynamicSelection,
-            neuro_exam: neuroExamTable,
             special_tests: mergedSpecialTests.merged,
             stg: shortTermGoal,
             ltg: longTermGoal,
@@ -2261,7 +2217,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         summary: formData.prognosis,
         rom: romAssessmentMeta ?? null,
         neurodynamics: neurodynamicSelection,
-        neuro_exam: neuroExamTable,
         special_tests: mergedSpecialTests.merged,
       },
       objective_tests: {
@@ -2299,7 +2254,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       mergedSpecialTests,
       nerveHypothesis,
       neurodynamicSelection,
-      neuroExamTable,
       evaluationNeuroExamTable,
       selectedNeuroSyndromes,
       romAssessmentMeta,
@@ -3398,206 +3352,88 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                         </div>
                       )}
 
-                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
-                        <p className="mb-2 text-xs font-bold uppercase text-indigo-800">
-                          {locale === "en" ? "Recommended precision tests (Neurodynamics & Special tests)" : "추천 정밀 검사 (Neurodynamics & Special Tests)"}
-                        </p>
-                        <div className="space-y-2">
-                          {recommendedTestsForObjective.map((test) => {
-                            const selected = specialTestSelection[test] ?? "not_tested";
-                            const isPriority = syndromePriorityTests.includes(test);
-                            return (
-                              <div
-                                key={test}
-                                className={`flex flex-col gap-2 rounded-lg border p-2 sm:flex-row sm:items-center sm:justify-between ${
-                                  isPriority ? "border-indigo-200 bg-white ring-1 ring-indigo-100" : "border-slate-100 bg-white"
-                                }`}
-                              >
-                                <p className="text-xs font-semibold text-slate-800">
-                                  {isPriority ? "★ " : ""}{test}
-                                </p>
-                                <div className="grid grid-cols-3 gap-1.5">
-                                  {(["positive", "negative", "not_tested"] as const).map((v) => (
-                                    <button
-                                      key={v}
-                                      type="button"
-                                      onClick={() => handleSpecialTestToggle(test, v)}
-                                      className={`rounded-md px-2 py-1 text-[10px] font-bold ${
-                                        selected === v
-                                          ? v === "positive"
-                                            ? "bg-rose-100 text-rose-800 ring-1 ring-rose-200"
-                                            : v === "negative"
-                                              ? "bg-blue-100 text-blue-800 ring-1 ring-blue-200"
-                                              : "bg-slate-200 text-slate-800"
-                                          : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
-                                      }`}
-                                    >
-                                      {specialTestLabel[v]}
-                                    </button>
-                                  ))}
+                      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+                          <p className="mb-2 text-xs font-bold uppercase text-indigo-800">
+                            {locale === "en" ? "Recommended precision tests (Neurodynamics & Special tests)" : "추천 정밀 검사 (Neurodynamics & Special Tests)"}
+                          </p>
+                          <div className="space-y-2">
+                            {recommendedTestsForObjective.map((test) => {
+                              const selected = specialTestSelection[test] ?? "not_tested";
+                              const isPriority = syndromePriorityTests.includes(test);
+                              return (
+                                <div
+                                  key={test}
+                                  className={`flex flex-col gap-2 rounded-lg border p-2 sm:flex-row sm:items-center sm:justify-between ${
+                                    isPriority ? "border-indigo-200 bg-white ring-1 ring-indigo-100" : "border-slate-100 bg-white"
+                                  }`}
+                                >
+                                  <p className="text-xs font-semibold text-slate-800">
+                                    {isPriority ? "★ " : ""}{test}
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    {(["positive", "negative", "not_tested"] as const).map((v) => (
+                                      <button
+                                        key={v}
+                                        type="button"
+                                        onClick={() => handleSpecialTestToggle(test, v)}
+                                        className={`rounded-md px-2 py-1 text-[10px] font-bold ${
+                                          selected === v
+                                            ? v === "positive"
+                                              ? "bg-rose-100 text-rose-800 ring-1 ring-rose-200"
+                                              : v === "negative"
+                                                ? "bg-blue-100 text-blue-800 ring-1 ring-blue-200"
+                                                : "bg-slate-200 text-slate-800"
+                                            : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                                        }`}
+                                      >
+                                        {specialTestLabel[v]}
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
-                        <p className="mb-2 text-xs font-bold uppercase text-indigo-800">
-                          {locale === "en" ? "Neurodynamic tests (ULTT / SLR / Slump / Femoral)" : "신경 역동학 검사 (ULTT·SLR·Slump·Femoral)"}
-                        </p>
-                        <div className="space-y-2">
-                          {NEURODYNAMIC_TEST_KEYS.map((test) => {
-                            const selected = neurodynamicSelection[test] ?? "not_tested";
-                            return (
-                              <div
-                                key={test}
-                                className="flex flex-col gap-2 rounded-lg border border-slate-100 bg-white p-2 sm:flex-row sm:items-center sm:justify-between"
-                              >
-                                <p className="text-xs font-semibold text-slate-800">{test}</p>
-                                <div className="grid grid-cols-3 gap-1.5">
-                                  {(["positive", "negative", "not_tested"] as const).map((v) => (
-                                    <button
-                                      key={v}
-                                      type="button"
-                                      onClick={() => handleNeurodynamicToggle(test, v)}
-                                      className={`rounded-md px-2 py-1 text-[10px] font-bold ${
-                                        selected === v
-                                          ? v === "positive"
-                                            ? "bg-rose-100 text-rose-800 ring-1 ring-rose-200"
-                                            : v === "negative"
-                                              ? "bg-blue-100 text-blue-800 ring-1 ring-blue-200"
-                                              : "bg-slate-200 text-slate-800"
-                                          : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
-                                      }`}
-                                    >
-                                      {specialTestLabel[v]}
-                                    </button>
-                                  ))}
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+                          <p className="mb-2 text-xs font-bold uppercase text-indigo-800">
+                            {locale === "en" ? "Neurodynamic tests (ULTT / SLR / Slump / Femoral)" : "신경 역동학 검사 (ULTT·SLR·Slump·Femoral)"}
+                          </p>
+                          <div className="space-y-2">
+                            {NEURODYNAMIC_TEST_KEYS.map((test) => {
+                              const selected = neurodynamicSelection[test] ?? "not_tested";
+                              return (
+                                <div
+                                  key={test}
+                                  className="flex flex-col gap-2 rounded-lg border border-slate-100 bg-white p-2 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                  <p className="text-xs font-semibold text-slate-800">{test}</p>
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    {(["positive", "negative", "not_tested"] as const).map((v) => (
+                                      <button
+                                        key={v}
+                                        type="button"
+                                        onClick={() => handleNeurodynamicToggle(test, v)}
+                                        className={`rounded-md px-2 py-1 text-[10px] font-bold ${
+                                          selected === v
+                                            ? v === "positive"
+                                              ? "bg-rose-100 text-rose-800 ring-1 ring-rose-200"
+                                              : v === "negative"
+                                                ? "bg-blue-100 text-blue-800 ring-1 ring-blue-200"
+                                                : "bg-slate-200 text-slate-800"
+                                            : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                                        }`}
+                                      >
+                                        {specialTestLabel[v]}
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <p className="mb-2 text-xs font-bold uppercase text-slate-600">
-                          {locale === "en" ? "Neuro exam · Myotome (L/R)" : "신경학적 검사 · 근력(Myotome) L/R"}
-                        </p>
-                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                          <table className="w-full min-w-[320px] text-left text-[10px] sm:text-xs">
-                            <thead className="bg-slate-100 text-slate-600">
-                              <tr>
-                                <th className="px-2 py-1.5">Level</th>
-                                <th className="px-2 py-1.5">MMT L</th>
-                                <th className="px-2 py-1.5">MMT R</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {MYOTOME_LEVELS.map((lv) => (
-                                <tr key={lv} className="border-t border-slate-100">
-                                  <td className="px-2 py-1 font-semibold text-slate-700">{lv}</td>
-                                  <td className="px-1 py-0.5">
-                                    <input
-                                      value={neuroExamTable.myotome[lv]?.L ?? ""}
-                                      onChange={(e) => patchNeuroExamLr("myotome", lv, "L", e.target.value)}
-                                      placeholder="0-5"
-                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
-                                    />
-                                  </td>
-                                  <td className="px-1 py-0.5">
-                                    <input
-                                      value={neuroExamTable.myotome[lv]?.R ?? ""}
-                                      onChange={(e) => patchNeuroExamLr("myotome", lv, "R", e.target.value)}
-                                      placeholder="0-5"
-                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <p className="mb-2 text-xs font-bold uppercase text-slate-600">
-                          {locale === "en" ? "Sensory · Dermatome (L/R)" : "감각(Dermatome) L/R"}
-                        </p>
-                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                          <table className="w-full min-w-[320px] text-left text-[10px] sm:text-xs">
-                            <thead className="bg-slate-100 text-slate-600">
-                              <tr>
-                                <th className="px-2 py-1.5">Level</th>
-                                <th className="px-2 py-1.5">L</th>
-                                <th className="px-2 py-1.5">R</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {MYOTOME_LEVELS.map((lv) => (
-                                <tr key={`d-${lv}`} className="border-t border-slate-100">
-                                  <td className="px-2 py-1 font-semibold text-slate-700">{lv}</td>
-                                  <td className="px-1 py-0.5">
-                                    <input
-                                      value={neuroExamTable.dermatomeSensory[lv]?.L ?? ""}
-                                      onChange={(e) => patchNeuroExamLr("dermatomeSensory", lv, "L", e.target.value)}
-                                      placeholder="N/T"
-                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
-                                    />
-                                  </td>
-                                  <td className="px-1 py-0.5">
-                                    <input
-                                      value={neuroExamTable.dermatomeSensory[lv]?.R ?? ""}
-                                      onChange={(e) => patchNeuroExamLr("dermatomeSensory", lv, "R", e.target.value)}
-                                      placeholder="N/T"
-                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <p className="mb-2 text-xs font-bold uppercase text-slate-600">DTR (L/R)</p>
-                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                          <table className="w-full min-w-[360px] text-left text-[10px] sm:text-xs">
-                            <thead className="bg-slate-100 text-slate-600">
-                              <tr>
-                                <th className="px-2 py-1.5">{locale === "en" ? "Reflex" : "반사"}</th>
-                                <th className="px-2 py-1.5">L</th>
-                                <th className="px-2 py-1.5">R</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {DTR_ROWS.map((row) => (
-                                <tr key={row.key} className="border-t border-slate-100">
-                                  <td className="px-2 py-1 font-medium text-slate-700">
-                                    {locale === "en" ? row.labelEn : row.labelKo}
-                                  </td>
-                                  <td className="px-1 py-0.5">
-                                    <input
-                                      value={neuroExamTable.dtr[row.key]?.L ?? ""}
-                                      onChange={(e) => patchNeuroExamLr("dtr", row.key, "L", e.target.value)}
-                                      placeholder="+/++/0"
-                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
-                                    />
-                                  </td>
-                                  <td className="px-1 py-0.5">
-                                    <input
-                                      value={neuroExamTable.dtr[row.key]?.R ?? ""}
-                                      onChange={(e) => patchNeuroExamLr("dtr", row.key, "R", e.target.value)}
-                                      placeholder="+/++/0"
-                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
 
