@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import { calculateDefenseScore } from "@/lib/clinical/calculate-defense-score";
 import {
   calculateRecoveryPrognosis,
@@ -82,6 +83,13 @@ function normalizePatientId(raw: unknown) {
   return String(raw ?? "").trim().toLowerCase();
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function ensureUuid(raw: unknown) {
+  const value = String(raw ?? "").trim();
+  return UUID_REGEX.test(value) ? value : randomUUID();
+}
+
 function sanitizeInsertPayload(row: Record<string, unknown>, aiResult: unknown) {
   const sanitizedPayload: Record<string, unknown> = {};
   const droppedRowKeys: Record<string, unknown> = {};
@@ -141,132 +149,49 @@ async function logClinicalFilterActivity(
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as SaveRequest;
-    const patientId = normalizePatientId(body.patientId);
-    const reportId = String(body.reportId ?? "").trim();
+    const patientId = ensureUuid(normalizePatientId(body.patientId));
+    const reportId = ensureUuid(body.reportId);
     console.log("🕵️‍♂️ [디버깅] 백엔드가 전달받은 userId:", body.userId);
     const userId = String(body.userId ?? "").trim();
     const authorId = String(body.authorId ?? body.author_id ?? "").trim();
     const actorId = authorId || userId;
     console.log("[cdss-guardrail/save] incoming patientId:", body.patientId, "normalized:", patientId);
-    if (!patientId) {
-      return NextResponse.json({ error: "patientId is required" }, { status: 400 });
-    }
-    if (!reportId) {
-      return NextResponse.json({ error: "reportId is required" }, { status: 400 });
-    }
     if (!actorId) {
       return NextResponse.json({ error: "userId or authorId is required" }, { status: 401 });
     }
     const result = body.result ?? {};
-    const overallScore = clampScore(result.overallScore ?? result.complianceScore ?? 0);
-    const hasRedFlag = Boolean(result.hasRedFlag);
-    const detectedConditionId =
-      typeof result.detectionMeta?.conditionId === "string" ? result.detectionMeta.conditionId : null;
-
-    const originalDataObj =
-      body.originalData && typeof body.originalData === "object" ? (body.originalData as Record<string, unknown>) : {};
-    const defenseRubric = calculateDefenseScore(originalDataObj);
-    const recoveryPrognosis = calculateRecoveryPrognosis(originalDataObj);
 
     const supabase = getSupabaseAdmin();
     if (!supabase) {
       return NextResponse.json({ error: "supabase admin not configured" }, { status: 500 });
     }
 
-    const row: Record<string, unknown> = {
+    const safeInsertRow = {
       id: reportId,
-      patient_id: patientId,
-      user_id: userId || null,
-      author_id: authorId || userId || null,
+      patient_id: patientId || null,
       diagnosis_area: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,
-      overall_score: overallScore,
+      overall_score: clampScore(result.overallScore ?? result.complianceScore ?? 0),
       clinical_reasoning:
         typeof (result as { clinicalReasoning?: unknown; clinical_reasoning?: unknown }).clinicalReasoning === "string"
           ? (result as { clinicalReasoning?: string }).clinicalReasoning
           : typeof (result as { clinical_reasoning?: unknown }).clinical_reasoning === "string"
             ? (result as { clinical_reasoning?: string }).clinical_reasoning
             : "",
-      differential_diagnosis:
-        typeof (result as { differentialDiagnosis?: unknown; differential_diagnosis?: unknown }).differentialDiagnosis ===
-          "string"
-          ? (result as { differentialDiagnosis?: string }).differentialDiagnosis
-          : typeof (result as { differential_diagnosis?: unknown }).differential_diagnosis === "string"
-            ? (result as { differential_diagnosis?: string }).differential_diagnosis
-            : "",
-      logic_audit: result.logicChainAudit ?? null,
-      cpg_compliance: result.cpgCompliance ?? null,
-      audit_defense: result.auditDefense ?? null,
-      predictive_trajectory: (() => {
-        const base =
-          result.predictiveTrajectory && typeof result.predictiveTrajectory === "object" && !Array.isArray(result.predictiveTrajectory)
-            ? { ...(result.predictiveTrajectory as Record<string, unknown>) }
-            : {};
-        return {
-          ...base,
-          recovery_score: recoveryPrognosis.recovery_score,
-          recovery_timeframe_ko: recoveryPrognosis.recovery_timeframe_ko,
-          recovery_timeframe_en: recoveryPrognosis.recovery_timeframe_en,
-          recovery_weeks_hint: recoveryScoreToWeeksHint(recoveryPrognosis.recovery_score),
-          recovery_source: "original_data",
-          recovery_deductions: recoveryPrognosis.deductions,
-        };
-      })(),
-      compliance_score: clampScore(result.complianceScore ?? result.overallScore ?? 0),
-      defense_score: clampScore(defenseRubric.total),
-      recovery_score: recoveryPrognosis.recovery_score,
-      recovery_timeframe: recoveryPrognosis.recovery_timeframe_ko,
-      detected_condition_id: detectedConditionId,
-      has_red_flag: hasRedFlag,
-      matched_aliases: Array.isArray(result.detectionMeta?.matchedAliases) ? result.detectionMeta?.matchedAliases : [],
-      score_breakdown: (() => {
-        const aiBreakdown =
+      has_red_flag: Boolean(result.hasRedFlag),
+      raw_ai_response: {
+        author_id: body.authorId ?? body.author_id ?? null,
+        full_request: body,
+        full_result: result,
+        model_json: result,
+        score_breakdown:
           result.detectionMeta?.scoreBreakdown && typeof result.detectionMeta.scoreBreakdown === "object"
-            ? (result.detectionMeta.scoreBreakdown as Record<string, unknown>)
-            : {};
-        return {
-          ...aiBreakdown,
-          defense_rubric: defenseRubric.breakdown,
-          defense_total: defenseRubric.total,
-          recovery_prognosis: {
-            score: recoveryPrognosis.recovery_score,
-            deductions: recoveryPrognosis.deductions,
-          },
-        };
-      })(),
-      assessment_data:
-        body.assessmentData && typeof body.assessmentData === "object" ? body.assessmentData : {},
-      original_data:
-        body.originalData && typeof body.originalData === "object" ? body.originalData : {},
-      intervention_strategy:
-        typeof (result as { interventionStrategy?: unknown; intervention_strategy?: unknown }).interventionStrategy === "string"
-          ? (result as { interventionStrategy?: string }).interventionStrategy
-          : typeof (result as { intervention_strategy?: unknown }).intervention_strategy === "string"
-            ? (result as { intervention_strategy?: string }).intervention_strategy
-            : "",
-      professional_discussion:
-        typeof (result as { professionalDiscussion?: unknown; professional_discussion?: unknown }).professionalDiscussion === "string"
-          ? (result as { professionalDiscussion?: string }).professionalDiscussion
-          : typeof (result as { professional_discussion?: unknown }).professional_discussion === "string"
-            ? (result as { professional_discussion?: string }).professional_discussion
-            : "",
-    };
-
-    const aiResultForBackup = {
-      ...result,
-      locale: body.locale ?? null,
-      language: body.language ?? null,
-      request_payload: {
-        reportId: body.reportId ?? null,
-        patientId: body.patientId ?? null,
-        diagnosisArea: body.diagnosisArea ?? null,
-        original_data: body.originalData ?? null,
-        assessment_data: body.assessmentData ?? null,
-        rom_assessment: body.rom_assessment ?? null,
+            ? result.detectionMeta.scoreBreakdown
+            : {},
+        matched_aliases: Array.isArray(result.detectionMeta?.matchedAliases) ? result.detectionMeta.matchedAliases : [],
       },
     };
-    const sanitizedPayload = sanitizeInsertPayload(row, aiResultForBackup);
-    console.log("[cdss-guardrail/save] upserting row id:", row.id, "patient_id:", row.patient_id);
-    const { error } = await supabase.from(TABLE).upsert(sanitizedPayload as never, { onConflict: "id" });
+    console.log("[cdss-guardrail/save] inserting safe row id:", safeInsertRow.id, "patient_id:", safeInsertRow.patient_id);
+    const { error } = await supabase.from(TABLE).insert(safeInsertRow as never);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -276,7 +201,7 @@ export async function POST(req: Request) {
       reportId,
       diagnosisArea: typeof body.diagnosisArea === "string" ? body.diagnosisArea : null,
       clinicalReasoning:
-        typeof row.clinical_reasoning === "string" ? row.clinical_reasoning : "",
+        typeof safeInsertRow.clinical_reasoning === "string" ? safeInsertRow.clinical_reasoning : "",
     });
     return NextResponse.json({
       ok: true,
