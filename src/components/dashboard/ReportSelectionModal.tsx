@@ -43,7 +43,7 @@ export const ReportSelectionModal = ({ isOpen, onClose, onSelect }: ReportSelect
         "achilles",
       ];
 
-      let query = supabase
+      let query = (supabase as any)
         .from("cdss_guardrail_logs")
         .select("id, diagnosis_area, overall_score, created_at, clinical_reasoning, author_id, patient_id")
         .or(`author_id.eq.${user.id},author_id.is.null`)
@@ -58,7 +58,7 @@ export const ReportSelectionModal = ({ isOpen, onClose, onSelect }: ReportSelect
 
       const clinicalReports = (data || []).filter(
         (report) => {
-          const area = report.diagnosis_area?.toLowerCase() || "";
+          const area = (report as any).diagnosis_area?.toLowerCase() || "";
           const isClinicalArea = clinicalAreas.some((clinical) => area.includes(clinical.toLowerCase()));
           const isNotCommunity = !area.includes("community") && !area.includes("post");
           const hasScore = report.overall_score !== null && report.overall_score !== undefined;
