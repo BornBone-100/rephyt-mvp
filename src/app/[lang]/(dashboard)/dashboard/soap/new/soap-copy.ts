@@ -27,8 +27,8 @@ const COPY = {
     safetyTitle: "PRACTICE SAFETY & CLINICAL FILTER",
     safetySubtitle: "(실무 안전 및 임상 필터)",
     stepExamTitle: "환자 검사 데이터",
-    stepEvalTitle: "임상 평가 및 진단",
-    stepGoalTitle: "예후 및 치료 목표",
+    stepEvalTitle: "Step 2. Evaluation (임상적 추론)",
+    stepGoalTitle: "Step 3. Objective & Goal (객관적 검사 및 목표)",
     stepPlanTitle: "중재 전략 설정",
     linkPatient: "환자 연결",
     selectPatient: "환자를 선택하세요",
@@ -231,8 +231,8 @@ const COPY = {
     safetyTitle: "PRACTICE SAFETY & CLINICAL FILTER",
     safetySubtitle: "(실무 안전 및 임상 필터)",
     stepExamTitle: "Patient examination data",
-    stepEvalTitle: "Clinical evaluation & diagnosis",
-    stepGoalTitle: "Prognosis & goals",
+    stepEvalTitle: "Step 2. Evaluation (Clinical reasoning)",
+    stepGoalTitle: "Step 3. Objective & Goal (Objective tests and goals)",
     stepPlanTitle: "Intervention planning",
     linkPatient: "Link patient",
     selectPatient: "Select a patient",
@@ -421,7 +421,20 @@ export function soapWizardCopy(locale: SoapLocale): SoapWizardCopy {
 /** Canonical exam values (storage) — labels from soapWizardCopy */
 export const ONSET_OPTIONS = ["Acute", "Subacute", "Chronic"] as const;
 export const TRAUMA_OPTIONS = ["Traumatic", "Non-traumatic"] as const;
-export const PAIN_QUALITY_OPTIONS = ["Sharp", "Aching", "Burning", "Throbbing", "Tingling", "Dull"] as const;
+export const PAIN_QUALITY_OPTIONS = [
+  "Sharp",
+  "Aching",
+  "Burning",
+  "Throbbing",
+  "Tingling",
+  "Dull",
+  /** 신경성 증상 스크리닝 (저림/저린 통증) */
+  "NumbnessTingling",
+  /** 신경성 화끈거림(신경병성 통증 양상으로 구분) */
+  "BurningNeuropathic",
+  /** 전기 찌름 / shock-like pain */
+  "ElectricShock",
+] as const;
 
 export function onsetLabel(v: (typeof ONSET_OPTIONS)[number], locale: SoapLocale): string {
   if (locale === "en") return v;
@@ -436,7 +449,14 @@ export function traumaLabel(v: (typeof TRAUMA_OPTIONS)[number], locale: SoapLoca
 }
 
 export function painQualityLabel(v: (typeof PAIN_QUALITY_OPTIONS)[number], locale: SoapLocale): string {
-  if (locale === "en") return v;
+  if (locale === "en") {
+    const en: Record<string, string> = {
+      NumbnessTingling: "Numbness / tingling",
+      BurningNeuropathic: "Burning (neuropathic)",
+      ElectricShock: "Electric shock–like pain",
+    };
+    return en[v] ?? v;
+  }
   const m: Record<string, string> = {
     Sharp: "날카로운",
     Aching: "쑤시는",
@@ -444,6 +464,9 @@ export function painQualityLabel(v: (typeof PAIN_QUALITY_OPTIONS)[number], local
     Throbbing: "뻐근한",
     Tingling: "저리는",
     Dull: "묵직한",
+    NumbnessTingling: "저림(Numbness/Tingling)",
+    BurningNeuropathic: "화끈거림(Burning)",
+    ElectricShock: "전기 찌름(Electric shock)",
   };
   return m[v] ?? v;
 }

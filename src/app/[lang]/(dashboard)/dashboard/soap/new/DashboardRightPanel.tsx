@@ -10,6 +10,13 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { soapWizardCopy, type SoapLocale } from "./soap-copy";
+import type { DefenseScoreBreakdown } from "@/lib/clinical/calculate-defense-score";
+import { getDefenseScorePresentation } from "@/lib/clinical/calculate-defense-score";
+import type { RecoveryPrognosisResult } from "@/lib/clinical/calculate-recovery-prognosis";
+import {
+  getRecoveryTrajectoryTone,
+  recoveryScoreToWeeksHint,
+} from "@/lib/clinical/calculate-recovery-prognosis";
 
 type LogicChainAudit = {
   status: "pass" | "fail" | "warning";
@@ -66,6 +73,10 @@ type Props = {
   isSaving?: boolean;
   saveStatus?: "idle" | "saving" | "saved" | "error" | "duplicated";
   saveErrorMessage?: string | null;
+  /** Step1~4 루브릭 기반 문서 방어 점수(저장 시 defense_score와 동일 기준) */
+  documentationDefenseScore?: number | null;
+  documentationDefenseBreakdown?: DefenseScoreBreakdown | null;
+  documentationRecoveryPrognosis?: RecoveryPrognosisResult | null;
 };
 
 function levelBadge(level: "green" | "yellow" | "red") {
@@ -83,6 +94,9 @@ function ReportBody({
   isSaving = false,
   saveStatus = "idle",
   saveErrorMessage = null,
+  documentationDefenseScore = null,
+  documentationDefenseBreakdown = null,
+  documentationRecoveryPrognosis = null,
 }: {
   data: FinalReportResult;
   locale: SoapLocale;
@@ -92,10 +106,34 @@ function ReportBody({
   isSaving?: boolean;
   saveStatus?: "idle" | "saving" | "saved" | "error" | "duplicated";
   saveErrorMessage?: string | null;
+  documentationDefenseScore?: number | null;
+  documentationDefenseBreakdown?: DefenseScoreBreakdown | null;
+  documentationRecoveryPrognosis?: RecoveryPrognosisResult | null;
 }) {
   const ui = soapWizardCopy(locale);
   const score = Math.max(0, Math.min(100, data.overallScore));
-  const defenseScore = Math.max(0, Math.min(100, data.auditDefense.defenseScore));
+  const aiDefenseScore = Math.max(0, Math.min(100, data.auditDefense.defenseScore));
+  const rubricDefense =
+    typeof documentationDefenseScore === "number" && Number.isFinite(documentationDefenseScore)
+      ? Math.max(0, Math.min(100, Math.round(documentationDefenseScore)))
+      : null;
+  const chartDefenseScore = rubricDefense ?? aiDefenseScore;
+  const defensePresentation = getDefenseScorePresentation(chartDefenseScore, locale === "en" ? "en" : "ko");
+  const defenseBarClass =
+    defensePresentation.tier === "safe"
+      ? "bg-emerald-500"
+      : defensePresentation.tier === "caution"
+        ? "bg-amber-500"
+        : "bg-red-500";
+
+  const recovery = documentationRecoveryPrognosis;
+  const recoveryTone = recovery ? getRecoveryTrajectoryTone(recovery.recovery_score) : null;
+  const recoveryWeeksHint = recovery ? recoveryScoreToWeeksHint(recovery.recovery_score) : data.predictiveTrajectory.estimatedWeeks;
+  const recoveryNarrative = recovery
+    ? locale === "en"
+      ? recovery.recovery_timeframe_en
+      : recovery.recovery_timeframe_ko
+    : data.predictiveTrajectory.trajectoryText;
   const gaugeBg = { background: `conic-gradient(#2563eb ${score * 3.6}deg, #e2e8f0 0deg)` };
   const riskTone =
     data.auditDefense.riskLevel === "High"
@@ -242,13 +280,27 @@ function ReportBody({
             </h3>
             <p className="mt-2 text-sm">{data.auditDefense.feedback}</p>
             <div className="mt-3">
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                {locale === "en" ? "Documentation defense (Step 1–4 rubric)" : "문서 방어 점수 (Step 1–4 입력 루브릭)"}
+              </p>
               <div className="mb-1 flex items-center justify-between text-xs font-bold">
                 <span>{ui.dashDefenseScore}</span>
-                <span>{defenseScore}/100</span>
+                <span className={defensePresentation.textClass}>{chartDefenseScore}/100</span>
               </div>
               <div className="h-2.5 w-full rounded-full bg-white/70">
-                <div className="h-2.5 rounded-full bg-emerald-500" style={{ width: `${defenseScore}%` }} />
+                <div className={`h-2.5 rounded-full ${defenseBarClass}`} style={{ width: `${chartDefenseScore}%` }} />
               </div>
+              <p className={`mt-2 text-xs font-bold leading-relaxed ${defensePresentation.textClass}`}>
+                {defensePresentation.message}
+              </p>
+              {documentationDefenseBreakdown ? (
+                <p className="mt-2 font-mono text-[10px] leading-relaxed text-slate-500">
+                  S1 {documentationDefenseBreakdown.step1} · S2{" "}
+                  {documentationDefenseBreakdown.step2Reasoning + documentationDefenseBreakdown.step2NeuroScreening}{" "}
+                  · S3 {documentationDefenseBreakdown.step3Rom + documentationDefenseBreakdown.step3SpecialTests} · S4{" "}
+                  {documentationDefenseBreakdown.step4Plan + documentationDefenseBreakdown.step4Followup}
+                </p>
+              ) : null}
             </div>
             <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700">
               <p className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">{ui.dashImprovement}</p>
@@ -260,13 +312,48 @@ function ReportBody({
             <h3 className="flex items-center gap-2 text-sm font-black text-slate-700">
               <TrendingUp className="h-4 w-4 text-emerald-600" /> {ui.dashTrajectory}
             </h3>
-            <div className="mt-3 flex items-start gap-4">
-              <div className="rounded-xl bg-emerald-50 px-4 py-3 text-center">
-                <p className="text-3xl font-black text-emerald-700">{data.predictiveTrajectory.estimatedWeeks}</p>
-                <p className="text-xs font-bold text-emerald-600">{ui.dashWeeksLabel}</p>
+            {recovery && recoveryTone ? (
+              <div className="mt-3 space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  {locale === "en" ? "Recovery outlook (from chart inputs)" : "회복 예측도 (차트 입력 기반)"}
+                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <span className={`text-2xl font-black ${recoveryTone.textClass}`}>{recovery.recovery_score}</span>
+                  <span className="text-xs font-bold text-slate-500">/ 95</span>
+                </div>
+                <div className="h-3 w-full rounded-full bg-slate-100">
+                  <div
+                    className={`h-3 rounded-full transition-all ${recoveryTone.barClass}`}
+                    style={{ width: `${(recovery.recovery_score / 95) * 100}%` }}
+                  />
+                </div>
+                <p className={`text-sm font-bold leading-relaxed ${recoveryTone.textClass}`}>{recoveryNarrative}</p>
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-xs text-slate-600">
+                  <span className="font-black text-slate-700">
+                    {locale === "en" ? "Rehab intensity hint (weeks)" : "재활 강도 힌트 (주)"}:{" "}
+                    <span className={recoveryTone.textClass}>{recoveryWeeksHint}</span>
+                  </span>
+                  <span className="text-slate-400">|</span>
+                  <span>
+                    {locale === "en" ? "AI trajectory (reference)" : "AI 궤적 (참고)"}:{" "}
+                    {data.predictiveTrajectory.estimatedWeeks}
+                    {locale === "en" ? " wks" : "주"}
+                  </span>
+                </div>
+                <p className="font-mono text-[10px] leading-relaxed text-slate-500">
+                  Δ VAS {recovery.deductions.vas} · Onset {recovery.deductions.onset} · Nerve {recovery.deductions.nerve} · MMT{" "}
+                  {recovery.deductions.mmt}
+                </p>
               </div>
-              <p className="text-sm leading-relaxed text-slate-600">{data.predictiveTrajectory.trajectoryText}</p>
-            </div>
+            ) : (
+              <div className="mt-3 flex items-start gap-4">
+                <div className="rounded-xl bg-emerald-50 px-4 py-3 text-center">
+                  <p className="text-3xl font-black text-emerald-700">{data.predictiveTrajectory.estimatedWeeks}</p>
+                  <p className="text-xs font-bold text-emerald-600">{ui.dashWeeksLabel}</p>
+                </div>
+                <p className="text-sm leading-relaxed text-slate-600">{data.predictiveTrajectory.trajectoryText}</p>
+              </div>
+            )}
           </div>
         </aside>
       </div>
@@ -334,6 +421,9 @@ export default function FinalReportDashboard({
   isSaving = false,
   saveStatus = "idle",
   saveErrorMessage = null,
+  documentationDefenseScore = null,
+  documentationDefenseBreakdown = null,
+  documentationRecoveryPrognosis = null,
 }: Props) {
   const ui = soapWizardCopy(locale);
   if (isLoading) {
@@ -380,6 +470,9 @@ export default function FinalReportDashboard({
         isSaving={isSaving}
         saveStatus={saveStatus}
         saveErrorMessage={saveErrorMessage}
+        documentationDefenseScore={documentationDefenseScore}
+        documentationDefenseBreakdown={documentationDefenseBreakdown}
+        documentationRecoveryPrognosis={documentationRecoveryPrognosis}
       />
     </div>
   );

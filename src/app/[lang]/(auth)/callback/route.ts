@@ -56,6 +56,7 @@ export async function GET(request: Request, context: RouteContext) {
           hospitalName: user.user_metadata?.hospital_name ?? null,
           blogUrl: user.user_metadata?.blog_url ?? null,
           bio: user.user_metadata?.bio ?? null,
+          slogan: typeof user.user_metadata?.slogan === "string" ? user.user_metadata.slogan : null,
         });
       }
       const welcomeQuery = profileName ? `?welcomeName=${encodeURIComponent(profileName)}` : "";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import DashboardRightPanel from "./DashboardRightPanel";
+import NeuroEntrapmentSelector from "./NeuroEntrapmentSelector";
 import {
   ObjectiveEvaluation,
   formatRomMmtLineForEvaluation,
@@ -54,6 +55,15 @@ import {
   resolveScreeningRegion,
   type Step1RedFlagEntry,
 } from "@/constants/screening";
+import { calculateDefenseScore } from "@/lib/clinical/calculate-defense-score";
+import { calculateRecoveryPrognosis } from "@/lib/clinical/calculate-recovery-prognosis";
+import { VisitFollowupPanel } from "@/components/VisitFollowupPanel";
+import type { VisitFollowupChangeLog } from "@/features/treatment/visit-followup-metadata";
+import {
+  buildTreatmentVisitMetadata,
+  formatVisitFollowupContentBlock,
+} from "@/features/treatment/visit-followup-metadata";
+import type { Json } from "@/types/supabase-generated";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -87,6 +97,9 @@ type ExamDraft = {
   traumaType: (typeof TRAUMA_OPTIONS)[number];
   vas: number;
   painQualities: PainQuality[];
+  /** 피부분절: 빠른 선택 + 자유 기입 */
+  dermatomeQuick: string[];
+  dermatomeFreeText: string;
   aggravatingFactors: string;
   relievingFactors: string;
   redFlags: {
@@ -244,17 +257,410 @@ const MOCK_PATIENTS: Patient[] = [
 ];
 
 const SPECIAL_TESTS_DB: Record<string, string[]> = {
-  neck: ["Spurling test", "Distraction test", "ULNT", "Cervical Rotation ROM"],
-  shoulder: ["Neer test", "Hawkins-Kennedy", "Empty Can", "Speed test"],
-  elbow: ["Cozen test", "Mill's test", "Tinel sign (Cubital tunnel)", "Valgus stress test"],
-  wrist: ["Finkelstein test", "Phalen test", "Tinel sign (Carpal tunnel)", "TFCC load test"],
-  hand: ["Froment sign", "Bunnell-Littler test", "Allen test", "Grind test (CMC)"],
-  lumbar: ["SLR test", "Slump test", "Prone instability test", "PAIVM"],
-  hip: ["FADIR test", "FABER test", "Scour test", "Trendelenburg sign"],
+  neck: [
+    "Spurling test",
+    "Distraction test",
+    "ULTT 1 (Median)",
+    "ULTT 2 (Radial)",
+    "ULTT 3 (Ulnar)",
+    "Tinel's sign (supraclavicular)",
+    "Cervical Rotation ROM",
+  ],
+  shoulder: ["Neer test", "Hawkins-Kennedy", "Roos / Elevated arm stress (TOS screen)", "Empty Can", "Speed test"],
+  elbow: ["Cozen test", "Mill's test", "Tinel sign (Cubital tunnel)", "Phalen's (elbow variant)", "Valgus stress test"],
+  wrist: ["Finkelstein test", "Phalen's test", "Reverse Phalen", "Tinel sign (Carpal tunnel)", "TFCC load test"],
+  hand: ["Froment sign", "Durkan compression test", "Bunnell-Littler test", "Allen test", "Grind test (CMC)"],
+  lumbar: ["SLR (Straight Leg Raise)", "Slump test", "Femoral nerve tension test", "Prone instability test", "PAIVM"],
+  hip: ["FADIR test", "FABER test", "Slump (hip bias)", "Scour test", "Trendelenburg sign"],
   knee: ["Lachman test", "McMurray test", "Anterior Drawer", "Valgus stress test"],
   ankle: ["Anterior Drawer (Ankle)", "Talar Tilt", "Squeeze test", "Thompson test"],
   foot: ["Windlass test", "Navicular drop test", "Mulder click test", "Tinel sign (Tarsal tunnel)"],
 };
+
+/** Step 3: 신경 역동학 (상·하지 공통 표시, 부위와 무관하게 기록 가능) */
+const NEURODYNAMIC_TEST_KEYS = [
+  "ULTT 1 (Median)",
+  "ULTT 2 (Radial)",
+  "ULTT 3 (Ulnar)",
+  "SLR (Straight Leg Raise)",
+  "Slump test",
+  "Femoral nerve tension test",
+] as const;
+
+const DERMATOME_QUICK_LEVELS = ["C5", "C6", "C7", "C8", "T1", "L4", "L5", "S1"] as const;
+
+const MYOTOME_LEVELS = ["C5", "C6", "C7", "C8", "T1", "L2", "L3", "L4", "L5", "S1"] as const;
+
+const DTR_ROWS: { key: string; labelKo: string; labelEn: string }[] = [
+  { key: "biceps", labelKo: "상완이두( C5-6 )", labelEn: "Biceps (C5-6)" },
+  { key: "triceps", labelKo: "상완삼두( C7-8 )", labelEn: "Triceps (C7-8)" },
+  { key: "br", labelKo: "요척골( C5-6 )", labelEn: "Brachioradialis (C5-6)" },
+  { key: "patellar", labelKo: "슬건( L3-4 )", labelEn: "Patellar (L3-4)" },
+  { key: "achilles", labelKo: "아킬레스( S1 )", labelEn: "Achilles (S1)" },
+];
+
+const NEURO_STATUS_OPTIONS = ["정상", "저하", "소실"] as const;
+
+type NeuroSyndromeOption = {
+  key: string;
+  ko: string;
+  en: string;
+  descriptionKo: string;
+  descriptionEn: string;
+  recommendedTests: string[];
+};
+
+type NeuroSyndromeGroup = {
+  groupKo: string;
+  groupEn: string;
+  options: NeuroSyndromeOption[];
+};
+
+const NEURO_SYNDROME_2DEPTH: Record<"upper" | "lower", NeuroSyndromeGroup[]> = {
+  upper: [
+    {
+      groupKo: "흉곽/견갑",
+      groupEn: "Thoracic / Scapular",
+      options: [
+        {
+          key: "tos",
+          ko: "TOS",
+          en: "TOS",
+          descriptionKo: "흉곽출구에서 신경혈관 다발 압박. 팔 저림/무거움, 자세에 따른 악화가 흔함.",
+          descriptionEn: "Neurovascular compression at thoracic outlet; arm paresthesia/heaviness often posture-dependent.",
+          recommendedTests: ["Adson test", "ULTT 1 (Median)"],
+        },
+        {
+          key: "suprascapular",
+          ko: "견갑상신경",
+          en: "Suprascapular nerve",
+          descriptionKo: "견갑상절흔 부근 포착. 외회전 약화 및 후상방 견갑부 통증이 특징.",
+          descriptionEn: "Entrapment near suprascapular notch; posterior-superior shoulder pain with ER weakness.",
+          recommendedTests: ["Suprascapular nerve stretch test"],
+        },
+      ],
+    },
+    {
+      groupKo: "정중신경",
+      groupEn: "Median nerve",
+      options: [
+        {
+          key: "pronator",
+          ko: "회내근 증후군",
+          en: "Pronator syndrome",
+          descriptionKo: "회내근 부위 정중신경 포착. 전완 근위부 통증과 감각 이상이 동반될 수 있음.",
+          descriptionEn: "Median nerve compression at pronator region; proximal forearm pain with sensory symptoms.",
+          recommendedTests: ["Pronator teres test", "ULTT 1 (Median)"],
+        },
+        {
+          key: "ains",
+          ko: "AINS",
+          en: "AINS",
+          descriptionKo: "전골간신경(AIN) 포착. OK 사인 약화/집기 기능 저하가 전형적.",
+          descriptionEn: "Anterior interosseous nerve syndrome; weak pinch/OK sign with motor-dominant deficit.",
+          recommendedTests: ["Pinch sign (AIN)", "ULTT 1 (Median)"],
+        },
+        {
+          key: "cts",
+          ko: "CTS",
+          en: "CTS",
+          descriptionKo: "정중신경 포착. 1~3지 저림과 야간통이 흔하며 Phalen/Tinel 양성이 많음.",
+          descriptionEn: "Median nerve entrapment with nocturnal paresthesia in digits 1-3; often Phalen/Tinel positive.",
+          recommendedTests: ["Phalen's test", "Tinel's sign (Carpal tunnel)", "ULTT 1 (Median)"],
+        },
+      ],
+    },
+    {
+      groupKo: "척골신경",
+      groupEn: "Ulnar nerve",
+      options: [
+        {
+          key: "cubital",
+          ko: "주관 증후군",
+          en: "Cubital tunnel syndrome",
+          descriptionKo: "주관절 내측 척골신경 포착. 4~5지 저림과 팔꿈치 굴곡 시 악화가 특징.",
+          descriptionEn: "Ulnar nerve compression at cubital tunnel; paresthesia in digits 4-5 worse with elbow flexion.",
+          recommendedTests: ["Tinel's sign (Cubital tunnel)", "ULTT 3 (Ulnar)"],
+        },
+        {
+          key: "guyon",
+          ko: "가이욘관 증후군",
+          en: "Guyon's canal syndrome",
+          descriptionKo: "손목 가이욘관 척골신경 포착. 파지 약화 및 척측 손 저림을 유발.",
+          descriptionEn: "Ulnar nerve entrapment at Guyon's canal; ulnar hand paresthesia with grip weakness.",
+          recommendedTests: ["Tinel's sign (Guyon canal)", "ULTT 3 (Ulnar)"],
+        },
+      ],
+    },
+    {
+      groupKo: "요골신경",
+      groupEn: "Radial nerve",
+      options: [
+        {
+          key: "radial_tunnel",
+          ko: "요골관 증후군",
+          en: "Radial tunnel syndrome",
+          descriptionKo: "요골신경 심부 가지 포착. 외상과통과 유사하나 신경통 양상이 동반될 수 있음.",
+          descriptionEn: "Deep radial branch entrapment; may mimic lateral epicondylalgia with neuropathic features.",
+          recommendedTests: ["Radial tunnel provocation", "ULTT 2 (Radial)"],
+        },
+        {
+          key: "pins",
+          ko: "PINS",
+          en: "PINS",
+          descriptionKo: "후골간신경 포착. 손목/손가락 신전 약화 등 운동신경성 증상이 두드러짐.",
+          descriptionEn: "Posterior interosseous nerve syndrome; motor-dominant weakness of finger/wrist extension.",
+          recommendedTests: ["Middle finger extension test", "ULTT 2 (Radial)"],
+        },
+        {
+          key: "wartenberg",
+          ko: "Wartenberg 증후군",
+          en: "Wartenberg's syndrome",
+          descriptionKo: "표재요골신경 포착. 손등 요측부 감각 이상/타는 듯한 통증이 특징.",
+          descriptionEn: "Superficial radial nerve entrapment causing dorsoradial hand dysesthesia/burning pain.",
+          recommendedTests: ["Tinel's sign (Superficial radial)", "ULTT 2 (Radial)"],
+        },
+      ],
+    },
+    {
+      groupKo: "액와/기타 신경",
+      groupEn: "Axillary / Other nerves",
+      options: [
+        {
+          key: "quadrilateral_space",
+          ko: "사각공 증후군",
+          en: "Quadrilateral Space Syn.",
+          descriptionKo: "사각공에서 액와신경/후상완회선동맥 압박. 외전/외회전 시 후외측 어깨 통증.",
+          descriptionEn: "Axillary nerve/posterior circumflex humeral artery compression in quadrilateral space.",
+          recommendedTests: ["Quadrilateral space palpation test", "ULTT 2 (Radial)"],
+        },
+        {
+          key: "long_thoracic",
+          ko: "장흉신경 포착",
+          en: "Long Thoracic N.",
+          descriptionKo: "전거근 약화로 견갑 익상(scapular winging) 가능. 벽 밀기 동작에서 관찰됨.",
+          descriptionEn: "Long thoracic nerve involvement; scapular winging from serratus anterior weakness.",
+          recommendedTests: ["Wall push-up scapular winging test"],
+        },
+        {
+          key: "musculocutaneous",
+          ko: "근피신경/오훼완근 포착",
+          en: "Musculocutaneous N.",
+          descriptionKo: "오훼완근 통과부 포착. 전완 외측 감각 저하와 팔꿈치 굴곡 약화 가능.",
+          descriptionEn: "Entrapment through coracobrachialis; lateral forearm sensory change with elbow flexion weakness.",
+          recommendedTests: ["Resisted elbow flexion provocation", "Biceps reflex"],
+        },
+      ],
+    },
+  ],
+  lower: [
+    {
+      groupKo: "좌골신경",
+      groupEn: "Sciatic nerve",
+      options: [
+        {
+          key: "piriformis",
+          ko: "이상근 증후군",
+          en: "Piriformis syndrome",
+          descriptionKo: "이상근 주변 좌골신경 자극. 둔부 깊은 통증과 하지 방사 증상이 동반될 수 있음.",
+          descriptionEn: "Sciatic irritation around piriformis with deep gluteal pain and possible leg radiation.",
+          recommendedTests: ["FAIR test", "SLR (Straight Leg Raise)", "Slump test"],
+        },
+        {
+          key: "hamstring_origin",
+          ko: "햄스트링 기시부",
+          en: "Proximal hamstring origin",
+          descriptionKo: "좌골 결절 부위 통증이 좌골신경 증상과 동반될 수 있어 감별 필요.",
+          descriptionEn: "Proximal hamstring origin pain may coexist with sciatic symptoms; requires differentiation.",
+          recommendedTests: ["Bent-knee stretch test", "SLR (Straight Leg Raise)"],
+        },
+      ],
+    },
+    {
+      groupKo: "대퇴/복재신경",
+      groupEn: "Femoral / Saphenous",
+      options: [
+        {
+          key: "meralgia",
+          ko: "대퇴감각이상증",
+          en: "Meralgia paresthetica",
+          descriptionKo: "외측대퇴피신경 포착. 대퇴 외측 화끈거림/저림, 감각증상이 우세.",
+          descriptionEn: "Lateral femoral cutaneous nerve entrapment; burning/paresthesia over lateral thigh.",
+          recommendedTests: ["Pelvic compression test", "Femoral nerve tension test"],
+        },
+        {
+          key: "obturator",
+          ko: "폐쇄신경",
+          en: "Obturator nerve entrapment",
+          descriptionKo: "내전근 약화와 서혜부/내측 대퇴 통증이 특징적일 수 있음.",
+          descriptionEn: "May present with adductor weakness and groin/medial thigh pain.",
+          recommendedTests: ["Resisted adduction pain test", "Femoral nerve tension test"],
+        },
+        {
+          key: "femoral_iliopsoas",
+          ko: "장요근 하부 대퇴신경 포착",
+          en: "Femoral N. at distal iliopsoas",
+          descriptionKo: "장요근 하부 통과부 대퇴신경 자극. 고관절 굴곡 관련 전면 대퇴 증상 유발.",
+          descriptionEn: "Femoral nerve irritation near distal iliopsoas; anterior thigh symptoms with hip flexion tasks.",
+          recommendedTests: ["Femoral nerve tension test", "Thomas test"],
+        },
+        {
+          key: "hunters_canal",
+          ko: "내전근관 증후군 (복재신경)",
+          en: "Hunter's Canal Syn. (Saphenous)",
+          descriptionKo: "복재신경 포착으로 무릎 내측/하퇴 내측 통증·감각 이상이 나타날 수 있음.",
+          descriptionEn: "Saphenous nerve entrapment at adductor canal causing medial knee/leg pain and paresthesia.",
+          recommendedTests: ["Tinel's sign (Adductor canal)", "Single-leg squat provocation"],
+        },
+      ],
+    },
+    {
+      groupKo: "경골/비골/족부",
+      groupEn: "Tibial / Peroneal / Foot",
+      options: [
+        {
+          key: "peroneal",
+          ko: "비골신경 포착",
+          en: "Peroneal nerve entrapment",
+          descriptionKo: "비골두 부위 포착이 흔함. 발목 배측굴곡 약화/저림과 연관될 수 있음.",
+          descriptionEn: "Commonly around fibular head; may relate to dorsiflexion weakness and paresthesia.",
+          recommendedTests: ["Tinel's sign (Fibular head)", "SLR (Straight Leg Raise)"],
+        },
+        {
+          key: "tarsal_tunnel",
+          ko: "Tarsal Tunnel 증후군",
+          en: "Tarsal tunnel syndrome",
+          descriptionKo: "경골신경의 내과 후방 포착. 발바닥 저림/야간 통증 감별에 중요.",
+          descriptionEn: "Tibial nerve entrapment behind medial malleolus; plantar paresthesia/night pain.",
+          recommendedTests: ["Tinel sign (Tarsal tunnel)", "Dorsiflexion-eversion test"],
+        },
+        {
+          key: "baxters_nerve",
+          ko: "박스터 신경 포착",
+          en: "Baxter's Nerve",
+          descriptionKo: "만성 족저근막염과 유사한 발뒤꿈치 내측 통증. 감별 진단 필수.",
+          descriptionEn: "Medial heel pain mimicking chronic plantar fasciitis; key differential diagnosis.",
+          recommendedTests: ["Baxter nerve palpation", "Windlass test"],
+        },
+        {
+          key: "anterior_tarsal_tunnel",
+          ko: "전족근관 증후군",
+          en: "Anterior Tarsal Tunnel",
+          descriptionKo: "심부비골신경 전족부 포착. 발등 통증/저림과 신발 압박 악화가 흔함.",
+          descriptionEn: "Deep peroneal nerve entrapment at anterior tarsal tunnel; dorsal foot pain/paresthesia.",
+          recommendedTests: ["Tinel's sign (Dorsal foot)", "Toe extensor provocation"],
+        },
+      ],
+    },
+  ],
+};
+
+const NEURO_SYNDROME_LABEL_MAP = Object.fromEntries(
+  Object.values(NEURO_SYNDROME_2DEPTH)
+    .flatMap((groups) => groups)
+    .flatMap((group) => group.options)
+    .map((opt) => [
+      opt.key,
+      {
+        ko: opt.ko,
+        en: opt.en,
+        descriptionKo: opt.descriptionKo,
+        descriptionEn: opt.descriptionEn,
+        recommendedTests: opt.recommendedTests,
+      },
+    ]),
+) as Record<
+  string,
+  { ko: string; en: string; descriptionKo: string; descriptionEn: string; recommendedTests: string[] }
+>;
+
+type NerveHypothesisState = {
+  entrapmentSuspected: boolean;
+  differentialNeckDisc: boolean;
+  doubleCrushSyndrome: boolean;
+  peripheralThoracicOutlet: boolean;
+  peripheralCarpalTunnel: boolean;
+  peripheralCubitalTunnel: boolean;
+  peripheralOtherNote: string;
+};
+
+type LrCell = { L: string; R: string };
+type NeuroStatusValue = (typeof NEURO_STATUS_OPTIONS)[number];
+type NeuroStatusCell = { L: NeuroStatusValue; R: NeuroStatusValue };
+
+function emptyLr(): LrCell {
+  return { L: "", R: "" };
+}
+
+function emptyNeuroStatus(): NeuroStatusCell {
+  return { L: "정상", R: "정상" };
+}
+
+function buildDefaultNeuroExamTable(): {
+  myotome: Record<string, LrCell>;
+  dermatomeSensory: Record<string, LrCell>;
+  dtr: Record<string, LrCell>;
+} {
+  const myotome: Record<string, LrCell> = {};
+  for (const lv of MYOTOME_LEVELS) myotome[lv] = emptyLr();
+  const dermatomeSensory: Record<string, LrCell> = {};
+  for (const lv of MYOTOME_LEVELS) dermatomeSensory[lv] = emptyLr();
+  const dtr: Record<string, LrCell> = {};
+  for (const r of DTR_ROWS) dtr[r.key] = emptyLr();
+  return { myotome, dermatomeSensory, dtr };
+}
+
+function buildDefaultEvaluationNeuroExamTable(): {
+  myotome: Record<string, NeuroStatusCell>;
+  dermatome: Record<string, NeuroStatusCell>;
+  dtr: Record<string, NeuroStatusCell>;
+} {
+  const myotome: Record<string, NeuroStatusCell> = {};
+  for (const lv of MYOTOME_LEVELS) myotome[lv] = emptyNeuroStatus();
+  const dermatome: Record<string, NeuroStatusCell> = {};
+  for (const lv of MYOTOME_LEVELS) dermatome[lv] = emptyNeuroStatus();
+  const dtr: Record<string, NeuroStatusCell> = {};
+  for (const r of DTR_ROWS) dtr[r.key] = emptyNeuroStatus();
+  return { myotome, dermatome, dtr };
+}
+
+const NEURO_ENTRAPMENT_BLOCK_START = "[NEURO_ENTRAPMENT_BLOCK_START]";
+const NEURO_ENTRAPMENT_BLOCK_END = "[NEURO_ENTRAPMENT_BLOCK_END]";
+
+function upsertNeuroEntrapmentBlock(text: string, lines: string[]): string {
+  const escapedStart = NEURO_ENTRAPMENT_BLOCK_START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedEnd = NEURO_ENTRAPMENT_BLOCK_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const blockRegex = new RegExp(`${escapedStart}[\\s\\S]*?${escapedEnd}`, "g");
+  const base = text.replace(blockRegex, "").trim();
+  if (lines.length === 0) return base;
+  const block = [NEURO_ENTRAPMENT_BLOCK_START, ...lines, NEURO_ENTRAPMENT_BLOCK_END].join("\n");
+  return base ? `${base}\n\n${block}` : block;
+}
+
+function composeNerveHypothesisLines(h: NerveHypothesisState, locale: SoapLocale): string[] {
+  if (!h.entrapmentSuspected) return [];
+  const parts: string[] = [];
+  parts.push(locale === "en" ? "Nerve entrapment suspected: Yes" : "신경 포착 의심: 예");
+  if (h.differentialNeckDisc) parts.push(locale === "en" ? "- Differentiate from cervical radiculopathy / disc" : "- 목 디스크·신경근병증과의 감별");
+  if (h.doubleCrushSyndrome) parts.push(locale === "en" ? "- Double crush syndrome considered" : "- 이중 압박 증후군(Double Crush) 고려");
+  const sites: string[] = [];
+  if (h.peripheralThoracicOutlet) sites.push(locale === "en" ? "Thoracic outlet" : "흉곽출구");
+  if (h.peripheralCarpalTunnel) sites.push("CTS / Carpal tunnel");
+  if (h.peripheralCubitalTunnel) sites.push(locale === "en" ? "Cubital tunnel" : "주관 신경 포착");
+  if (sites.length) {
+    parts.push(
+      (locale === "en" ? "- Peripheral entrapment sites: " : "- 말초 신경 포착 부위: ") + sites.join(", "),
+    );
+  }
+  const o = h.peripheralOtherNote.trim();
+  if (o) parts.push((locale === "en" ? "- Other: " : "- 기타: ") + o);
+  return parts;
+}
+
+const NERVE_HEP_CAUTION_KO =
+  "[HEP] 신경 스트레칭·글라이딩 주의: 가동 범위 내에서만 수행하고, 저림·전기감·통증이 과도해지면 즉시 중단 후 치료사에게 문의하세요.";
+const NERVE_HEP_CAUTION_EN =
+  "[HEP] Nerve glide/slide caution: stay within symptom-free range; stop if numbness, shock-like pain, or severe pain increases and contact your clinician.";
 
 type SpecialTestValue = "positive" | "negative" | "not_tested";
 type CustomSpecialTestResult = "양성" | "음성" | null;
@@ -296,6 +702,11 @@ type TempDraftPayload = {
   step: number;
   formData: FormData;
   examDraft: ExamDraft;
+  nerveHypothesis: NerveHypothesisState;
+  neurodynamicSelection: Record<string, SpecialTestValue>;
+  neuroExamTable: ReturnType<typeof buildDefaultNeuroExamTable>;
+  evaluationNeuroExamTable: ReturnType<typeof buildDefaultEvaluationNeuroExamTable>;
+  selectedNeuroSyndromes: string[];
   specialTestSelection: Record<string, SpecialTestValue>;
   customSpecialTests: CustomSpecialTestEntry[];
   selectedTbcTags: string[];
@@ -310,6 +721,9 @@ type TempDraftPayload = {
   exerciseEntries: TherapeuticExerciseEntry[];
   modalityEntries: ModalityEntry[];
   educationHep: string;
+  visitSpecialNotes: string;
+  visitIsFlagged: boolean;
+  visitChangeLog: VisitFollowupChangeLog;
 };
 
 function formatSupabaseTempSaveError(error: unknown): string {
@@ -344,7 +758,7 @@ type GuardrailPayload = {
   special_tests?: {
     recommended: Array<{ name: string; result: "positive" | "negative" | "not_tested" }>;
     custom: Array<{ id: string; name: string; result: "양성" | "음성" }>;
-    merged: Array<{ name: string; result: string; source: "recommended" | "custom" }>;
+    merged: Array<{ name: string; result: string; source: "recommended" | "custom" | "neurodynamic" }>;
   };
 };
 
@@ -549,12 +963,21 @@ function composeExaminationSummary(draft: ExamDraft, locale: SoapLocale) {
     draft.redFlags.weightLoss ? (locale === "en" ? "Unexplained weight loss" : "체중 감소") : null,
     draft.redFlags.neuroBowelBladder ? (locale === "en" ? "Neurogenic bowel/bladder" : "감각/대소변 이상") : null,
   ].filter(Boolean);
+  const dermaQuick =
+    draft.dermatomeQuick.length > 0
+      ? draft.dermatomeQuick.join(", ")
+      : locale === "en"
+        ? "Not specified"
+        : "미지정";
+  const dermaFree = draft.dermatomeFreeText.trim() || (locale === "en" ? "None" : "없음");
 
   return [
     `${t.prefixChief}: ${draft.chiefComplaint || t.notProvided}`,
     `${t.prefixOnset}: ${onsetLabel(draft.onset, locale)} (${traumaLabel(draft.traumaType, locale)})`,
     `${t.prefixVas}: ${draft.vas}`,
     `${t.prefixQuality}: ${qualityText}`,
+    `${locale === "en" ? "Dermatome (quick)" : "피부분절(빠른 선택)"}: ${dermaQuick}`,
+    `${locale === "en" ? "Dermatome (free text)" : "피부분절(상세 기입)"}: ${dermaFree}`,
     `${t.prefixAgg}: ${draft.aggravatingFactors || t.notProvided}`,
     `${t.prefixRelief}: ${draft.relievingFactors || t.notProvided}`,
     `${t.prefixRedFlag}: ${redFlags.length > 0 ? redFlags.join(", ") : t.redFlagNone}`,
@@ -705,12 +1128,33 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     });
   }, [patientIdFromUrl]);
 
+  const defaultNerveHypothesis = useMemo(
+    (): NerveHypothesisState => ({
+      entrapmentSuspected: false,
+      differentialNeckDisc: false,
+      doubleCrushSyndrome: false,
+      peripheralThoracicOutlet: false,
+      peripheralCarpalTunnel: false,
+      peripheralCubitalTunnel: false,
+      peripheralOtherNote: "",
+    }),
+    [],
+  );
+  const [nerveHypothesis, setNerveHypothesis] = useState<NerveHypothesisState>(defaultNerveHypothesis);
+  const [neurodynamicSelection, setNeurodynamicSelection] = useState<Record<string, SpecialTestValue>>({});
+  const [neuroExamTable, setNeuroExamTable] = useState(() => buildDefaultNeuroExamTable());
+  const [evaluationNeuroExamTable, setEvaluationNeuroExamTable] = useState(() => buildDefaultEvaluationNeuroExamTable());
+  const [selectedNeuroSyndromes, setSelectedNeuroSyndromes] = useState<string[]>([]);
+  const nerveHepCautionDoneRef = useRef(false);
+
   const [examDraft, setExamDraft] = useState<ExamDraft>({
     chiefComplaint: "",
     onset: "Acute",
     traumaType: "Non-traumatic",
     vas: 5,
     painQualities: [],
+    dermatomeQuick: [],
+    dermatomeFreeText: "",
     aggravatingFactors: "",
     relievingFactors: "",
     redFlags: {
@@ -759,6 +1203,9 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   });
   const [modalityEntries, setModalityEntries] = useState<ModalityEntry[]>([]);
   const [educationHep, setEducationHep] = useState("");
+  const [visitSpecialNotes, setVisitSpecialNotes] = useState("");
+  const [visitIsFlagged, setVisitIsFlagged] = useState(false);
+  const [visitChangeLog, setVisitChangeLog] = useState<VisitFollowupChangeLog>("");
   const [measureModalOpen, setMeasureModalOpen] = useState(false);
   const [selectedOutcomeTool, setSelectedOutcomeTool] = useState<string>("");
   const [manualOutcomeName, setManualOutcomeName] = useState("");
@@ -943,6 +1390,74 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     setSpecialTestSelection((prev) => ({ ...prev, [testName]: value }));
   };
 
+  const handleNeurodynamicToggle = (testName: string, value: SpecialTestValue) => {
+    setNeurodynamicSelection((prev) => ({ ...prev, [testName]: value }));
+  };
+
+  const toggleNeuroSyndrome = (key: string) => {
+    setSelectedNeuroSyndromes((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      setNerveHypothesis((old) => ({ ...old, entrapmentSuspected: next.length > 0 }));
+      return next;
+    });
+  };
+
+  const clearNeuroSyndromes = () => {
+    setSelectedNeuroSyndromes([]);
+    setNerveHypothesis((old) => ({ ...old, entrapmentSuspected: false }));
+  };
+
+  useEffect(() => {
+    if (selectedNeuroSyndromes.length > 0 && !nerveHypothesis.entrapmentSuspected) {
+      setNerveHypothesis((old) => ({ ...old, entrapmentSuspected: true }));
+    }
+  }, [nerveHypothesis.entrapmentSuspected, selectedNeuroSyndromes.length]);
+
+  const patchEvaluationNeuroExam = (
+    section: "myotome" | "dermatome" | "dtr",
+    rowKey: string,
+    side: "L" | "R",
+    value: NeuroStatusValue,
+  ) => {
+    setEvaluationNeuroExamTable((prev) => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [rowKey]: {
+          ...(prev[section][rowKey] ?? emptyNeuroStatus()),
+          [side]: value,
+        },
+      },
+    }));
+  };
+
+  const toggleDermatomeQuick = (level: string) => {
+    setExamDraft((prev) => ({
+      ...prev,
+      dermatomeQuick: prev.dermatomeQuick.includes(level)
+        ? prev.dermatomeQuick.filter((x) => x !== level)
+        : [...prev.dermatomeQuick, level],
+    }));
+  };
+
+  const patchNeuroExamLr = (
+    section: "myotome" | "dermatomeSensory" | "dtr",
+    key: string,
+    side: "L" | "R",
+    value: string,
+  ) => {
+    setNeuroExamTable((prev) => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [key]: {
+          ...(prev[section][key] ?? emptyLr()),
+          [side]: value,
+        },
+      },
+    }));
+  };
+
   const addCustomSpecialTest = () => {
     setCustomSpecialTests((prev) => [
       ...prev,
@@ -990,7 +1505,17 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const applyDraftPayload = (draft: TempDraftPayload) => {
     setStep(draft.step || 1);
     setFormData(draft.formData);
-    setExamDraft(draft.examDraft);
+    setExamDraft({
+      ...draft.examDraft,
+      dermatomeQuick: draft.examDraft?.dermatomeQuick ?? [],
+      dermatomeFreeText: draft.examDraft?.dermatomeFreeText ?? "",
+    });
+    setNerveHypothesis(draft.nerveHypothesis ?? { ...defaultNerveHypothesis });
+    setNeurodynamicSelection(draft.neurodynamicSelection ?? {});
+    setNeuroExamTable(draft.neuroExamTable ?? buildDefaultNeuroExamTable());
+    setEvaluationNeuroExamTable(draft.evaluationNeuroExamTable ?? buildDefaultEvaluationNeuroExamTable());
+    setSelectedNeuroSyndromes(draft.selectedNeuroSyndromes ?? []);
+    nerveHepCautionDoneRef.current = false;
     setSpecialTestSelection(draft.specialTestSelection ?? {});
     setCustomSpecialTests(draft.customSpecialTests ?? []);
     setSelectedTbcTags(draft.selectedTbcTags ?? []);
@@ -1011,6 +1536,9 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     setExerciseEntries(draft.exerciseEntries ?? []);
     setModalityEntries(draft.modalityEntries ?? []);
     setEducationHep(draft.educationHep ?? "");
+    setVisitSpecialNotes(draft.visitSpecialNotes ?? "");
+    setVisitIsFlagged(draft.visitIsFlagged ?? false);
+    setVisitChangeLog(draft.visitChangeLog ?? "");
   };
 
   const handleDraftSave = async () => {
@@ -1027,6 +1555,11 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       step,
       formData,
       examDraft,
+      nerveHypothesis,
+      neurodynamicSelection,
+      neuroExamTable,
+      evaluationNeuroExamTable,
+      selectedNeuroSyndromes,
       specialTestSelection,
       customSpecialTests,
       selectedTbcTags,
@@ -1041,6 +1574,9 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       exerciseEntries,
       modalityEntries,
       educationHep,
+      visitSpecialNotes,
+      visitIsFlagged,
+      visitChangeLog,
     };
     const supabasePayload = {
       patient_id: normalizedPatientId,
@@ -1130,6 +1666,46 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     setLongTermGoal((prev) => appendUniqueLine(prev, line));
   };
 
+  const detectObjectiveTrigger = useCallback(() => {
+    const hasPositiveSpecial =
+      Object.values(specialTestSelection).some((v) => v === "positive") ||
+      Object.values(neurodynamicSelection).some((v) => v === "positive");
+    const hasRomRestriction =
+      !!romAssessmentMeta &&
+      Object.values(romAssessmentMeta.data ?? {}).some((row) => {
+        const left = row?.left;
+        const right = row?.right;
+        const values = [left?.arom, left?.prom, right?.arom, right?.prom]
+          .map((v) => String(v ?? "").trim().toLowerCase())
+          .filter(Boolean);
+        if (values.length === 0) return false;
+        return values.some(
+          (v) =>
+            /limited|restriction|제한|painful|통증/i.test(v) ||
+            (Number.isFinite(Number(v)) && Number(v) < 100),
+        );
+      });
+    return { hasPositiveSpecial, hasRomRestriction };
+  }, [neurodynamicSelection, romAssessmentMeta, specialTestSelection]);
+
+  const applyAiGoalSuggestion = () => {
+    const { hasPositiveSpecial, hasRomRestriction } = detectObjectiveTrigger();
+    const syndromeNames = selectedNeuroSyndromes
+      .map((key) => (locale === "en" ? NEURO_SYNDROME_LABEL_MAP[key]?.en : NEURO_SYNDROME_LABEL_MAP[key]?.ko))
+      .filter((v): v is string => Boolean(v));
+    const syndromeText = syndromeNames.length > 0 ? syndromeNames.join(", ") : locale === "en" ? "neuro entrapment pattern" : "신경 포착 패턴";
+
+    const stg = locale === "en"
+      ? `2-4 weeks: reduce symptom provocation and improve objective findings related to ${syndromeText} (${hasPositiveSpecial ? "positive neuro/special test present" : "monitor test response"}).`
+      : `2-4주: ${syndromeText} 관련 증상 유발을 감소시키고 객관적 검사 소견을 개선한다 (${hasPositiveSpecial ? "신경/특수검사 양성 반영" : "검사 반응 추적"}).`;
+    const ltg = locale === "en"
+      ? `6-12+ weeks: restore pain-controlled ROM and functional ADL/work tolerance${hasRomRestriction ? " with measurable ROM gains" : ""}.`
+      : `6-12주+: 통증 조절 하에 ROM 및 일상/직무 기능을 회복${hasRomRestriction ? "하고 가동범위 개선 수치를 확보" : ""}한다.`;
+
+    setShortTermGoal((prev) => (prev.trim() ? prev : stg));
+    setLongTermGoal((prev) => (prev.trim() ? prev : ltg));
+  };
+
   const addManualEntry = () => {
     if (!manualDraft.name.trim()) return;
     setManualEntries((prev) => [...prev, { ...manualDraft, name: manualDraft.name.trim() }]);
@@ -1212,6 +1788,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
             traumaType: examDraft.traumaType,
             vas: examDraft.vas,
             painQualities: examDraft.painQualities,
+            dermatomeQuick: examDraft.dermatomeQuick,
+            dermatomeFreeText: examDraft.dermatomeFreeText,
             aggravatingFactors: examDraft.aggravatingFactors,
             relievingFactors: examDraft.relievingFactors,
           },
@@ -1219,14 +1797,20 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
             body_part: romAssessmentMeta?.bodyPart ?? formData.diagnosisArea,
             diagnosisArea: formData.diagnosisArea,
             evaluation: formData.evaluation,
+            nerve_entrapment_hypothesis: nerveHypothesis,
           },
           step3: {
             rom_assessment: romAssessmentMeta,
+            neurodynamics: neurodynamicSelection,
+            neuro_exam: neuroExamTable,
           },
           step4: {
             plan: formData.intervention,
             aggravatingFactors: examDraft.aggravatingFactors,
             relievingFactors: examDraft.relievingFactors,
+            nerve_mobilization: {
+              education_auto_caution: locale === "en" ? NERVE_HEP_CAUTION_EN : NERVE_HEP_CAUTION_KO,
+            },
           },
         },
         rom_assessment: romAssessmentMeta ?? undefined,
@@ -1332,6 +1916,13 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     setSaveStatus("saving");
     setSaveErrorMessage(null);
     try {
+      const visitRecordedAt = new Date().toISOString();
+      const visitFollowupSnapshot = {
+        special_notes: visitSpecialNotes,
+        is_flagged: visitIsFlagged,
+        change_log: visitChangeLog,
+        created_at: visitRecordedAt,
+      };
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -1354,12 +1945,19 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
             traumaType: examDraft.traumaType,
             vas: examDraft.vas,
             painQualities: examDraft.painQualities,
+            dermatomeQuick: examDraft.dermatomeQuick,
+            dermatomeFreeText: examDraft.dermatomeFreeText,
             aggravatingFactors: examDraft.aggravatingFactors,
             relievingFactors: examDraft.relievingFactors,
             screeningRegion,
             redFlags: examDraft.redFlags,
             notes: examDraft.otherNotes,
             summary: formData.examination,
+            neuro_symptoms: {
+              painQualities: examDraft.painQualities,
+              dermatomeQuick: examDraft.dermatomeQuick,
+              dermatomeFreeText: examDraft.dermatomeFreeText,
+            },
           },
           evaluation: {
             bodyPart: romAssessmentMeta?.bodyPart ?? formData.diagnosisArea,
@@ -1368,15 +1966,36 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
             traumaType: examDraft.traumaType,
             clinicalReasoning: formData.evaluation,
             summary: formData.evaluation,
+            nerve_entrapment_hypothesis: nerveHypothesis,
+            neuro_syndrome_map: selectedNeuroSyndromes,
+            neuro_exam: evaluationNeuroExamTable,
           },
           goal: {
             summary: formData.prognosis,
             rom: romAssessmentMeta ?? null,
+            neurodynamics: neurodynamicSelection,
+            neuro_exam: neuroExamTable,
+            special_tests: mergedSpecialTests.merged,
+          },
+          objective_tests: {
+            special_tests: mergedSpecialTests.merged,
+            neurodynamic_tests: neurodynamicSelection,
+            syndrome_priority_tests: syndromePriorityTests,
+          },
+          goals: {
+            stg: shortTermGoal,
+            ltg: longTermGoal,
           },
           plan: {
             summary: formData.intervention,
             aggravatingFactors: examDraft.aggravatingFactors,
             relievingFactors: examDraft.relievingFactors,
+            nerve_gliding_options: [
+              "신경 글라이딩 (Nerve gliding/sliding)",
+              "신경 가동술 (Nerve mobilization)",
+            ],
+            hep_nerve_caution: locale === "en" ? NERVE_HEP_CAUTION_EN : NERVE_HEP_CAUTION_KO,
+            visit_followup: visitFollowupSnapshot,
           },
         },
         assessmentData: {
@@ -1386,6 +2005,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
             traumaType: examDraft.traumaType,
             vas: examDraft.vas,
             painQualities: examDraft.painQualities,
+            dermatomeQuick: examDraft.dermatomeQuick,
+            dermatomeFreeText: examDraft.dermatomeFreeText,
             aggravatingFactors: examDraft.aggravatingFactors,
             relievingFactors: examDraft.relievingFactors,
           },
@@ -1393,14 +2014,26 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
             body_part: romAssessmentMeta?.bodyPart ?? formData.diagnosisArea,
             diagnosisArea: formData.diagnosisArea,
             evaluation: formData.evaluation,
+            nerve_entrapment_hypothesis: nerveHypothesis,
+            neuro_syndrome_map: selectedNeuroSyndromes,
+            neuro_exam: evaluationNeuroExamTable,
           },
           step3: {
             rom_assessment: romAssessmentMeta,
+            neurodynamics: neurodynamicSelection,
+            neuro_exam: neuroExamTable,
+            special_tests: mergedSpecialTests.merged,
+            stg: shortTermGoal,
+            ltg: longTermGoal,
           },
           step4: {
             plan: formData.intervention,
             aggravatingFactors: examDraft.aggravatingFactors,
             relievingFactors: examDraft.relievingFactors,
+            nerve_mobilization: {
+              education_auto_caution: locale === "en" ? NERVE_HEP_CAUTION_EN : NERVE_HEP_CAUTION_KO,
+            },
+            visit_followup: visitFollowupSnapshot,
           },
         },
         rom_assessment: romAssessmentMeta,
@@ -1428,6 +2061,33 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       if (!res.ok) {
         throw new Error(body.error || t.dashSaveRecordError);
       }
+
+      const planTextForTreatment =
+        formatPlanToTreatment(manualEntries, exerciseEntries, modalityEntries, educationHep).trim() ||
+        formData.intervention.trim();
+      const visitContentBlockForTreatment =
+        visitSpecialNotes.trim() || visitIsFlagged || visitChangeLog
+          ? formatVisitFollowupContentBlock(visitSpecialNotes, visitChangeLog, locale === "en" ? "en" : "ko")
+          : "";
+      if (planTextForTreatment || visitContentBlockForTreatment) {
+        const treatmentMetadata = buildTreatmentVisitMetadata({
+          special_notes: visitSpecialNotes,
+          is_flagged: visitIsFlagged,
+          change_log: visitChangeLog,
+          createdAt: visitRecordedAt,
+        }) as Json;
+        const treatmentContent = [planTextForTreatment, visitContentBlockForTreatment].filter(Boolean).join("\n\n");
+        const { error: treatmentInsertError } = await supabase.from("treatments").insert({
+          patient_id: chartPatientId,
+          content: treatmentContent,
+          created_by: user?.id ?? null,
+          metadata: treatmentMetadata,
+        } as never);
+        if (treatmentInsertError) {
+          console.warn("[handleSaveDiagnosisRecord] treatments insert:", treatmentInsertError.message);
+        }
+      }
+
       const { error: deleteDraftError } = await supabase
         .from("temp_records")
         .delete()
@@ -1476,8 +2136,8 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
   const steps = [
     { n: 1, label: "Exam", icon: <ClipboardList className="h-4 w-4" /> },
-    { n: 2, label: "Eval", icon: <Activity className="h-4 w-4" /> },
-    { n: 3, label: "Goal", icon: <Target className="h-4 w-4" /> },
+    { n: 2, label: "Evaluation", icon: <Activity className="h-4 w-4" /> },
+    { n: 3, label: "Objective & Goal", icon: <Target className="h-4 w-4" /> },
     { n: 4, label: "Plan", icon: <Stethoscope className="h-4 w-4" /> },
   ];
 
@@ -1488,6 +2148,17 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   const recommendedTests = selectedDiagnosisKey
     ? SPECIAL_TESTS_DB[regionKey as keyof typeof SPECIAL_TESTS_DB] ?? []
     : [];
+  const syndromePriorityTests = useMemo(
+    () =>
+      selectedNeuroSyndromes.flatMap(
+        (key) => NEURO_SYNDROME_LABEL_MAP[key]?.recommendedTests ?? [],
+      ),
+    [selectedNeuroSyndromes],
+  );
+  const recommendedTestsForObjective = useMemo(
+    () => [...new Set([...syndromePriorityTests, ...recommendedTests])],
+    [recommendedTests, syndromePriorityTests],
+  );
   const selectedRegionEvidence = selectedDiagnosisKey
     ? REGION_EVIDENCE_DB[regionKey as keyof typeof REGION_EVIDENCE_DB] ?? null
     : null;
@@ -1501,13 +2172,21 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     ? getJosptIcfDb(dataLocale)[regionKey] ?? null
     : null;
   const mergedSpecialTests = useMemo(() => {
-    const recommended = Object.entries(specialTestSelection)
-      .filter(([, result]) => Boolean(result))
-      .map(([name, result]) => ({
-        name: name.trim(),
-        result,
-      }))
-      .filter((row): row is { name: string; result: "positive" | "negative" | "not_tested" } => Boolean(row.name));
+    const neuroFromDynamics = NEURODYNAMIC_TEST_KEYS.map((name) => {
+      const result = neurodynamicSelection[name] ?? "not_tested";
+      return { name: String(name), result };
+    }).filter((row) => row.result !== "not_tested");
+
+    const recommended = [
+      ...neuroFromDynamics,
+      ...Object.entries(specialTestSelection)
+        .filter(([, result]) => Boolean(result))
+        .map(([name, result]) => ({
+          name: name.trim(),
+          result,
+        }))
+        .filter((row): row is { name: string; result: "positive" | "negative" | "not_tested" } => Boolean(row.name)),
+    ];
 
     const custom = customSpecialTests
       .map((row) => ({
@@ -1521,11 +2200,19 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       recommended,
       custom,
       merged: [
-        ...recommended.map((row) => ({
+        ...neuroFromDynamics.map((row) => ({
           name: row.name,
           result: specialTestLabel[row.result],
-          source: "recommended" as const,
+          source: "neurodynamic" as const,
         })),
+        ...Object.entries(specialTestSelection)
+          .filter(([, result]) => Boolean(result))
+          .map(([name, result]) => ({
+            name: name.trim(),
+            result: specialTestLabel[result],
+            source: "recommended" as const,
+          }))
+          .filter((row) => Boolean(row.name)),
         ...custom.map((row) => ({
           name: row.name,
           result: row.result,
@@ -1533,7 +2220,109 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
         })),
       ],
     };
-  }, [customSpecialTests, specialTestLabel, specialTestSelection]);
+  }, [customSpecialTests, neurodynamicSelection, specialTestLabel, specialTestSelection]);
+
+  const objectiveTriggerState = useMemo(() => detectObjectiveTrigger(), [detectObjectiveTrigger]);
+
+  const originalDataSnapshotForRubrics = useMemo(
+    () => ({
+      exam: {
+        chiefComplaint: examDraft.chiefComplaint,
+        onset: examDraft.onset,
+        traumaType: examDraft.traumaType,
+        vas: examDraft.vas,
+        painQualities: examDraft.painQualities,
+        dermatomeQuick: examDraft.dermatomeQuick,
+        dermatomeFreeText: examDraft.dermatomeFreeText,
+        aggravatingFactors: examDraft.aggravatingFactors,
+        relievingFactors: examDraft.relievingFactors,
+        screeningRegion,
+        redFlags: examDraft.redFlags,
+        notes: examDraft.otherNotes,
+        summary: formData.examination,
+        neuro_symptoms: {
+          painQualities: examDraft.painQualities,
+          dermatomeQuick: examDraft.dermatomeQuick,
+          dermatomeFreeText: examDraft.dermatomeFreeText,
+        },
+      },
+      evaluation: {
+        bodyPart: romAssessmentMeta?.bodyPart ?? formData.diagnosisArea,
+        diagnosisArea: formData.diagnosisArea,
+        onset: examDraft.onset,
+        traumaType: examDraft.traumaType,
+        clinicalReasoning: formData.evaluation,
+        summary: formData.evaluation,
+        nerve_entrapment_hypothesis: nerveHypothesis,
+        neuro_syndrome_map: selectedNeuroSyndromes,
+        neuro_exam: evaluationNeuroExamTable,
+      },
+      goal: {
+        summary: formData.prognosis,
+        rom: romAssessmentMeta ?? null,
+        neurodynamics: neurodynamicSelection,
+        neuro_exam: neuroExamTable,
+        special_tests: mergedSpecialTests.merged,
+      },
+      objective_tests: {
+        special_tests: mergedSpecialTests.merged,
+        neurodynamic_tests: neurodynamicSelection,
+        syndrome_priority_tests: syndromePriorityTests,
+      },
+      goals: {
+        stg: shortTermGoal,
+        ltg: longTermGoal,
+      },
+      plan: {
+        summary: formData.intervention,
+        aggravatingFactors: examDraft.aggravatingFactors,
+        relievingFactors: examDraft.relievingFactors,
+        nerve_gliding_options: [
+          "신경 글라이딩 (Nerve gliding/sliding)",
+          "신경 가동술 (Nerve mobilization)",
+        ],
+        hep_nerve_caution: locale === "en" ? NERVE_HEP_CAUTION_EN : NERVE_HEP_CAUTION_KO,
+        visit_followup: {
+          special_notes: visitSpecialNotes,
+          is_flagged: visitIsFlagged,
+          change_log: visitChangeLog,
+        },
+      },
+    }),
+    [
+      examDraft,
+      formData.diagnosisArea,
+      formData.evaluation,
+      formData.examination,
+      formData.intervention,
+      formData.prognosis,
+      mergedSpecialTests,
+      nerveHypothesis,
+      neurodynamicSelection,
+      neuroExamTable,
+      evaluationNeuroExamTable,
+      selectedNeuroSyndromes,
+      romAssessmentMeta,
+      screeningRegion,
+      shortTermGoal,
+      longTermGoal,
+      syndromePriorityTests,
+      visitChangeLog,
+      visitIsFlagged,
+      visitSpecialNotes,
+      locale,
+    ],
+  );
+
+  const documentationDefenseRubric = useMemo(
+    () => calculateDefenseScore(originalDataSnapshotForRubrics),
+    [originalDataSnapshotForRubrics],
+  );
+
+  const documentationRecoveryPrognosis = useMemo(
+    () => calculateRecoveryPrognosis(originalDataSnapshotForRubrics),
+    [originalDataSnapshotForRubrics],
+  );
 
   useEffect(() => {
     const normalizedPatientId = effectivePatientId;
@@ -1635,8 +2424,17 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
   ]);
 
   useEffect(() => {
-    const trackedNames = [...recommendedTests, ...customSpecialTests.map((row) => row.name.trim()).filter(Boolean)];
+    const trackedNames = [
+      ...recommendedTests,
+      ...NEURODYNAMIC_TEST_KEYS,
+      ...customSpecialTests.map((row) => row.name.trim()).filter(Boolean),
+    ];
     const specialLines = [
+      ...NEURODYNAMIC_TEST_KEYS.map((name) => {
+        const result = neurodynamicSelection[name];
+        if (!result || result === "not_tested") return "";
+        return `${name}: ${specialTestLabel[result]}`;
+      }).filter(Boolean),
       ...Object.entries(specialTestSelection)
         .filter(([, result]) => Boolean(result))
         .map(([name, result]) => `${name}: ${specialTestLabel[result]}`),
@@ -1652,7 +2450,16 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
       if (nextEvaluation === prev.evaluation) return prev;
       return { ...prev, evaluation: nextEvaluation };
     });
-  }, [customSpecialTests, recommendedTests, specialTestLabel, specialTestSelection]);
+  }, [customSpecialTests, neurodynamicSelection, recommendedTests, specialTestLabel, specialTestSelection]);
+
+  useEffect(() => {
+    const lines = composeNerveHypothesisLines(nerveHypothesis, locale);
+    setFormData((prev) => {
+      const next = upsertNeuroEntrapmentBlock(prev.evaluation, lines);
+      if (next === prev.evaluation) return prev;
+      return { ...prev, evaluation: next };
+    });
+  }, [locale, nerveHypothesis]);
 
   useEffect(() => {
     const lines = [
@@ -1663,6 +2470,18 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
     ].filter(Boolean);
     setFormData((prev) => ({ ...prev, prognosis: lines.join("\n\n") }));
   }, [longTermGoal, prognosisDuration, rehabPotential, shortTermGoal, t]);
+
+  useEffect(() => {
+    if (step !== 4) return;
+    if (nerveHepCautionDoneRef.current) return;
+    nerveHepCautionDoneRef.current = true;
+    const tag = locale === "en" ? NERVE_HEP_CAUTION_EN : NERVE_HEP_CAUTION_KO;
+    setEducationHep((prev) => {
+      const p = prev.trim();
+      if (p.includes("[HEP] 신경 스트레칭") || p.includes("[HEP] Nerve glide")) return prev;
+      return p ? `${p}\n\n${tag}` : tag;
+    });
+  }, [locale, step]);
 
   useEffect(() => {
     const manualLines = manualEntries.map(
@@ -1940,6 +2759,53 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                         </div>
                       </div>
 
+                      <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+                        <p className="mb-1 text-xs font-bold uppercase text-indigo-700">
+                          {locale === "en" ? "Neuro symptom screening · Dermatome" : "신경성 증상 스크리닝 · 피부분절(Dermatome)"}
+                        </p>
+                        <p className="mb-3 text-[11px] leading-relaxed text-slate-600">
+                          {locale === "en"
+                            ? "Pain quality chips include numbness/tingling, burning (neuropathic), and electric shock–like pain. Pick quick dermatome levels and/or describe in text."
+                            : "통증 양상에서 저림·화끈거림·전기 찌름을 선택할 수 있습니다. 아래 분절을 빠르게 체크하거나 상세 부위를 자유 기입하세요."}
+                        </p>
+                        <p className="mb-2 text-[10px] font-bold uppercase text-slate-500">
+                          {locale === "en" ? "Dermatome (quick select)" : "피부분절 빠른 선택"}
+                        </p>
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {DERMATOME_QUICK_LEVELS.map((level) => {
+                            const on = examDraft.dermatomeQuick.includes(level);
+                            return (
+                              <button
+                                key={level}
+                                type="button"
+                                onClick={() => toggleDermatomeQuick(level)}
+                                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                                  on
+                                    ? "border border-indigo-500 bg-indigo-600 text-white"
+                                    : "border border-slate-200 bg-white text-slate-600 hover:border-indigo-300"
+                                }`}
+                              >
+                                {level}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">
+                          {locale === "en" ? "Dermatome / sensory distribution (free text)" : "감각 이상 부위·분절 (자유 기입)"}
+                        </label>
+                        <textarea
+                          value={examDraft.dermatomeFreeText}
+                          onChange={(e) => handleExamDraftChange({ dermatomeFreeText: e.target.value })}
+                          rows={3}
+                          placeholder={
+                            locale === "en"
+                              ? "e.g. lateral forearm C6, medial elbow T1..."
+                              : "예: 우측 손등 C6, 좌측 악수 시 저림 C7-T1 방사..."
+                          }
+                          className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                        />
+                      </div>
+
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
                         <p className="mb-2 text-xs font-bold uppercase text-slate-500">{t.aggravatingRelievingSection}</p>
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -2080,7 +2946,23 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
                   {step === 2 && selectedDiagnosisKey && selectedRegionEvidence ? (
                     <div className="mb-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Step 2 Data-Driven Assessment</p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                        {locale === "en"
+                          ? "Step 2. Evaluation (Clinical reasoning)"
+                          : "Step 2. Evaluation (임상적 추론)"}
+                      </p>
+
+                      <NeuroEntrapmentSelector
+                        locale={locale}
+                        syndromeMap={NEURO_SYNDROME_2DEPTH}
+                        selectedSyndromes={selectedNeuroSyndromes}
+                        onToggleSyndrome={toggleNeuroSyndrome}
+                        onClearSyndromes={clearNeuroSyndromes}
+                        evaluationNeuroExamTable={evaluationNeuroExamTable}
+                        onPatchEvaluationNeuroExam={patchEvaluationNeuroExam}
+                        myotomeLevels={MYOTOME_LEVELS}
+                        dtrRows={DTR_ROWS}
+                      />
 
                       <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                         <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">추천 이학적 검사 (Special Tests)</p>
@@ -2185,16 +3067,6 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                           ))}
                         </div>
                       </div>
-
-                      <ObjectiveEvaluation
-                        movements={selectedRegionEvidence.rom}
-                        romMmtInputs={romMmtInputs}
-                        onPatchSide={handleRomMmtChange}
-                        onReplaceMovementRow={handleRomMmtReplaceRow}
-                        selectedDiagnosisArea={formData.diagnosisArea}
-                        onAssessmentMetaChange={setRomAssessmentMeta}
-                        locale={locale}
-                      />
 
                       <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                         <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800">
@@ -2493,7 +3365,264 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
                   {step === 3 ? (
                     <div className="mb-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Step 3 Prognosis & SMART Goals</p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                        {locale === "en"
+                          ? "Step 3. Objective & Goal (Objective tests and goal setting)"
+                          : "Step 3. Objective & Goal (객관적 검사 및 목표)"}
+                      </p>
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs font-black uppercase text-slate-700">3-1. {locale === "en" ? "Objective tests" : "객관적 검사"}</p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {locale === "en"
+                            ? "ROM + syndrome-linked neuro/special tests are prioritized from Step 2."
+                            : "Step 2에서 선택한 증후군을 기반으로 ROM 및 신경/특수검사를 우선 배치합니다."}
+                        </p>
+                      </div>
+
+                      {selectedRegionEvidence ? (
+                        <ObjectiveEvaluation
+                          movements={selectedRegionEvidence.rom}
+                          romMmtInputs={romMmtInputs}
+                          onPatchSide={handleRomMmtChange}
+                          onReplaceMovementRow={handleRomMmtReplaceRow}
+                          selectedDiagnosisArea={formData.diagnosisArea}
+                          onAssessmentMetaChange={setRomAssessmentMeta}
+                          locale={locale}
+                        />
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+                          {locale === "en"
+                            ? "Select diagnosis area at Step 1 to enable ROM objective inputs."
+                            : "Step 1에서 진단 부위를 선택하면 ROM 객관적 입력이 활성화됩니다."}
+                        </div>
+                      )}
+
+                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+                        <p className="mb-2 text-xs font-bold uppercase text-indigo-800">
+                          {locale === "en" ? "Recommended precision tests (Neurodynamics & Special tests)" : "추천 정밀 검사 (Neurodynamics & Special Tests)"}
+                        </p>
+                        <div className="space-y-2">
+                          {recommendedTestsForObjective.map((test) => {
+                            const selected = specialTestSelection[test] ?? "not_tested";
+                            const isPriority = syndromePriorityTests.includes(test);
+                            return (
+                              <div
+                                key={test}
+                                className={`flex flex-col gap-2 rounded-lg border p-2 sm:flex-row sm:items-center sm:justify-between ${
+                                  isPriority ? "border-indigo-200 bg-white ring-1 ring-indigo-100" : "border-slate-100 bg-white"
+                                }`}
+                              >
+                                <p className="text-xs font-semibold text-slate-800">
+                                  {isPriority ? "★ " : ""}{test}
+                                </p>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  {(["positive", "negative", "not_tested"] as const).map((v) => (
+                                    <button
+                                      key={v}
+                                      type="button"
+                                      onClick={() => handleSpecialTestToggle(test, v)}
+                                      className={`rounded-md px-2 py-1 text-[10px] font-bold ${
+                                        selected === v
+                                          ? v === "positive"
+                                            ? "bg-rose-100 text-rose-800 ring-1 ring-rose-200"
+                                            : v === "negative"
+                                              ? "bg-blue-100 text-blue-800 ring-1 ring-blue-200"
+                                              : "bg-slate-200 text-slate-800"
+                                          : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      {specialTestLabel[v]}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+                        <p className="mb-2 text-xs font-bold uppercase text-indigo-800">
+                          {locale === "en" ? "Neurodynamic tests (ULTT / SLR / Slump / Femoral)" : "신경 역동학 검사 (ULTT·SLR·Slump·Femoral)"}
+                        </p>
+                        <div className="space-y-2">
+                          {NEURODYNAMIC_TEST_KEYS.map((test) => {
+                            const selected = neurodynamicSelection[test] ?? "not_tested";
+                            return (
+                              <div
+                                key={test}
+                                className="flex flex-col gap-2 rounded-lg border border-slate-100 bg-white p-2 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <p className="text-xs font-semibold text-slate-800">{test}</p>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  {(["positive", "negative", "not_tested"] as const).map((v) => (
+                                    <button
+                                      key={v}
+                                      type="button"
+                                      onClick={() => handleNeurodynamicToggle(test, v)}
+                                      className={`rounded-md px-2 py-1 text-[10px] font-bold ${
+                                        selected === v
+                                          ? v === "positive"
+                                            ? "bg-rose-100 text-rose-800 ring-1 ring-rose-200"
+                                            : v === "negative"
+                                              ? "bg-blue-100 text-blue-800 ring-1 ring-blue-200"
+                                              : "bg-slate-200 text-slate-800"
+                                          : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      {specialTestLabel[v]}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="mb-2 text-xs font-bold uppercase text-slate-600">
+                          {locale === "en" ? "Neuro exam · Myotome (L/R)" : "신경학적 검사 · 근력(Myotome) L/R"}
+                        </p>
+                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                          <table className="w-full min-w-[320px] text-left text-[10px] sm:text-xs">
+                            <thead className="bg-slate-100 text-slate-600">
+                              <tr>
+                                <th className="px-2 py-1.5">Level</th>
+                                <th className="px-2 py-1.5">MMT L</th>
+                                <th className="px-2 py-1.5">MMT R</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {MYOTOME_LEVELS.map((lv) => (
+                                <tr key={lv} className="border-t border-slate-100">
+                                  <td className="px-2 py-1 font-semibold text-slate-700">{lv}</td>
+                                  <td className="px-1 py-0.5">
+                                    <input
+                                      value={neuroExamTable.myotome[lv]?.L ?? ""}
+                                      onChange={(e) => patchNeuroExamLr("myotome", lv, "L", e.target.value)}
+                                      placeholder="0-5"
+                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-0.5">
+                                    <input
+                                      value={neuroExamTable.myotome[lv]?.R ?? ""}
+                                      onChange={(e) => patchNeuroExamLr("myotome", lv, "R", e.target.value)}
+                                      placeholder="0-5"
+                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="mb-2 text-xs font-bold uppercase text-slate-600">
+                          {locale === "en" ? "Sensory · Dermatome (L/R)" : "감각(Dermatome) L/R"}
+                        </p>
+                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                          <table className="w-full min-w-[320px] text-left text-[10px] sm:text-xs">
+                            <thead className="bg-slate-100 text-slate-600">
+                              <tr>
+                                <th className="px-2 py-1.5">Level</th>
+                                <th className="px-2 py-1.5">L</th>
+                                <th className="px-2 py-1.5">R</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {MYOTOME_LEVELS.map((lv) => (
+                                <tr key={`d-${lv}`} className="border-t border-slate-100">
+                                  <td className="px-2 py-1 font-semibold text-slate-700">{lv}</td>
+                                  <td className="px-1 py-0.5">
+                                    <input
+                                      value={neuroExamTable.dermatomeSensory[lv]?.L ?? ""}
+                                      onChange={(e) => patchNeuroExamLr("dermatomeSensory", lv, "L", e.target.value)}
+                                      placeholder="N/T"
+                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-0.5">
+                                    <input
+                                      value={neuroExamTable.dermatomeSensory[lv]?.R ?? ""}
+                                      onChange={(e) => patchNeuroExamLr("dermatomeSensory", lv, "R", e.target.value)}
+                                      placeholder="N/T"
+                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="mb-2 text-xs font-bold uppercase text-slate-600">DTR (L/R)</p>
+                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                          <table className="w-full min-w-[360px] text-left text-[10px] sm:text-xs">
+                            <thead className="bg-slate-100 text-slate-600">
+                              <tr>
+                                <th className="px-2 py-1.5">{locale === "en" ? "Reflex" : "반사"}</th>
+                                <th className="px-2 py-1.5">L</th>
+                                <th className="px-2 py-1.5">R</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {DTR_ROWS.map((row) => (
+                                <tr key={row.key} className="border-t border-slate-100">
+                                  <td className="px-2 py-1 font-medium text-slate-700">
+                                    {locale === "en" ? row.labelEn : row.labelKo}
+                                  </td>
+                                  <td className="px-1 py-0.5">
+                                    <input
+                                      value={neuroExamTable.dtr[row.key]?.L ?? ""}
+                                      onChange={(e) => patchNeuroExamLr("dtr", row.key, "L", e.target.value)}
+                                      placeholder="+/++/0"
+                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-0.5">
+                                    <input
+                                      value={neuroExamTable.dtr[row.key]?.R ?? ""}
+                                      onChange={(e) => patchNeuroExamLr("dtr", row.key, "R", e.target.value)}
+                                      placeholder="+/++/0"
+                                      className="h-8 w-full rounded border border-slate-200 px-1 text-[10px]"
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="my-1 border-t border-dashed border-slate-300" />
+                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-black uppercase text-emerald-800">3-2. {locale === "en" ? "STG & LTG goals" : "목표 설정 (STG / LTG)"}</p>
+                            <p className="mt-1 text-[11px] text-emerald-700/80">
+                              {locale === "en"
+                                ? "Set measurable short/long-term goals from objective findings."
+                                : "객관적 검사 결과를 근거로 단기/장기 목표를 설정합니다."}
+                            </p>
+                          </div>
+                          {(objectiveTriggerState.hasRomRestriction || objectiveTriggerState.hasPositiveSpecial) ? (
+                            <button
+                              type="button"
+                              onClick={applyAiGoalSuggestion}
+                              className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-[11px] font-black text-emerald-700 transition hover:bg-emerald-100"
+                            >
+                              {locale === "en" ? "AI goal suggestion" : "AI 목표 추천"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
 
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
@@ -2621,6 +3750,39 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <h3 className="mb-3 text-sm font-bold text-slate-800">1. 도수/수기 치료 (Manual Therapy)</h3>
+                        <p className="mb-2 text-[10px] font-bold uppercase text-indigo-700">
+                          {locale === "en" ? "Nerve gliding / mobilization (quick add)" : "신경 글라이딩·가동술 빠른 추가"}
+                        </p>
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {(
+                            locale === "en"
+                              ? [
+                                  ["Median nerve glide", "Median nerve glide"],
+                                  ["Ulnar nerve glide", "Ulnar nerve glide"],
+                                  ["Radial nerve glide", "Radial nerve glide"],
+                                  ["Sciatic nerve slider (supine)", "Sciatic nerve slider"],
+                                  ["Femoral nerve mobilization", "Femoral nerve mobilization"],
+                                ]
+                              : [
+                                  ["정중신경 글라이딩 (Median)", "정중신경 글라이딩 (Median)"],
+                                  ["척신경 글라이딩 (Ulnar)", "척신경 글라이딩 (Ulnar)"],
+                                  ["요골신경 글라이딩 (Radial)", "요골신경 글라이딩 (Radial)"],
+                                  ["좌골신경 슬라이딩 (Sciatic)", "좌골신경 슬라이딩 (Sciatic)"],
+                                  ["대퇴신경 가동술 (Femoral)", "대퇴신경 가동술 (Femoral)"],
+                                ]
+                          ).map(([label, name]) => (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() =>
+                                setManualEntries((prev) => [...prev, { name, grade: "Neural", minutes: "10" }])
+                              }
+                              className="rounded-full border border-indigo-200 bg-white px-3 py-1 text-[11px] font-bold text-indigo-800 transition hover:bg-indigo-50"
+                            >
+                              + {label}
+                            </button>
+                          ))}
+                        </div>
                         <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
                           <input
                             value={manualDraft.name}
@@ -2663,6 +3825,29 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
 
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <h3 className="mb-3 text-sm font-bold text-slate-800">2. 치료적 운동 (Therapeutic Exercise)</h3>
+                        <p className="mb-2 text-[10px] font-bold uppercase text-indigo-700">
+                          {locale === "en" ? "Home nerve sliders / glides" : "가정 신경 슬라이더·글라이딩"}
+                        </p>
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {(locale === "en"
+                            ? ["HEP: Median nerve glide", "HEP: Ulnar nerve glide", "HEP: Sciatic slider (gentle)"]
+                            : ["HEP: 정중신경 글라이딩", "HEP: 척신경 글라이딩", "HEP: 좌골신경 슬라이더 (약하게)"]
+                          ).map((label) => (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() =>
+                                setExerciseEntries((prev) => [
+                                  ...prev,
+                                  { name: label, sets: "1", reps: "10", holdSec: "3" },
+                                ])
+                              }
+                              className="rounded-full border border-indigo-200 bg-white px-3 py-1 text-[11px] font-bold text-indigo-800 transition hover:bg-indigo-50"
+                            >
+                              + {label}
+                            </button>
+                          ))}
+                        </div>
                         <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
                           <input
                             value={exerciseDraft.name}
@@ -2750,6 +3935,17 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
                           placeholder="자세 교정, 금기 동작, 자가 운동, 복약/생활 지도 내용을 상세 기록하세요."
                         />
                       </div>
+
+                      <VisitFollowupPanel
+                        locale={locale === "en" ? "en" : "ko"}
+                        specialNotes={visitSpecialNotes}
+                        isFlagged={visitIsFlagged}
+                        changeLog={visitChangeLog}
+                        onSpecialNotes={setVisitSpecialNotes}
+                        onFlagged={setVisitIsFlagged}
+                        onChangeLog={setVisitChangeLog}
+                        accent="rose"
+                      />
 
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                         <p className="mb-1 text-xs font-bold uppercase text-slate-500">AI 입력용 자동 요약 (Intervention)</p>
@@ -2842,6 +4038,9 @@ function RedFlagMentor({ locale }: { locale: SoapLocale }) {
               isSaving={isSaving}
               saveStatus={saveStatus}
               saveErrorMessage={saveErrorMessage}
+              documentationDefenseScore={documentationDefenseRubric.total}
+              documentationDefenseBreakdown={documentationDefenseRubric.breakdown}
+              documentationRecoveryPrognosis={documentationRecoveryPrognosis}
             />
           )}
           </div>

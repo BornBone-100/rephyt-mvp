@@ -215,6 +215,8 @@ export type Database = {
           patient_id: string;
           content: string;
           created_by: string | null;
+          /** 방문 특이사항·다음 내원 플래그 등 (special_notes, is_flagged, change_log, created_at) */
+          metadata: Json;
           created_at: string;
         };
         Insert: {
@@ -222,6 +224,7 @@ export type Database = {
           patient_id: string;
           content: string;
           created_by?: string | null;
+          metadata?: Json;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["treatments"]["Insert"]>;
@@ -242,6 +245,12 @@ export type Database = {
           audit_defense: Json | null;
           predictive_trajectory: Json | null;
           compliance_score: number | null;
+          /** Step1~4 루브릭 기반 문서 방어 점수(비-AI) */
+          defense_score: number | null;
+          /** Step1~4 기반 회복 예측도 (10~95) */
+          recovery_score: number | null;
+          /** 예상 회복 기간 한글 스냅샷 */
+          recovery_timeframe: string | null;
           detected_condition_id: string | null;
           has_red_flag: boolean | null;
           matched_aliases: Json | null;
@@ -266,6 +275,9 @@ export type Database = {
           audit_defense?: Json | null;
           predictive_trajectory?: Json | null;
           compliance_score?: number | null;
+          defense_score?: number | null;
+          recovery_score?: number | null;
+          recovery_timeframe?: string | null;
           detected_condition_id?: string | null;
           has_red_flag?: boolean | null;
           matched_aliases?: Json | null;
@@ -286,13 +298,49 @@ export type Database = {
           id: string;
           plan_tier: string | null;
           plan_type: string | null;
+          name?: string | null;
+          phone_number?: string | null;
+          slogan?: string | null;
+          metadata?: Json | null;
         };
         Insert: {
           id: string;
           plan_tier?: string | null;
           plan_type?: string | null;
+          name?: string | null;
+          phone_number?: string | null;
+          slogan?: string | null;
+          metadata?: Json | null;
         };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
+        Relationships: [];
+      };
+
+      /** 회원가입 SMS OTP (서비스 롤 API 전용) */
+      signup_sms_challenges: {
+        Row: {
+          id: string;
+          phone_e164: string;
+          code_hash: string;
+          expires_at: string;
+          verified_at: string | null;
+          session_token: string | null;
+          session_expires_at: string | null;
+          consumed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          phone_e164: string;
+          code_hash: string;
+          expires_at: string;
+          verified_at?: string | null;
+          session_token?: string | null;
+          session_expires_at?: string | null;
+          consumed_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["signup_sms_challenges"]["Insert"]>;
         Relationships: [];
       };
 

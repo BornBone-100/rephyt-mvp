@@ -3,12 +3,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Trash2 } from "lucide-react";
 import { fetchCdssTimelineRows } from "@/lib/timeline/fetch-cdss-guardrail-timeline";
 import { createClient } from "@/utils/supabase/client";
 import type { Tables } from "@/types/supabase";
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import { PastSoapCard } from "./past-soap-card";
 import SOAPExportButton from "@/components/SOAPExportButton";
+import { VisitFollowupPanel } from "@/components/VisitFollowupPanel";
+import type { VisitFollowupChangeLog } from "@/features/treatment/visit-followup-metadata";
+import {
+  buildTreatmentVisitMetadata,
+  changeLogLabelKo,
+  findLatestFlaggedVisitMemo,
+  formatVisitFollowupContentBlock,
+  parseTreatmentVisitMetadata,
+} from "@/features/treatment/visit-followup-metadata";
+import type { Json } from "@/types/supabase-generated";
+import { getDefenseScorePresentation, resolveDefenseScoreOnRead } from "@/lib/clinical/calculate-defense-score";
+import {
+  getRecoveryTrajectoryTone,
+  recoveryScoreToWeeksHint,
+  resolveRecoveryOnRead,
+} from "@/lib/clinical/calculate-recovery-prognosis";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -49,8 +66,13 @@ type TimelineLog = {
   professional_discussion?: string | null;
   cpg_compliance?: unknown;
   audit_defense?: unknown;
+  /** AI 예측 주차 등 (참고) */
   predictive_trajectory?: unknown;
   compliance_score?: number | null;
+  defense_score?: number | null;
+  recovery_score?: number | null;
+  recovery_timeframe?: string | null;
+  original_data?: unknown;
   payload: Record<string, unknown> | null;
 };
 
@@ -446,6 +468,7 @@ export function PatientDetailClient({ dict }: Props) {
   const [isTimelineLogsLoading, setIsTimelineLogsLoading] = useState(false);
   const [screeningRefreshTick, setScreeningRefreshTick] = useState(0);
   const [sharingTimelineIds, setSharingTimelineIds] = useState<Record<string, boolean>>({});
+  const [deletingTimelineIds, setDeletingTimelineIds] = useState<Record<string, boolean>>({});
   const [originalDataModalLog, setOriginalDataModalLog] = useState<TimelineLog | null>(null);
   const isTimelineFetchInFlightRef = useRef(false);
   const lastTimelineFetchAtRef = useRef(0);
@@ -477,6 +500,14 @@ export function PatientDetailClient({ dict }: Props) {
   });
   const [modalityEntries, setModalityEntries] = useState<ModalityEntry[]>([]);
   const [educationHep, setEducationHep] = useState("");
+  const [visitSpecialNotes, setVisitSpecialNotes] = useState("");
+  const [visitIsFlagged, setVisitIsFlagged] = useState(false);
+  const [visitChangeLog, setVisitChangeLog] = useState<VisitFollowupChangeLog>("");
+
+  const latestFlaggedVisitMemo = useMemo(
+    () => findLatestFlaggedVisitMemo(treatments.map((t) => ({ id: t.id, created_at: t.created_at, metadata: t.metadata }))),
+    [treatments],
+  );
 
   const fetchTimelineLogs = useCallback(async (force = false) => {
     if (!chartPatientId || chartPatientId === "null" || chartPatientId === "undefined") return;
@@ -708,15 +739,29 @@ export function PatientDetailClient({ dict }: Props) {
   };
 
   const handleAddTreatment = async () => {
-    if (!formattedTreatment.trim()) return;
+    const planBlock = formattedTreatment.trim();
+    const visitBlock =
+      visitSpecialNotes.trim() || visitIsFlagged || visitChangeLog
+        ? formatVisitFollowupContentBlock(visitSpecialNotes, visitChangeLog, isEnglish ? "en" : "ko")
+        : "";
+    if (!planBlock && !visitBlock) return;
+
     setIsSubmittingTreatment(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const contentToSave = formattedTreatment.trim();
+    const recordedAt = new Date().toISOString();
+    const metadata = buildTreatmentVisitMetadata({
+      special_notes: visitSpecialNotes,
+      is_flagged: visitIsFlagged,
+      change_log: visitChangeLog,
+      createdAt: recordedAt,
+    }) as Json;
+    const contentToSave = [planBlock, visitBlock].filter(Boolean).join("\n\n");
 
     const { error } = await supabase.from("treatments").insert([{
       patient_id: chartPatientId,
       content: contentToSave,
-      created_by: user?.id
+      created_by: user?.id,
+      metadata,
     }]);
 
     if (!error) {
@@ -724,6 +769,9 @@ export function PatientDetailClient({ dict }: Props) {
       setExerciseEntries([]);
       setModalityEntries([]);
       setEducationHep("");
+      setVisitSpecialNotes("");
+      setVisitIsFlagged(false);
+      setVisitChangeLog("");
       setManualDraft({ name: "", grade: "Grade III", minutes: "" });
       setExerciseDraft({ name: "", sets: "", reps: "", holdSec: "" });
       setModalityDraft({ modality: "TENS/ICT", target: "" });
@@ -733,7 +781,8 @@ export function PatientDetailClient({ dict }: Props) {
         patient_id: chartPatientId,
         content: contentToSave,
         created_by: user?.id ?? null,
-        created_at: new Date().toISOString(),
+        metadata,
+        created_at: recordedAt,
       };
       setTreatments((prev) => [optimistic, ...prev]);
     } else {
@@ -793,6 +842,40 @@ export function PatientDetailClient({ dict }: Props) {
     setSoapNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, is_shared: true } : n)));
   }, []);
 
+  const handleDeleteTimelineReport = useCallback(
+    async (reportId: string) => {
+      const ok = window.confirm(
+        isEnglish
+          ? "Delete this report? Removed clinical data cannot be recovered."
+          : "이 리포트를 삭제하시겠습니까? 삭제된 데이터는 복구할 수 없습니다.",
+      );
+      if (!ok) return;
+
+      setDeletingTimelineIds((prev) => ({ ...prev, [reportId]: true }));
+      try {
+        const { error } = await supabase.from("cdss_guardrail_logs").delete().eq("id", reportId);
+        if (error) throw error;
+        setTimelineLogs((prev) => prev.filter((row) => row.id !== reportId));
+        setOriginalDataModalLog((open) => (open?.id === reportId ? null : open));
+        alert(isEnglish ? "Report deleted successfully." : "리포트가 안전하게 삭제되었습니다.");
+      } catch (err) {
+        console.error("cdss_guardrail_logs delete failed:", err);
+        alert(
+          isEnglish
+            ? "Could not delete the report. Please try again or check your permissions."
+            : "삭제 중 오류가 발생했습니다. 권한을 확인한 뒤 다시 시도해 주세요.",
+        );
+      } finally {
+        setDeletingTimelineIds((prev) => {
+          const next = { ...prev };
+          delete next[reportId];
+          return next;
+        });
+      }
+    },
+    [isEnglish, supabase],
+  );
+
   const handleShareTimelineCase = useCallback(
     async (item: TimelineLog) => {
       const challengeTitle = item.diagnosis_area || item.detected_condition_id || "Clinical Reasoning Challenge";
@@ -822,10 +905,18 @@ export function PatientDetailClient({ dict }: Props) {
                 diagnosisArea: item.diagnosis_area,
                 hasRedFlag: item.has_red_flag,
                 overallScore: item.overall_score,
-                complianceScore: item.compliance_score,
+                complianceScore: resolveDefenseScoreOnRead({
+                  defense_score: item.defense_score,
+                  original_data: item.original_data ?? item.payload?.original_data,
+                  compliance_score: item.compliance_score,
+                }),
               },
               overallScore: item.overall_score ?? 0,
-              defenseScore: item.compliance_score ?? 0,
+              defenseScore: resolveDefenseScoreOnRead({
+                defense_score: item.defense_score,
+                original_data: item.original_data ?? item.payload?.original_data,
+                compliance_score: item.compliance_score,
+              }),
             },
           }),
         });
@@ -850,6 +941,12 @@ export function PatientDetailClient({ dict }: Props) {
   if (isLoading) return <div className="flex min-h-screen items-center justify-center font-bold text-blue-900 animate-pulse">차트와 타임라인을 동기화하는 중입니다...</div>;
   if (!patient) return <div className="flex min-h-screen items-center justify-center font-bold text-red-500">환자 데이터를 불러오지 못했습니다. 목록으로 돌아가주세요.</div>;
 
+  const canSaveTreatment =
+    Boolean(formattedTreatment.trim()) ||
+    Boolean(visitSpecialNotes.trim()) ||
+    visitIsFlagged ||
+    Boolean(visitChangeLog);
+
   return (
     <div className="min-h-screen bg-zinc-50 p-6 md:p-10 pb-32">
       <div className="mb-8">
@@ -861,6 +958,45 @@ export function PatientDetailClient({ dict }: Props) {
           </Link>
         </div>
       </div>
+
+      {latestFlaggedVisitMemo ? (
+        <div
+          className="mb-8 rounded-2xl border-2 border-amber-400 bg-amber-50 p-5 shadow-md"
+          role="alert"
+        >
+          <p className="text-xs font-black uppercase tracking-wide text-amber-900">
+            {isEnglish ? "Key memo from last visit" : "이전 방문 핵심 메모"}
+          </p>
+          <p className="mt-2 text-sm font-bold text-amber-950">
+            {latestFlaggedVisitMemo.special_notes.trim()
+              ? latestFlaggedVisitMemo.special_notes
+              : isEnglish
+                ? "(No free-text note — flag only.) Review the latest treatment log."
+                : "(자유 메모 없음 · 플래그만 설정됨) 최신 처치 로그를 확인하세요."}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-3 text-xs font-bold text-amber-900/90">
+            <span className="rounded-full bg-white/80 px-2.5 py-1">
+              {isEnglish ? "Change" : "상태 변화"}:{" "}
+              {isEnglish
+                ? latestFlaggedVisitMemo.change_log === "improved"
+                  ? "Improved"
+                  : latestFlaggedVisitMemo.change_log === "unchanged"
+                    ? "Unchanged"
+                    : latestFlaggedVisitMemo.change_log === "worsened"
+                      ? "Worsened"
+                      : "—"
+                : changeLogLabelKo(latestFlaggedVisitMemo.change_log)}
+            </span>
+            <span className="rounded-full bg-white/80 px-2.5 py-1">
+              {isEnglish ? "Recorded" : "기록 시각"}:{" "}
+              {new Date(latestFlaggedVisitMemo.created_at || latestFlaggedVisitMemo.row_created_at).toLocaleString(
+                isEnglish ? "en-US" : "ko-KR",
+                { dateStyle: "medium", timeStyle: "short" },
+              )}
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       {/* 환자 기본 정보 카드 + 내원/과거력 */}
       <div className="mb-10 space-y-4">
@@ -997,8 +1133,31 @@ export function PatientDetailClient({ dict }: Props) {
                     Boolean(item.clinical_reasoning?.trim()) ||
                     Boolean(item.intervention_strategy?.trim()) ||
                     Boolean(item.professional_discussion?.trim());
-                  const complianceScore =
-                    typeof item.compliance_score === "number" ? Math.max(0, Math.min(100, Math.round(item.compliance_score))) : null;
+                  const documentationDefenseScore = resolveDefenseScoreOnRead({
+                    defense_score: item.defense_score,
+                    original_data: item.original_data ?? item.payload?.original_data,
+                    compliance_score: item.compliance_score,
+                  });
+                  const defenseTier = getDefenseScorePresentation(
+                    documentationDefenseScore,
+                    isEnglish ? "en" : "ko",
+                  );
+                  const defenseBarClass =
+                    defenseTier.tier === "safe"
+                      ? "bg-emerald-500"
+                      : defenseTier.tier === "caution"
+                        ? "bg-amber-500"
+                        : "bg-red-500";
+                  const recoveryResolved = resolveRecoveryOnRead({
+                    recovery_score: item.recovery_score,
+                    recovery_timeframe: item.recovery_timeframe,
+                    original_data: item.original_data ?? item.payload?.original_data,
+                  });
+                  const recoveryToneTl = getRecoveryTrajectoryTone(recoveryResolved.recovery_score);
+                  const recoveryNarrativeTl = isEnglish
+                    ? recoveryResolved.recovery_timeframe_en
+                    : recoveryResolved.recovery_timeframe_ko;
+                  const recoveryWeeksHintTl = recoveryScoreToWeeksHint(recoveryResolved.recovery_score);
                   const cpgComplianceText =
                     item.cpg_compliance == null
                       ? null
@@ -1017,15 +1176,6 @@ export function PatientDetailClient({ dict }: Props) {
                             typeof (item.audit_defense as { feedback?: unknown }).feedback === "string"
                           ? String((item.audit_defense as { feedback?: string }).feedback)
                           : JSON.stringify(item.audit_defense);
-                  const predictiveTrajectoryText =
-                    item.predictive_trajectory == null
-                      ? null
-                      : typeof item.predictive_trajectory === "string"
-                        ? item.predictive_trajectory
-                        : typeof item.predictive_trajectory === "object" &&
-                            item.predictive_trajectory !== null
-                          ? JSON.stringify(item.predictive_trajectory)
-                          : null;
                   const predictiveWeeks =
                     typeof item.predictive_trajectory === "object" &&
                     item.predictive_trajectory !== null &&
@@ -1036,14 +1186,27 @@ export function PatientDetailClient({ dict }: Props) {
                     `RePhyT_Timeline_${diagnosisLabel}_${new Date(item.created_at).toISOString().slice(0, 10)}`,
                   );
                   const isTimelineSharing = sharingTimelineIds[item.id] === true;
+                  const isTimelineDeleting = deletingTimelineIds[item.id] === true;
                   const author = item.user_id ? authorProfileMap[item.user_id] : undefined;
                   return (
                     <div key={`guardrail-${item.id}`} className="relative rounded-3xl border border-indigo-200 bg-indigo-50/70 p-6 shadow-sm">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <p className="text-xs font-black uppercase tracking-wide text-indigo-600">AI 분석 로그</p>
-                        <span className={`rounded-full border px-3 py-1 text-xs font-black ${isRed ? "border-indigo-200 bg-indigo-100 text-indigo-700" : "border-slate-200 bg-slate-100 text-slate-700"}`}>
-                          {isRed ? "⚠️ 임상 위험 신호 감지" : "임상 위험 신호 없음"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteTimelineReport(item.id)}
+                            disabled={isTimelineDeleting || isTimelineSharing}
+                            title={isEnglish ? "Delete report" : "리포트 삭제"}
+                            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Trash2 className="h-[18px] w-[18px]" aria-hidden />
+                            <span className="sr-only">{isEnglish ? "Delete report" : "리포트 삭제"}</span>
+                          </button>
+                          <span className={`rounded-full border px-3 py-1 text-xs font-black ${isRed ? "border-indigo-200 bg-indigo-100 text-indigo-700" : "border-slate-200 bg-slate-100 text-slate-700"}`}>
+                            {isRed ? "⚠️ 임상 위험 신호 감지" : "임상 위험 신호 없음"}
+                          </span>
+                        </div>
                       </div>
                       <div className="grid gap-3 md:grid-cols-3">
                         <div className="rounded-xl border border-indigo-100 bg-white px-4 py-3">
@@ -1064,8 +1227,14 @@ export function PatientDetailClient({ dict }: Props) {
                           <p className="mt-1 text-sm font-bold text-zinc-700">{diagnosisLabel}</p>
                         </div>
                         <div className="rounded-xl border border-indigo-100 bg-white px-4 py-3">
-                          <p className="text-[11px] font-black text-zinc-400">종합 방어력 점수</p>
-                          <p className="mt-1 text-sm font-bold text-zinc-700">{scoreText}</p>
+                          <p className="text-[11px] font-black text-zinc-400">
+                            {isEnglish ? "Documentation defense (rubric)" : "문서 방어 점수 (입력 루브릭)"}
+                          </p>
+                          <p className={`mt-1 text-lg font-black ${defenseTier.textClass}`}>{documentationDefenseScore}</p>
+                          <p className="text-[10px] font-bold text-zinc-500">/ 100</p>
+                          <p className={`mt-2 text-[11px] font-semibold leading-snug ${defenseTier.textClass}`}>
+                            {defenseTier.message}
+                          </p>
                         </div>
                       </div>
                       <div className="mt-3 rounded-xl border border-indigo-100 bg-white px-4 py-3">
@@ -1112,21 +1281,24 @@ export function PatientDetailClient({ dict }: Props) {
                           ) : null}
                         </div>
                         <aside className="space-y-3 lg:col-span-1">
-                          {complianceScore !== null ? (
-                            <div className="rounded-xl border border-indigo-100 bg-white p-4">
-                              <p className="text-xs font-black text-indigo-700">🛡️ 삭감 방어력 (실시간)</p>
-                              <div className="mt-2 flex items-center justify-between text-xs font-bold text-zinc-600">
-                                <span>Compliance Score</span>
-                                <span>{complianceScore}/100</span>
-                              </div>
-                              <div className="mt-2 h-2.5 w-full rounded-full bg-indigo-100">
-                                <div
-                                  className="h-2.5 rounded-full bg-indigo-500 transition-all"
-                                  style={{ width: `${complianceScore}%` }}
-                                />
-                              </div>
+                          <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                            <p className="text-xs font-black text-indigo-700">
+                              {isEnglish ? "🛡️ Documentation defense (Step 1–4 rubric)" : "🛡️ 삭감 방어력 (입력 루브릭)"}
+                            </p>
+                            <div className="mt-2 flex items-center justify-between text-xs font-bold text-zinc-600">
+                              <span>{isEnglish ? "Rubric score" : "루브릭 점수"}</span>
+                              <span className={defenseTier.textClass}>{documentationDefenseScore}/100</span>
                             </div>
-                          ) : null}
+                            <div className="mt-2 h-2.5 w-full rounded-full bg-slate-100">
+                              <div
+                                className={`h-2.5 rounded-full transition-all ${defenseBarClass}`}
+                                style={{ width: `${documentationDefenseScore}%` }}
+                              />
+                            </div>
+                            <p className={`mt-2 text-[11px] font-semibold leading-relaxed ${defenseTier.textClass}`}>
+                              {defenseTier.message}
+                            </p>
+                          </div>
                           {cpgComplianceText ? (
                             <div className="rounded-xl border border-indigo-100 bg-white p-4">
                               <p className="text-xs font-black text-indigo-700">⚖️ CPG 가이드라인 준수율</p>
@@ -1143,19 +1315,36 @@ export function PatientDetailClient({ dict }: Props) {
                               </p>
                             </div>
                           ) : null}
-                          {predictiveTrajectoryText ? (
-                            <div className="rounded-xl border border-indigo-100 bg-white p-4">
-                              <p className="text-xs font-black text-indigo-700">⏳ 회복 궤적 예측</p>
+                          <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                            <p className="text-xs font-black text-indigo-700">
+                              {isEnglish ? "⏳ Recovery outlook (saved rubric)" : "⏳ 회복 예측도 (저장된 루브릭)"}
+                            </p>
+                            <div className="mt-2 flex items-center justify-between text-xs font-bold text-zinc-600">
+                              <span>{isEnglish ? "Score" : "점수"}</span>
+                              <span className={recoveryToneTl.textClass}>
+                                {recoveryResolved.recovery_score} / 95
+                              </span>
+                            </div>
+                            <div className="mt-2 h-2.5 w-full rounded-full bg-slate-100">
+                              <div
+                                className={`h-2.5 rounded-full transition-all ${recoveryToneTl.barClass}`}
+                                style={{ width: `${(recoveryResolved.recovery_score / 95) * 100}%` }}
+                              />
+                            </div>
+                            <p className={`mt-2 text-sm font-bold leading-relaxed ${recoveryToneTl.textClass}`}>
+                              {recoveryNarrativeTl}
+                            </p>
+                            <p className="mt-2 text-[11px] text-zinc-500">
+                              {isEnglish ? "Rehab intensity hint (weeks)" : "재활 강도 힌트 (주)"}:{" "}
+                              <span className="font-bold text-zinc-700">{recoveryWeeksHintTl}</span>
                               {predictiveWeeks !== null ? (
-                                <span className="mt-2 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                                  예상 회복 기간 {predictiveWeeks}주
+                                <span className="ml-2 font-medium text-zinc-400">
+                                  · AI {isEnglish ? "ref." : "참고"} {predictiveWeeks}
+                                  {isEnglish ? " wks" : "주"}
                                 </span>
                               ) : null}
-                              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
-                                {predictiveTrajectoryText}
-                              </p>
-                            </div>
-                          ) : null}
+                            </p>
+                          </div>
                         </aside>
                       </div>
                       <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-indigo-50 pt-4">
@@ -1406,10 +1595,30 @@ export function PatientDetailClient({ dict }: Props) {
                     placeholder="자가 운동, 금기 동작, 생활/통증 관리 교육을 기록하세요."
                   />
                 </div>
+
+                <VisitFollowupPanel
+                  locale={isEnglish ? "en" : "ko"}
+                  specialNotes={visitSpecialNotes}
+                  isFlagged={visitIsFlagged}
+                  changeLog={visitChangeLog}
+                  onSpecialNotes={(v) => {
+                    setDidTouchTreatmentInput(true);
+                    setVisitSpecialNotes(v);
+                  }}
+                  onFlagged={(v) => {
+                    setDidTouchTreatmentInput(true);
+                    setVisitIsFlagged(v);
+                  }}
+                  onChangeLog={(v) => {
+                    setDidTouchTreatmentInput(true);
+                    setVisitChangeLog(v);
+                  }}
+                  accent="orange"
+                />
               </div>
               <button
                 onClick={handleAddTreatment}
-                disabled={isSubmittingTreatment || !formattedTreatment.trim()}
+                disabled={isSubmittingTreatment || !canSaveTreatment}
                 className="h-16 rounded-2xl bg-orange-500 font-black text-white text-lg shadow-lg shadow-orange-200 transition hover:bg-orange-600 disabled:opacity-50 active:scale-[0.98]"
               >
                 {isSubmittingTreatment ? "기록 저장 중..." : "오늘의 P-노트 저장하기"}
@@ -1450,6 +1659,30 @@ export function PatientDetailClient({ dict }: Props) {
                     <p className="text-base font-medium leading-relaxed text-zinc-700" style={{ whiteSpace: "pre-wrap" }}>
                       {treatment.content}
                     </p>
+                    {(() => {
+                      const vm = parseTreatmentVisitMetadata(treatment.metadata);
+                      if (!vm) return null;
+                      return (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {vm.is_flagged ? (
+                            <span className="inline-flex rounded-full border border-amber-300 bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-900">
+                              다음 내원 강조
+                            </span>
+                          ) : null}
+                          {vm.change_log ? (
+                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                              변화: {changeLogLabelKo(vm.change_log)}
+                            </span>
+                          ) : null}
+                          {vm.special_notes.trim() ? (
+                            <span className="inline-flex max-w-full rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-900">
+                              메모 요약: {vm.special_notes.trim().slice(0, 80)}
+                              {vm.special_notes.trim().length > 80 ? "…" : ""}
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })()}
                     {/\[주의사항\]/.test(treatment.content) ? (
                       <div className="mt-3 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
                         주의사항 포함
@@ -1513,14 +1746,16 @@ export function PatientDetailClient({ dict }: Props) {
                     </section>
                     <section className={blockClass}>
                       <p className="text-sm font-bold text-indigo-600">
-                        Step 2. Evaluation
+                        Step 2. Evaluation (임상적 추론)
                       </p>
                       <p className={`mt-2 whitespace-pre-wrap text-sm ${source.step2Evaluation ? "text-slate-700" : emptyClass}`}>
                         {source.step2Evaluation || "기입된 내용 없음"}
                       </p>
                     </section>
                     <section className={blockClass}>
-                      <p className="text-sm font-bold text-indigo-600">Step 3. Goal</p>
+                      <p className="text-sm font-bold text-indigo-600">
+                        Step 3. Objective & Goal (객관적 검사 및 목표)
+                      </p>
                       {source.step3GoalRows.length > 0 ? (
                         <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
                           <table className="w-full text-left text-xs sm:text-sm">

@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import type { getDictionary } from "@/dictionaries/getDictionary";
+import { digitsOnly } from "@/lib/auth/signup-sms";
+import {
+  clearPendingProfileBootstrap,
+  writePendingProfileBootstrap,
+  type PendingProfileBootstrapPayload,
+} from "@/components/dashboard/pending-signup-profile-sync";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -22,7 +28,28 @@ type SignUpProfileInput = {
   specialties: string[];
   blogUrl: string;
   bio: string;
+  slogan: string;
 };
+
+function formatMmSs(totalSec: number): string {
+  const s = Math.max(0, Math.floor(totalSec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+}
+
+function stepTitle(step: 1 | 2 | 3 | 4): string {
+  switch (step) {
+    case 1:
+      return "Step 1. 계정 정보";
+    case 2:
+      return "Step 2. 본인 인증 (휴대폰)";
+    case 3:
+      return "Step 3. 전문가 프로필";
+    default:
+      return "Step 4. 브랜딩 정보";
+  }
+}
 
 function LoginForm({ dict }: Props) {
   const a = dict.auth;
@@ -33,12 +60,13 @@ function LoginForm({ dict }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const [phoneVerifySuccess, setPhoneVerifySuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState<"signin" | "signup" | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
   const [needsEmailConfirm, setNeedsEmailConfirm] = useState(false);
   const [cooldownSec, setCooldownSec] = useState(0);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
-  const [signupStep, setSignupStep] = useState<1 | 2>(1);
+  const [signupStep, setSignupStep] = useState<1 | 2 | 3 | 4>(1);
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [profileInput, setProfileInput] = useState<SignUpProfileInput>({
     name: "",
@@ -48,17 +76,44 @@ function LoginForm({ dict }: Props) {
     specialties: [],
     blogUrl: "",
     bio: "",
+    slogan: "",
   });
 
-  const nextPath = `/${lang}/dashboard`;
+  const [phoneDigits, setPhoneDigits] = useState("");
+  const [otpInput, setOtpInput] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpTimerSec, setOtpTimerSec] = useState(0);
+  const [sendingSms, setSendingSms] = useState(false);
+  const [verifyingSms, setVerifyingSms] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [verifiedPhoneE164, setVerifiedPhoneE164] = useState<string | null>(null);
+  const [smsSessionToken, setSmsSessionToken] = useState<string | null>(null);
 
-  const progressPercent = signupStep === 1 ? 50 : 100;
+  const nextPath = `/${lang}/dashboard`;
+  const progressPercent = Math.round((signupStep / 4) * 100);
 
   useEffect(() => {
     if (cooldownSec <= 0) return;
     const id = window.setTimeout(() => setCooldownSec((prev) => prev - 1), 1000);
     return () => window.clearTimeout(id);
   }, [cooldownSec]);
+
+  useEffect(() => {
+    if (otpTimerSec <= 0) return;
+    const id = window.setTimeout(() => setOtpTimerSec((prev) => Math.max(0, prev - 1)), 1000);
+    return () => window.clearTimeout(id);
+  }, [otpTimerSec]);
+
+  const resetSignupPhoneState = () => {
+    setPhoneDigits("");
+    setOtpInput("");
+    setOtpSent(false);
+    setOtpTimerSec(0);
+    setPhoneVerified(false);
+    setVerifiedPhoneE164(null);
+    setSmsSessionToken(null);
+    setPhoneVerifySuccess(null);
+  };
 
   const signIn = async () => {
     if (loading !== null) return;
@@ -84,8 +139,11 @@ function LoginForm({ dict }: Props) {
     router.replace(nextPath);
   };
 
-  const upsertProfileAfterSignUp = async () => {
-    const payload = {
+  function buildBootstrapPayload(): PendingProfileBootstrapPayload | null {
+    if (!smsSessionToken || !verifiedPhoneE164) return null;
+    return {
+      sms_session_token: smsSessionToken,
+      phone_number: verifiedPhoneE164,
       name: profileInput.name.trim(),
       license_no: profileInput.licenseNo.trim(),
       experience_years: profileInput.experienceYears,
@@ -93,13 +151,95 @@ function LoginForm({ dict }: Props) {
       specialties: profileInput.specialties,
       blog_url: profileInput.blogUrl.trim(),
       bio: profileInput.bio.trim(),
+      slogan: profileInput.slogan.trim(),
     };
-    await fetch("/api/profile/bootstrap", {
+  }
+
+  const postProfileBootstrap = async (payload: PendingProfileBootstrapPayload): Promise<{ ok: true } | { ok: false; message: string; status: number }> => {
+    const res = await fetch("/api/profile/bootstrap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify(payload),
     });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      return { ok: false, message: json.error || "프로필 저장에 실패했습니다.", status: res.status };
+    }
+    return { ok: true };
+  };
+
+  const sendSignupSms = async () => {
+    if (sendingSms) return;
+    setStatus(null);
+    setPhoneVerifySuccess(null);
+    const raw = phoneDigits.trim();
+    if (raw.length < 10) {
+      setStatus("휴대폰 번호를 올바르게 입력해 주세요.");
+      return;
+    }
+    setSendingSms(true);
+    try {
+      const res = await fetch("/api/auth/send-signup-sms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: raw }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; devOtp?: string };
+      if (!res.ok) {
+        setStatus(json.error || "인증번호 전송에 실패했습니다.");
+        return;
+      }
+      setOtpSent(true);
+      setOtpTimerSec(180);
+      setOtpInput("");
+      setPhoneVerified(false);
+      setVerifiedPhoneE164(null);
+      setSmsSessionToken(null);
+      if (json.devOtp) {
+        setPhoneVerifySuccess(`(개발) OTP: ${json.devOtp}`);
+      }
+    } finally {
+      setSendingSms(false);
+    }
+  };
+
+  const verifySignupSms = async () => {
+    if (verifyingSms) return;
+    setStatus(null);
+    setPhoneVerifySuccess(null);
+    const code = digitsOnly(otpInput);
+    if (code.length !== 6) {
+      setStatus("인증번호 6자리를 입력해 주세요.");
+      return;
+    }
+    setVerifyingSms(true);
+    try {
+      const res = await fetch("/api/auth/verify-signup-sms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phoneDigits, code }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        sessionToken?: string;
+        phoneE164?: string;
+      };
+      if (!res.ok) {
+        setStatus(json.error || "인증에 실패했습니다.");
+        return;
+      }
+      if (!json.sessionToken || !json.phoneE164) {
+        setStatus("인증 응답이 올바르지 않습니다.");
+        return;
+      }
+      setPhoneVerified(true);
+      setVerifiedPhoneE164(json.phoneE164);
+      setSmsSessionToken(json.sessionToken);
+      setPhoneVerifySuccess("✔ 인증이 완료되었습니다. 다음 단계로 진행할 수 있습니다.");
+    } finally {
+      setVerifyingSms(false);
+    }
   };
 
   const signUp = async () => {
@@ -112,6 +252,10 @@ function LoginForm({ dict }: Props) {
       setStatus("비밀번호와 비밀번호 확인이 일치하지 않습니다.");
       return;
     }
+    if (!phoneVerified || !smsSessionToken || !verifiedPhoneE164) {
+      setStatus("휴대폰 본인 인증을 완료해 주세요.");
+      return;
+    }
     if (!profileInput.name.trim() || !profileInput.licenseNo.trim() || !profileInput.experienceYears || !profileInput.hospitalName.trim()) {
       setStatus("전문가 인증 정보(성명, 면허번호, 임상 연차, 소속 기관명)를 모두 입력해 주세요.");
       return;
@@ -120,6 +264,13 @@ function LoginForm({ dict }: Props) {
       setStatus("최소 1개 이상의 주요 전문 분야를 선택해 주세요.");
       return;
     }
+
+    const bootstrapPayload = buildBootstrapPayload();
+    if (!bootstrapPayload) {
+      setStatus("휴대폰 인증 세션이 유효하지 않습니다. Step 2에서 다시 인증해 주세요.");
+      return;
+    }
+
     setStatus(null);
     setNeedsEmailConfirm(false);
     setLoading("signup");
@@ -135,6 +286,7 @@ function LoginForm({ dict }: Props) {
           specialties: profileInput.specialties,
           blog_url: profileInput.blogUrl.trim(),
           bio: profileInput.bio.trim(),
+          slogan: profileInput.slogan.trim(),
         },
         emailRedirectTo:
           typeof window !== "undefined" ? `${window.location.origin}/${lang}/callback` : undefined,
@@ -151,13 +303,23 @@ function LoginForm({ dict }: Props) {
     }
 
     if (!data.session) {
+      writePendingProfileBootstrap(bootstrapPayload);
       setNeedsEmailConfirm(true);
       setCooldownSec(60);
       setStatus(a.signupSuccessCheckEmail);
       return;
     }
 
-    await upsertProfileAfterSignUp();
+    const boot = await postProfileBootstrap(bootstrapPayload);
+    if (!boot.ok) {
+      if (boot.status === 409) {
+        setStatus(boot.message);
+      } else {
+        setStatus(boot.message);
+      }
+      return;
+    }
+    clearPendingProfileBootstrap();
     router.replace(`${nextPath}?welcomeName=${encodeURIComponent(profileInput.name.trim())}`);
   };
 
@@ -224,6 +386,57 @@ function LoginForm({ dict }: Props) {
     });
   };
 
+  const goNextSignupStep = () => {
+    setStatus(null);
+    if (signupStep === 1) {
+      if (!email.trim() || !password.trim() || !passwordConfirm.trim()) {
+        setStatus("이메일/비밀번호/비밀번호 확인을 모두 입력해 주세요.");
+        return;
+      }
+      if (password !== passwordConfirm) {
+        setStatus("비밀번호와 비밀번호 확인이 일치하지 않습니다.");
+        return;
+      }
+      setSignupStep(2);
+      return;
+    }
+    if (signupStep === 2) {
+      if (!phoneVerified) {
+        setStatus("휴대폰 인증을 완료한 뒤 다음으로 이동할 수 있습니다.");
+        return;
+      }
+      setSignupStep(3);
+      return;
+    }
+    if (signupStep === 3) {
+      if (!profileInput.name.trim() || !profileInput.licenseNo.trim() || !profileInput.experienceYears || !profileInput.hospitalName.trim()) {
+        setStatus("전문가 인증 정보를 모두 입력해 주세요.");
+        return;
+      }
+      if (profileInput.specialties.length === 0) {
+        setStatus("최소 1개 이상의 주요 전문 분야를 선택해 주세요.");
+        return;
+      }
+      setSignupStep(4);
+    }
+  };
+
+  const goPrevSignupStep = () => {
+    setStatus(null);
+    if (signupStep === 2) {
+      setSignupStep(1);
+      resetSignupPhoneState();
+      return;
+    }
+    if (signupStep === 3) {
+      setSignupStep(2);
+      return;
+    }
+    if (signupStep === 4) {
+      setSignupStep(3);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-white">
       <div className="mx-auto flex min-h-screen w-full max-w-md items-center px-6 py-12">
@@ -239,6 +452,7 @@ function LoginForm({ dict }: Props) {
               onClick={() => {
                 setAuthMode("signin");
                 setStatus(null);
+                setPhoneVerifySuccess(null);
               }}
               className={`rounded-lg px-3 py-1.5 ${authMode === "signin" ? "bg-indigo-600 text-white" : "text-slate-700"}`}
             >
@@ -249,6 +463,9 @@ function LoginForm({ dict }: Props) {
               onClick={() => {
                 setAuthMode("signup");
                 setStatus(null);
+                setPhoneVerifySuccess(null);
+                setSignupStep(1);
+                resetSignupPhoneState();
               }}
               className={`rounded-lg px-3 py-1.5 ${authMode === "signup" ? "bg-indigo-600 text-white" : "text-slate-700"}`}
             >
@@ -307,7 +524,7 @@ function LoginForm({ dict }: Props) {
             <>
               <div className="mt-6">
                 <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-600">
-                  <span>{signupStep === 1 ? "Step 1. 계정 생성" : "Step 2. 전문가 인증 정보"}</span>
+                  <span>{stepTitle(signupStep)}</span>
                   <span>{progressPercent}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-100">
@@ -351,7 +568,76 @@ function LoginForm({ dict }: Props) {
                     />
                   </label>
                 </div>
-              ) : (
+              ) : null}
+
+              {signupStep === 2 ? (
+                <div className="mt-4 space-y-4">
+                  <label className="block">
+                    <span className="text-sm font-medium text-slate-800">휴대폰 번호 (숫자만, 하이픈 없음)</span>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel-national"
+                      value={phoneDigits}
+                      onChange={(e) => setPhoneDigits(digitsOnly(e.target.value).slice(0, 11))}
+                      placeholder="01012345678"
+                      disabled={phoneVerified}
+                      className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-600/40 focus:ring-2 focus:ring-indigo-600/10 disabled:bg-slate-50"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void sendSignupSms()}
+                    disabled={sendingSms || phoneVerified || phoneDigits.length < 10}
+                    className="h-11 w-full rounded-xl border border-indigo-200 bg-indigo-50 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {sendingSms ? "전송 중…" : "인증번호 전송"}
+                  </button>
+
+                  {otpSent ? (
+                    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+                      <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
+                        <span>인증번호 입력</span>
+                        <span className={otpTimerSec > 0 ? "text-indigo-600" : "text-red-600"}>
+                          {otpTimerSec > 0 ? formatMmSs(otpTimerSec) : "00:00"}
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={otpInput}
+                        onChange={(e) => setOtpInput(digitsOnly(e.target.value).slice(0, 6))}
+                        placeholder="6자리"
+                        disabled={phoneVerified}
+                        className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-center text-lg tracking-[0.3em] outline-none focus:border-indigo-600/40 focus:ring-2 focus:ring-indigo-600/10 disabled:bg-slate-50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void verifySignupSms()}
+                        disabled={verifyingSms || phoneVerified || otpInput.length !== 6 || otpTimerSec <= 0}
+                        className="h-11 w-full rounded-xl bg-indigo-600 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {verifyingSms ? "확인 중…" : "인증 확인"}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {phoneVerifySuccess ? (
+                    <p
+                      className={`rounded-lg border px-3 py-2 text-sm ${
+                        phoneVerifySuccess.startsWith("✔")
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          : "border-amber-200 bg-amber-50 text-amber-900"
+                      }`}
+                    >
+                      {phoneVerifySuccess}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {signupStep === 3 ? (
                 <div className="mt-4 space-y-4">
                   <label className="block">
                     <span className="text-sm font-medium text-slate-800">성명 (실명)</span>
@@ -417,23 +703,57 @@ function LoginForm({ dict }: Props) {
                     </div>
                   </div>
                 </div>
-              )}
+              ) : null}
+
+              {signupStep === 4 ? (
+                <div className="mt-4 space-y-4">
+                  <label className="block">
+                    <span className="text-sm font-medium text-slate-800">네이버 블로그 / 웹 URL (선택)</span>
+                    <input
+                      value={profileInput.blogUrl}
+                      onChange={(e) => setProfileInput((prev) => ({ ...prev, blogUrl: e.target.value }))}
+                      placeholder="https://"
+                      className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-600/40 focus:ring-2 focus:ring-indigo-600/10"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-medium text-slate-800">슬로건 / 한 줄 소개 (선택)</span>
+                    <input
+                      value={profileInput.slogan}
+                      onChange={(e) => setProfileInput((prev) => ({ ...prev, slogan: e.target.value }))}
+                      placeholder="예: 정직한 데이터로 실무 안전을 돕습니다."
+                      className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-600/40 focus:ring-2 focus:ring-indigo-600/10"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-medium text-slate-800">소개 (선택)</span>
+                    <textarea
+                      value={profileInput.bio}
+                      onChange={(e) => setProfileInput((prev) => ({ ...prev, bio: e.target.value }))}
+                      rows={4}
+                      placeholder="간단한 소개를 입력해 주세요."
+                      className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-600/40 focus:ring-2 focus:ring-indigo-600/10"
+                    />
+                  </label>
+                </div>
+              ) : null}
 
               <div className="mt-6 flex gap-2">
-                {signupStep === 2 ? (
+                {signupStep > 1 ? (
                   <button
                     type="button"
-                    onClick={() => setSignupStep(1)}
+                    onClick={goPrevSignupStep}
                     className="h-11 flex-1 rounded-xl border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
                   >
                     이전
                   </button>
                 ) : null}
-                {signupStep === 1 ? (
+                {signupStep < 4 ? (
                   <button
                     type="button"
-                    onClick={() => setSignupStep(2)}
-                    className="h-11 flex-1 rounded-xl bg-indigo-600 text-sm font-medium text-white transition hover:bg-indigo-700"
+                    onClick={goNextSignupStep}
+                    disabled={signupStep === 2 && !phoneVerified}
+                    className="h-11 flex-1 rounded-xl bg-indigo-600 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     다음
                   </button>

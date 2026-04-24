@@ -9,6 +9,9 @@ type ProfessionalProfileInput = {
   hospitalName?: string | null;
   blogUrl?: string | null;
   bio?: string | null;
+  /** E.164 (예: +821012345678). profiles.phone_number UNIQUE와 연동 */
+  phoneNumber?: string | null;
+  slogan?: string | null;
 };
 
 function cleanString(value: unknown): string | null {
@@ -40,6 +43,8 @@ export async function upsertProfessionalProfile(input: ProfessionalProfileInput)
     hospital_name: cleanString(input.hospitalName),
     blog_url: cleanString(input.blogUrl),
     bio: cleanString(input.bio),
+    phone_number: cleanString(input.phoneNumber),
+    slogan: cleanString(input.slogan),
   };
 
   const fullPayload = {
@@ -51,11 +56,23 @@ export async function upsertProfessionalProfile(input: ProfessionalProfileInput)
     hospital_name: metadata.hospital_name,
     blog_url: metadata.blog_url,
     bio: metadata.bio,
+    phone_number: metadata.phone_number,
+    slogan: metadata.slogan,
     metadata,
   };
 
   const full = await supabase.from("profiles").upsert(fullPayload as never, { onConflict: "id" });
   if (!full.error) return { ok: true };
+
+  const dupPhone =
+    full.error?.code === "23505" ||
+    (typeof full.error?.message === "string" &&
+      (full.error.message.includes("profiles_phone_number_unique") ||
+        full.error.message.toLowerCase().includes("duplicate key") ||
+        full.error.message.toLowerCase().includes("unique constraint")));
+  if (dupPhone) {
+    return { ok: false, message: "duplicate phone_number (unique constraint)" };
+  }
 
   const metaOnly = await supabase.from("profiles").upsert(
     {

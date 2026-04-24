@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getDictionary } from "@/dictionaries/getDictionary";
 import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
+import { PendingSignupProfileSync } from "@/components/dashboard/pending-signup-profile-sync";
 
 export default async function DashboardSectionLayout({
   children,
@@ -35,6 +36,7 @@ export default async function DashboardSectionLayout({
       />
 
       <div className="flex min-h-screen flex-1 flex-col">
+        <PendingSignupProfileSync />
         <div className="flex-1">{children}</div>
 
         <div className="mt-auto border-t border-zinc-200 bg-zinc-50/80 px-6 py-4 backdrop-blur-sm">

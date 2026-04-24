@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { calculateDefenseScore } from "@/lib/clinical/calculate-defense-score";
+import {
+  calculateRecoveryPrognosis,
+  recoveryScoreToWeeksHint,
+} from "@/lib/clinical/calculate-recovery-prognosis";
 
 type SaveRequest = {
   reportId?: string;
@@ -43,6 +48,9 @@ const ALLOWED_COLUMNS = [
   "audit_defense",
   "predictive_trajectory",
   "compliance_score",
+  "defense_score",
+  "recovery_score",
+  "recovery_timeframe",
   "detected_condition_id",
   "has_red_flag",
   "matched_aliases",
@@ -150,6 +158,11 @@ export async function POST(req: Request) {
     const detectedConditionId =
       typeof result.detectionMeta?.conditionId === "string" ? result.detectionMeta.conditionId : null;
 
+    const originalDataObj =
+      body.originalData && typeof body.originalData === "object" ? (body.originalData as Record<string, unknown>) : {};
+    const defenseRubric = calculateDefenseScore(originalDataObj);
+    const recoveryPrognosis = calculateRecoveryPrognosis(originalDataObj);
+
     const supabase = getSupabaseAdmin();
     if (!supabase) {
       return NextResponse.json({ error: "supabase admin not configured" }, { status: 500 });
@@ -177,15 +190,43 @@ export async function POST(req: Request) {
       logic_audit: result.logicChainAudit ?? null,
       cpg_compliance: result.cpgCompliance ?? null,
       audit_defense: result.auditDefense ?? null,
-      predictive_trajectory: result.predictiveTrajectory ?? null,
+      predictive_trajectory: (() => {
+        const base =
+          result.predictiveTrajectory && typeof result.predictiveTrajectory === "object" && !Array.isArray(result.predictiveTrajectory)
+            ? { ...(result.predictiveTrajectory as Record<string, unknown>) }
+            : {};
+        return {
+          ...base,
+          recovery_score: recoveryPrognosis.recovery_score,
+          recovery_timeframe_ko: recoveryPrognosis.recovery_timeframe_ko,
+          recovery_timeframe_en: recoveryPrognosis.recovery_timeframe_en,
+          recovery_weeks_hint: recoveryScoreToWeeksHint(recoveryPrognosis.recovery_score),
+          recovery_source: "original_data",
+          recovery_deductions: recoveryPrognosis.deductions,
+        };
+      })(),
       compliance_score: clampScore(result.complianceScore ?? result.overallScore ?? 0),
+      defense_score: clampScore(defenseRubric.total),
+      recovery_score: recoveryPrognosis.recovery_score,
+      recovery_timeframe: recoveryPrognosis.recovery_timeframe_ko,
       detected_condition_id: detectedConditionId,
       has_red_flag: hasRedFlag,
       matched_aliases: Array.isArray(result.detectionMeta?.matchedAliases) ? result.detectionMeta?.matchedAliases : [],
-      score_breakdown:
-        result.detectionMeta?.scoreBreakdown && typeof result.detectionMeta.scoreBreakdown === "object"
-          ? result.detectionMeta.scoreBreakdown
-          : {},
+      score_breakdown: (() => {
+        const aiBreakdown =
+          result.detectionMeta?.scoreBreakdown && typeof result.detectionMeta.scoreBreakdown === "object"
+            ? (result.detectionMeta.scoreBreakdown as Record<string, unknown>)
+            : {};
+        return {
+          ...aiBreakdown,
+          defense_rubric: defenseRubric.breakdown,
+          defense_total: defenseRubric.total,
+          recovery_prognosis: {
+            score: recoveryPrognosis.recovery_score,
+            deductions: recoveryPrognosis.deductions,
+          },
+        };
+      })(),
       assessment_data:
         body.assessmentData && typeof body.assessmentData === "object" ? body.assessmentData : {},
       original_data:
