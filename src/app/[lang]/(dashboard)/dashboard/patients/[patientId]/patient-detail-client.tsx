@@ -79,6 +79,12 @@ type TimelineLog = {
 type OriginalAssessmentSections = {
   step1Exam: string;
   step2Evaluation: string;
+  step2NeuroExam: {
+    myotome: Record<string, { L: string; R: string }>;
+    dermatome: Record<string, { L: string; R: string }>;
+    dtr: Record<string, { L: string; R: string }>;
+  } | null;
+  step3NeurodynamicsRows: Array<{ name: string; result: string; note: string }>;
   step3GoalRows: Array<{
     motion: string;
     left: string;
@@ -326,6 +332,70 @@ function formatRomLine(sideRow: Record<string, unknown> | null): string {
   return parts.join(" / ");
 }
 
+const NEURODYNAMIC_LABEL_MAP: Record<string, string> = {
+  upper_neural_mobility: "상지 신경 가동 검사",
+  slr: "하지 직거상 검사",
+  slump: "슬럼프 검사",
+  femoral_tension: "대퇴신경 긴장 검사",
+};
+
+function extractNeurodynamicRows(source: unknown): Array<{ name: string; result: string; note: string }> {
+  const root = asRecord(source);
+  if (!root) return [];
+  const rows: Array<{ name: string; result: string; note: string }> = [];
+  for (const [key, value] of Object.entries(root)) {
+    if (value == null) continue;
+    if (typeof value === "string") {
+      if (value === "not_tested" || !value.trim()) continue;
+      rows.push({
+        name: NEURODYNAMIC_LABEL_MAP[key] ?? key,
+        result: value === "positive" ? "양성(+)" : value === "negative" ? "음성(-)" : value,
+        note: "",
+      });
+      continue;
+    }
+    const obj = asRecord(value);
+    if (!obj) continue;
+    const rawResult = safeText(obj.result);
+    const note = safeText(obj.note);
+    if (!rawResult || rawResult === "not_tested") continue;
+    rows.push({
+      name: NEURODYNAMIC_LABEL_MAP[key] ?? key,
+      result: rawResult === "positive" ? "양성(+)" : rawResult === "negative" ? "음성(-)" : rawResult,
+      note,
+    });
+  }
+  return rows;
+}
+
+function extractNeuroExamFromSource(source: unknown): OriginalAssessmentSections["step2NeuroExam"] {
+  const root = asRecord(source);
+  if (!root) return null;
+  const asLrRecord = (
+    section: unknown,
+  ): Record<string, { L: string; R: string }> => {
+    const sec = asRecord(section);
+    if (!sec) return {};
+    const out: Record<string, { L: string; R: string }> = {};
+    for (const [key, value] of Object.entries(sec)) {
+      const row = asRecord(value);
+      if (!row) continue;
+      const left = safeText(row.L);
+      const right = safeText(row.R);
+      if (!left && !right) continue;
+      out[key] = { L: left, R: right };
+    }
+    return out;
+  };
+  const myotome = asLrRecord(root.myotome);
+  const dermatome = asLrRecord(root.dermatome);
+  const dtr = asLrRecord(root.dtr);
+  if (Object.keys(myotome).length === 0 && Object.keys(dermatome).length === 0 && Object.keys(dtr).length === 0) {
+    return null;
+  }
+  return { myotome, dermatome, dtr };
+}
+
 function extractOriginalAssessmentData(log: TimelineLog): OriginalAssessmentSections {
   const payload = log.payload;
   const requestPayload = asRecord(payload?.request_payload);
@@ -388,6 +458,20 @@ function extractOriginalAssessmentData(log: TimelineLog): OriginalAssessmentSect
     .filter(Boolean)
     .join("\n");
 
+  const step2NeuroExam = (() => {
+    const candidates = [
+      originalEvaluation?.neuro_exam,
+      assessmentStep2?.neuro_exam,
+      asRecord(payload?.original_data)?.evaluation && asRecord(asRecord(payload?.original_data)?.evaluation)?.neuro_exam,
+      asRecord(requestPayload?.original_data)?.evaluation && asRecord(asRecord(requestPayload?.original_data)?.evaluation)?.neuro_exam,
+    ];
+    for (const candidate of candidates) {
+      const parsed = extractNeuroExamFromSource(candidate);
+      if (parsed) return parsed;
+    }
+    return null;
+  })();
+
   const romAssessment =
     asRecord(originalGoal?.rom) ??
     asRecord(assessmentStep3?.rom_assessment) ??
@@ -408,6 +492,21 @@ function extractOriginalAssessmentData(log: TimelineLog): OriginalAssessmentSect
       center: formatRomLine(leftRow) || formatRomLine(rightRow),
     };
   });
+  const step3NeurodynamicsRows = (() => {
+    const candidates = [
+      asRecord(originalData?.objective_tests)?.neurodynamics,
+      asRecord(assessmentData?.objective_tests)?.neurodynamics,
+      asRecord(originalData?.objective_tests)?.neurodynamic_tests,
+      asRecord(assessmentData?.objective_tests)?.neurodynamic_tests,
+      asRecord(originalGoal)?.neurodynamics,
+      asRecord(assessmentStep3)?.neurodynamics,
+    ];
+    for (const candidate of candidates) {
+      const rows = extractNeurodynamicRows(candidate);
+      if (rows.length > 0) return rows;
+    }
+    return [];
+  })();
 
   const aggravating = pickFromSources("aggravatingFactors");
   const relieving = pickFromSources("relievingFactors");
@@ -428,6 +527,8 @@ function extractOriginalAssessmentData(log: TimelineLog): OriginalAssessmentSect
   return {
     step1Exam,
     step2Evaluation,
+    step2NeuroExam,
+    step3NeurodynamicsRows,
     step3GoalRows,
     step4Plan,
   };
@@ -1128,11 +1229,21 @@ export function PatientDetailClient({ dict }: Props) {
                         typeof (item.logic_audit as { feedback?: unknown }).feedback === "string"
                         ? String((item.logic_audit as { feedback?: string }).feedback)
                         : "임상 논리 요약 데이터 없음";
+                  const originalSource = extractOriginalAssessmentData(item);
+                  const neuroExamForReport = originalSource.step2NeuroExam;
+                  const hasNeuroExamForReport = Boolean(
+                    neuroExamForReport &&
+                      (Object.keys(neuroExamForReport.myotome).length > 0 ||
+                        Object.keys(neuroExamForReport.dermatome).length > 0 ||
+                        Object.keys(neuroExamForReport.dtr).length > 0),
+                  );
                   const hasAnyDetail =
                     Boolean(item.differential_diagnosis?.trim()) ||
                     Boolean(item.clinical_reasoning?.trim()) ||
                     Boolean(item.intervention_strategy?.trim()) ||
-                    Boolean(item.professional_discussion?.trim());
+                    Boolean(item.professional_discussion?.trim()) ||
+                    hasNeuroExamForReport ||
+                    originalSource.step3NeurodynamicsRows.length > 0;
                   const documentationDefenseScore = resolveDefenseScoreOnRead({
                     defense_score: item.defense_score,
                     original_data: item.original_data ?? item.payload?.original_data,
@@ -1277,6 +1388,78 @@ export function PatientDetailClient({ dict }: Props) {
                                   </p>
                                 </div>
                               ) : null}
+                              <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                                <p className="text-xs font-black text-indigo-700">
+                                  🧪 Step 2 Neuro Exam (Myotome / Dermatome / DTR)
+                                </p>
+                                {hasNeuroExamForReport && neuroExamForReport ? (
+                                  <div className="mt-2 space-y-3">
+                                    {(
+                                      [
+                                        ["myotome", "Myotome"],
+                                        ["dermatome", "Dermatome"],
+                                        ["dtr", "DTR"],
+                                      ] as const
+                                    ).map(([sectionKey, title]) => {
+                                      const rows = Object.entries(neuroExamForReport[sectionKey]);
+                                      if (rows.length === 0) return null;
+                                      return (
+                                        <div key={`report-neuro-${sectionKey}`} className="overflow-x-auto rounded-lg border border-slate-200">
+                                          <table className="w-full text-left text-xs">
+                                            <thead className="bg-slate-100 text-slate-600">
+                                              <tr>
+                                                <th className="px-3 py-2 font-bold">{title}</th>
+                                                <th className="px-3 py-2 font-bold">L</th>
+                                                <th className="px-3 py-2 font-bold">R</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 bg-white">
+                                              {rows.map(([level, row]) => (
+                                                <tr key={`${sectionKey}-${level}`}>
+                                                  <td className="px-3 py-2 font-semibold text-slate-700">{level}</td>
+                                                  <td className="px-3 py-2 text-slate-700">{row.L || "기록 없음"}</td>
+                                                  <td className="px-3 py-2 text-slate-700">{row.R || "기록 없음"}</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <p className="mt-2 text-sm text-slate-400">기록 없음</p>
+                                )}
+                              </div>
+                              <div className="rounded-xl border border-indigo-100 bg-white p-4">
+                                <p className="text-xs font-black text-indigo-700">
+                                  🧪 신경 역동학 검사
+                                </p>
+                                {originalSource.step3NeurodynamicsRows.length > 0 ? (
+                                  <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+                                    <table className="w-full text-left text-xs">
+                                      <thead className="bg-slate-100 text-slate-600">
+                                        <tr>
+                                          <th className="px-3 py-2 font-bold">검사</th>
+                                          <th className="px-3 py-2 font-bold">결과</th>
+                                          <th className="px-3 py-2 font-bold">상세</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 bg-white">
+                                        {originalSource.step3NeurodynamicsRows.map((row, idx) => (
+                                          <tr key={`timeline-neurodynamic-${idx}`}>
+                                            <td className="px-3 py-2 font-semibold text-slate-700">{row.name}</td>
+                                            <td className="px-3 py-2 text-slate-700">{row.result || "기록 없음"}</td>
+                                            <td className="px-3 py-2 text-slate-700">{row.note || "기록 없음"}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : (
+                                  <p className="mt-2 text-sm text-slate-400">기록 없음</p>
+                                )}
+                              </div>
                             </>
                           ) : null}
                         </div>
@@ -1751,11 +1934,83 @@ export function PatientDetailClient({ dict }: Props) {
                       <p className={`mt-2 whitespace-pre-wrap text-sm ${source.step2Evaluation ? "text-slate-700" : emptyClass}`}>
                         {source.step2Evaluation || "기입된 내용 없음"}
                       </p>
+                      <div className="mt-3">
+                        <p className="text-xs font-bold text-slate-500">Neuro Exam (Myotome / Dermatome / DTR)</p>
+                        {source.step2NeuroExam ? (
+                          <div className="mt-2 space-y-3">
+                            {(
+                              [
+                                ["myotome", "Myotome"],
+                                ["dermatome", "Dermatome"],
+                                ["dtr", "DTR"],
+                              ] as const
+                            ).map(([sectionKey, title]) => {
+                              const rows = Object.entries(source.step2NeuroExam?.[sectionKey] ?? {});
+                              if (rows.length === 0) return null;
+                              return (
+                                <div key={`modal-neuro-${sectionKey}`} className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                  <table className="w-full text-left text-xs sm:text-sm">
+                                    <thead className="bg-slate-100 text-slate-600">
+                                      <tr>
+                                        <th className="px-3 py-2 font-bold">{title}</th>
+                                        <th className="px-3 py-2 font-bold">L</th>
+                                        <th className="px-3 py-2 font-bold">R</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {rows.map(([level, row]) => (
+                                        <tr key={`${sectionKey}-${level}`}>
+                                          <td className="px-3 py-2 font-semibold text-slate-700">{level}</td>
+                                          <td className="px-3 py-2 text-slate-700">{row.L || "기록 없음"}</td>
+                                          <td className="px-3 py-2 text-slate-700">{row.R || "기록 없음"}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-sm text-slate-400">기록 없음</p>
+                        )}
+                      </div>
                     </section>
                     <section className={blockClass}>
                       <p className="text-sm font-bold text-indigo-600">
                         Step 3. Objective & Goal (객관적 검사 및 목표)
                       </p>
+                      <div className="mt-2">
+                        <p className="text-xs font-bold text-slate-500">신경 역동학 검사</p>
+                        {source.step3NeurodynamicsRows.length > 0 ? (
+                          <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                            <table className="w-full text-left text-xs sm:text-sm">
+                              <thead className="bg-slate-100 text-slate-600">
+                                <tr>
+                                  <th className="px-3 py-2 font-bold">검사</th>
+                                  <th className="px-3 py-2 font-bold">결과</th>
+                                  <th className="px-3 py-2 font-bold">상세</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {source.step3NeurodynamicsRows.map((row, idx) => (
+                                  <tr key={`modal-neurodynamic-${idx}`}>
+                                    <td className="px-3 py-2 font-semibold text-slate-700">{row.name}</td>
+                                    <td className={`px-3 py-2 ${row.result ? "text-slate-700" : "text-slate-400"}`}>
+                                      {row.result || "기록 없음"}
+                                    </td>
+                                    <td className={`px-3 py-2 ${row.note ? "text-slate-700" : "text-slate-400"}`}>
+                                      {row.note || "기록 없음"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <p className={emptyClass}>기록 없음</p>
+                        )}
+                      </div>
                       {source.step3GoalRows.length > 0 ? (
                         <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
                           <table className="w-full text-left text-xs sm:text-sm">

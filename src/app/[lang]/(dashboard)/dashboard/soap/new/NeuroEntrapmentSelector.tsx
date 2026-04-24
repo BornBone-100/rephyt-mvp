@@ -110,13 +110,13 @@ export default function NeuroEntrapmentSelector({
                 <p className="mb-1 text-[11px] font-bold text-slate-600">
                   {locale === "en" ? group.groupEn : group.groupKo}
                 </p>
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
                   {group.options.map((opt) => {
                     const active = selectedSyndromes.includes(opt.key);
                     return (
                       <div
                         key={opt.key}
-                        className={`relative flex items-center justify-between gap-1 rounded-lg border px-2 py-1 ${
+                        className={`relative flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 ${
                           active
                             ? "border-indigo-300 bg-indigo-100"
                             : "border-slate-200 bg-white"
@@ -125,7 +125,7 @@ export default function NeuroEntrapmentSelector({
                         <button
                           type="button"
                           onClick={() => onToggleSyndrome(opt.key)}
-                          className={`min-w-0 flex-1 text-left text-[11px] font-bold transition ${
+                          className={`min-w-0 flex-1 whitespace-normal break-words text-left text-sm font-bold leading-snug transition ${
                             active ? "text-indigo-800" : "text-slate-600 hover:text-indigo-700"
                           }`}
                         >
