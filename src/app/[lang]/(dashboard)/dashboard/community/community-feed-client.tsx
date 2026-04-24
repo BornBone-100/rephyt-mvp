@@ -258,6 +258,21 @@ export function CommunityFeedClient({ dict, lang }: Props) {
     setExpandedById({});
   }, [sort]);
 
+  const fetchPosts = useCallback(async () => {
+    const res = await fetch(`/api/community/feed?sort=${sort}&page=1`);
+    const data = (await res.json()) as {
+      success?: boolean;
+      posts?: CommunityPost[];
+      hasMore?: boolean;
+    };
+    if (!data.success || !Array.isArray(data.posts)) return;
+    setPosts(data.posts);
+    const more = Boolean(data.hasMore);
+    setHasMore(more);
+    hasMoreRef.current = more;
+    pageRef.current = 2;
+  }, [sort]);
+
   const appendNext = useCallback(async () => {
     if (loadingRef.current || !hasMoreRef.current || !initialReadyRef.current) return;
     loadingRef.current = true;
@@ -344,25 +359,29 @@ export function CommunityFeedClient({ dict, lang }: Props) {
   }, [inView, initialLoading, appendNext]);
 
   const handleCreatePost = useCallback(async () => {
-    const text = draftText.trim();
-    if (!text) {
-      alert(isEnglish ? "Please enter content." : "게시글 내용을 입력해 주세요.");
-      return;
-    }
-    if (!currentUserId) {
-      alert(isEnglish ? "Login is required." : "로그인이 필요합니다.");
-      return;
-    }
+    if (!draftText.trim()) return;
+
     setIsPosting(true);
     try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        alert(isEnglish ? "Login is required." : "로그인이 필요합니다.");
+        return;
+      }
+
       const res = await fetch("/api/cdss-guardrail/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          examination: text,
+          examination: draftText,
           evaluation: "Community Post",
           prognosis: "Community Post",
           intervention: "Community Post",
+          authorId: user.id,
+          patientId: user.id,
           locale: isEnglish ? "en" : "ko",
         }),
       });
@@ -371,17 +390,17 @@ export function CommunityFeedClient({ dict, lang }: Props) {
         error?: string;
       };
       if (!res.ok || !data.ok) {
-        alert(data.error ?? (isEnglish ? "Failed to save post." : "게시글 저장에 실패했습니다."));
-        return;
+        throw new Error(data.error || (isEnglish ? "Failed to save post." : "게시글 저장에 실패했습니다."));
       }
       setDraftText("");
-      alert(isEnglish ? "Saved successfully." : "저장되었습니다.");
-    } catch {
-      alert(isEnglish ? "Failed to save post." : "게시글 저장에 실패했습니다.");
+      await fetchPosts();
+    } catch (error) {
+      console.error(error);
+      alert((isEnglish ? "Failed to save post: " : "저장 실패: ") + (error as Error).message);
     } finally {
       setIsPosting(false);
     }
-  }, [currentUserId, draftText, isEnglish]);
+  }, [draftText, fetchPosts, isEnglish, supabase]);
 
   return (
     <div className="mx-auto min-h-screen max-w-lg bg-gradient-to-b from-zinc-100 via-zinc-50 to-white pb-24">
