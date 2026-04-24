@@ -372,28 +372,26 @@ export function CommunityFeedClient({ dict, lang }: Props) {
         return;
       }
 
-      const res = await fetch("/api/cdss-guardrail/save", {
+      const res = await fetch("/api/community/post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          examination: draftText,
-          evaluation: "Community Post",
-          prognosis: "Community Post",
-          intervention: "Community Post",
+          text: draftText,
           authorId: user.id,
-          patientId: user.id,
-          locale: isEnglish ? "en" : "ko",
         }),
       });
       const data = (await res.json()) as {
         ok?: boolean;
+        success?: boolean;
         error?: string;
       };
-      if (!res.ok || !data.ok) {
+      if (!res.ok || (!data.ok && !data.success)) {
         throw new Error(data.error || (isEnglish ? "Failed to save post." : "게시글 저장에 실패했습니다."));
       }
       setDraftText("");
-      await fetchPosts();
+      if (typeof fetchPosts === "function") {
+        await fetchPosts();
+      }
     } catch (error) {
       console.error(error);
       alert((isEnglish ? "Failed to save post: " : "저장 실패: ") + (error as Error).message);
