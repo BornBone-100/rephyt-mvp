@@ -57,7 +57,7 @@ export const ReportSelectionModal = ({ isOpen, onClose, onSelect }: ReportSelect
       }
 
       const clinicalReports = (data || []).filter(
-        (report) => {
+        (report: any) => {
           const area = (report as any).diagnosis_area?.toLowerCase() || "";
           const isClinicalArea = clinicalAreas.some((clinical) => area.includes(clinical.toLowerCase()));
           const isNotCommunity = !area.includes("community") && !area.includes("post");
