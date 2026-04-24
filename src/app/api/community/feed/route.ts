@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       `,
       { count: "exact" },
     );
-    query = query.eq("is_hidden", false);
+    query = query.eq("is_hidden" as any, false);
 
     if (sort === "popular") {
       query = query.order("likes", { ascending: false }).order("created_at", { ascending: false });
