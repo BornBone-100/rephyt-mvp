@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Loader2, UploadCloud } from "lucide-react";
 import { uploadClinicalMedia } from "@/utils/supabase/upload";
+import { PhotoUploadGuideline } from "@/components/upload/PhotoUploadGuideline";
 
 type MediaUploaderProps = {
   onUploaded?: (url: string) => void;
@@ -16,6 +17,7 @@ export default function MediaUploader({ onUploaded }: MediaUploaderProps) {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [privacyConsent, setPrivacyConsent] = useState(false);
 
   const previewUrl = useMemo(
     () => (file ? URL.createObjectURL(file) : null),
@@ -34,6 +36,10 @@ export default function MediaUploader({ onUploaded }: MediaUploaderProps) {
   };
 
   const handleUpload = async () => {
+    if (!privacyConsent) {
+      setError("임상 사진 업로드 주의사항에 동의해 주세요.");
+      return;
+    }
     if (!file) {
       setError("먼저 파일을 선택해 주세요.");
       return;
@@ -55,6 +61,7 @@ export default function MediaUploader({ onUploaded }: MediaUploaderProps) {
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+      <PhotoUploadGuideline consent={privacyConsent} onConsentChange={setPrivacyConsent} />
       <div className="text-sm font-semibold text-zinc-900">임상 미디어 보관함</div>
       <div className="mt-1 text-xs text-zinc-600">
         이미지(jpg, png) 또는 영상(mp4)을 업로드할 수 있습니다.

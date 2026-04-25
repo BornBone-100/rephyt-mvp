@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { ShieldCheck, Stethoscope } from "lucide-react";
+import { ActivityTimeline, mapActivityItemToTimelineLog } from "@/components/dashboard/TimelineSync";
 import { useEffect, useState } from "react";
 
 type ActivityItem = {
@@ -10,20 +9,11 @@ type ActivityItem = {
   createdAt: string;
   title: string;
   description: string;
+  evaluation_area?: string | null;
+  care_guide?: string | null;
+  evaluation_data?: { rom?: number | string | null } | null;
   href?: string;
 };
-
-function formatRelative(iso: string, locale: string) {
-  const date = new Date(iso);
-  const diffMs = Date.now() - date.getTime();
-  const mins = Math.round(diffMs / (1000 * 60));
-  const rtf = new Intl.RelativeTimeFormat(locale === "en" ? "en" : "ko", { numeric: "auto" });
-  if (Math.abs(mins) < 60) return rtf.format(-mins, "minute");
-  const hours = Math.round(mins / 60);
-  if (Math.abs(hours) < 24) return rtf.format(-hours, "hour");
-  const days = Math.round(hours / 24);
-  return rtf.format(-days, "day");
-}
 
 function mergeById(prev: ActivityItem[], incoming: ActivityItem): ActivityItem[] {
   const exists = prev.some((item) => item.id === incoming.id);
@@ -94,35 +84,14 @@ export default function ActivityTimelineClient({
     return () => window.removeEventListener("rephyt:activity-created", handler);
   }, [locale]);
 
+  const localeNorm = locale === "en" ? "en" : "ko";
+
   return (
-    <ul className="mt-4 space-y-2">
-      {activities.map((item) => (
-        <li key={item.id} className="rounded-xl border border-slate-100 px-3 py-3 hover:bg-slate-50">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-                {item.type === "report" ? (
-                  <ShieldCheck className="h-4 w-4 text-indigo-600" />
-                ) : item.type === "community" ? (
-                  <Stethoscope className="h-4 w-4 text-indigo-600" />
-                ) : (
-                  "📄"
-                )}{" "}
-                {item.title}
-              </p>
-              <p className="mt-1 truncate text-xs text-slate-500">{item.description}</p>
-            </div>
-            <div className="shrink-0 text-right">
-              <p className="text-xs text-slate-400">{formatRelative(item.createdAt, locale)}</p>
-              {item.href ? (
-                <Link href={item.href} className="mt-1 inline-block text-xs font-bold text-indigo-600">
-                  보기
-                </Link>
-              ) : null}
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <div className="mt-4">
+      <ActivityTimeline
+        logs={activities.map((item) => mapActivityItemToTimelineLog(item, localeNorm))}
+        locale={localeNorm}
+      />
+    </div>
   );
 }

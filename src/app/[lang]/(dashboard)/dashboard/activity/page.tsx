@@ -8,6 +8,9 @@ type ActivityItem = {
   createdAt: string;
   title: string;
   description: string;
+  evaluation_area?: string | null;
+  care_guide?: string | null;
+  evaluation_data?: { rom?: number | string | null } | null;
   reportId?: string;
   patientId?: string;
   href?: string;
@@ -81,7 +84,7 @@ export default async function ActivityPage({
 
   const postRes = await (supabase as any)
     .from("community_posts")
-    .select("id, created_at, likes, views, author_id")
+    .select("id, created_at, likes, views, author_id, evaluation_area, care_guide, evaluation_data")
     .eq("author_id", user.id)
     .order("created_at", { ascending: false })
     .limit(200);
@@ -157,6 +160,9 @@ export default async function ActivityPage({
         locale === "en"
           ? `Engagement ${Number(row.likes ?? 0) + Number(row.views ?? 0)}`
           : `참여도 ${Number(row.likes ?? 0) + Number(row.views ?? 0)} (좋아요+조회수)`,
+      evaluation_area: row.evaluation_area ?? "General Evaluation",
+      care_guide: row.care_guide ?? "준비된 가이드가 없습니다.",
+      evaluation_data: row.evaluation_data ?? { rom: locale === "en" ? "No measurement" : "측정치 없음" },
       href: `${base}/community/${row.id}`,
     })),
     ...exports.map((row: any) => ({

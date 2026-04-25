@@ -12,6 +12,10 @@ import { createClient as createSupabaseClient } from "@/utils/supabase/client";
 import { ReportSelectionModal } from "@/components/dashboard/ReportSelectionModal";
 import { PostMenu } from "@/components/community/PostMenu";
 import { uploadMedia } from "@/lib/supabase/storage";
+import {
+  PhotoUploadGuideline,
+  getPhotoUploadGuidelineConsentMessage,
+} from "@/components/upload/PhotoUploadGuideline";
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
 
@@ -349,6 +353,7 @@ export function CommunityFeedClient({ dict, lang }: Props) {
   const [showExpertOnly, setShowExpertOnly] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [uploadPrivacyConsent, setUploadPrivacyConsent] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any | null>(null);
 
@@ -505,6 +510,10 @@ export function CommunityFeedClient({ dict, lang }: Props) {
 
   const handleCreatePost = useCallback(async () => {
     if (!draftText.trim() && !selectedReport) return;
+    if (uploadedImageUrl && !uploadPrivacyConsent) {
+      alert(getPhotoUploadGuidelineConsentMessage(isEnglish ? "en" : "ko"));
+      return;
+    }
 
     setIsPosting(true);
     try {
@@ -540,6 +549,7 @@ export function CommunityFeedClient({ dict, lang }: Props) {
       setDraftText("");
       setSelectedReport(null);
       setUploadedImageUrl(null);
+      setUploadPrivacyConsent(false);
       if (typeof fetchPosts === "function") {
         await fetchPosts();
       }
@@ -549,11 +559,16 @@ export function CommunityFeedClient({ dict, lang }: Props) {
     } finally {
       setIsPosting(false);
     }
-  }, [draftText, fetchPosts, selectedReport?.diagnosis_area, selectedReport?.id, supabase, uploadedImageUrl]);
+  }, [draftText, fetchPosts, isEnglish, selectedReport?.diagnosis_area, selectedReport?.id, supabase, uploadPrivacyConsent, uploadedImageUrl]);
 
   const handleFileChange = useCallback(
     async (e: ChangeEvent<HTMLInputElement>) => {
       if (!e.target.files || e.target.files.length === 0) return;
+      if (!uploadPrivacyConsent) {
+        alert(getPhotoUploadGuidelineConsentMessage(isEnglish ? "en" : "ko"));
+        e.target.value = "";
+        return;
+      }
 
       setUploading(true);
       const file = e.target.files[0];
@@ -565,7 +580,7 @@ export function CommunityFeedClient({ dict, lang }: Props) {
       }
       setUploading(false);
     },
-    [setUploading],
+    [isEnglish, uploadPrivacyConsent],
   );
 
   return (
@@ -615,7 +630,13 @@ export function CommunityFeedClient({ dict, lang }: Props) {
             placeholder={d.composePlaceholder}
             className="min-h-[88px] w-full resize-y rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
           />
-          <div className="mt-4">
+          <PhotoUploadGuideline
+            className="mt-4"
+            consent={uploadPrivacyConsent}
+            onConsentChange={setUploadPrivacyConsent}
+            locale={isEnglish ? "en" : "ko"}
+          />
+          <div className="mt-2">
             <label className="mb-2 block text-sm font-bold text-slate-700">📸 임상 사진 첨부</label>
             <input
               type="file"

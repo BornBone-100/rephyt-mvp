@@ -1,0 +1,21 @@
+# Re:PhyT Clinical Data Sync Rules
+
+AI 에디터(Cursor)가 Re:PhyT 코드베이스에서 작업할 때, 대시보드 활동 내역·UI·카피가 **진단이 아닌 정직한 데이터**로 기록되도록 아래를 준수한다.
+
+## 1. 용어 완전 박멸 (Legal Defense)
+
+- `Differential Diagnosis` → **Clinical Screening & Differential Evaluation**
+- `Prescription` → **Intervention Strategy** 또는 **Care Guide**
+- `Diagnosis` 단어가 포함된 모든 레이블은 **Analysis** 또는 **Evaluation**으로 강제 치환한다.
+
+## 2. 활동 내역 (Activity History) 로직
+
+- 활동 로그에 "XX 환자 진단 완료" 같은 표현을 쓰지 않는다.
+- 대신 **"[평가 부위] 임상 데이터 분석 및 가이드 생성 완료"** 형태로 기록한다.
+- 모든 활동 내역은 **정직한 데이터 (Honest Data)** 원칙에 따라 수치 중심(ROM, 기능 저하율 등)으로 요약한다.
+
+## 3. AI 분석 리포트 스타일 (Screening focus)
+
+- 특정 질병명(TOS, 회전근개 파열 등)을 단정적으로 출력하지 않는다.
+- 대신 "T1 신경근 부위의 기능적 가동성 제한 관찰"과 같이 **물리치료적 평가 (Evaluation)** 관점으로 서술한다.
+- 리포트 하단에 **「의사의 진단을 대체할 수 없는 보조 도구」** 문구를 필수로 동기화한다.
