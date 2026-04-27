@@ -156,6 +156,7 @@ function FeedPostCard({
   const canExpand = display.length > READ_MORE_THRESHOLD;
   const report = (post as CommunityPost & {
     report?: {
+      evaluation_area?: string | null;
       diagnosis_area?: string | null;
       overall_score?: number | null;
       clinical_reasoning?: string | null;
@@ -245,7 +246,9 @@ function FeedPostCard({
 
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
-                        <h4 className="truncate text-sm font-black text-slate-900">{report.diagnosis_area || "General"} Assessment</h4>
+                        <h4 className="truncate text-sm font-black text-slate-900">
+                          {report.evaluation_area || report.diagnosis_area || "General"} Assessment
+                        </h4>
                         <p className="mt-1 overflow-hidden text-xs italic leading-relaxed text-slate-600 line-clamp-2">
                           "{report.clinical_reasoning || "—"}"
                         </p>
@@ -533,7 +536,7 @@ export function CommunityFeedClient({ dict, lang }: Props) {
           text: draftText.trim() || (selectedReport ? "공유된 임상 리포트입니다." : ""),
           authorId: user.id,
           reportId: selectedReport?.id || null,
-          category: selectedReport?.diagnosis_area || "General",
+          category: selectedReport?.evaluation_area || selectedReport?.diagnosis_area || "General",
           mediaUrls: uploadedImageUrl ? [uploadedImageUrl] : [],
           imageUrl: uploadedImageUrl,
         }),
@@ -559,7 +562,7 @@ export function CommunityFeedClient({ dict, lang }: Props) {
     } finally {
       setIsPosting(false);
     }
-  }, [draftText, fetchPosts, isEnglish, selectedReport?.diagnosis_area, selectedReport?.id, supabase, uploadPrivacyConsent, uploadedImageUrl]);
+  }, [draftText, fetchPosts, isEnglish, selectedReport?.diagnosis_area, selectedReport?.evaluation_area, selectedReport?.id, supabase, uploadPrivacyConsent, uploadedImageUrl]);
 
   const handleFileChange = useCallback(
     async (e: ChangeEvent<HTMLInputElement>) => {
@@ -677,7 +680,8 @@ export function CommunityFeedClient({ dict, lang }: Props) {
           {selectedReport && (
             <div className="mt-2 flex items-center justify-between rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
               <span className="flex items-center gap-2 font-medium">
-                <Check size={14} /> [{selectedReport.diagnosis_area}] {isEnglish ? "Report will be shared." : "리포트가 공유됩니다."}
+                <Check size={14} /> [{selectedReport.evaluation_area || selectedReport.diagnosis_area}]{" "}
+                {isEnglish ? "Report will be shared." : "리포트가 공유됩니다."}
               </span>
               <button onClick={() => setSelectedReport(null)} className="text-indigo-400 hover:text-indigo-600">
                 <X size={14} />

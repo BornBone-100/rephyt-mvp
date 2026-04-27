@@ -15,12 +15,20 @@ type ActivityItem = {
   href?: string;
 };
 
+function dedupeById(items: ActivityItem[]): ActivityItem[] {
+  const map = new Map<string, ActivityItem>();
+  for (const item of items) {
+    map.set(item.id, item);
+  }
+  return [...map.values()].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+}
+
 function mergeById(prev: ActivityItem[], incoming: ActivityItem): ActivityItem[] {
   const exists = prev.some((item) => item.id === incoming.id);
   const next = exists
     ? prev.map((item) => (item.id === incoming.id ? incoming : item))
     : [incoming, ...prev];
-  return next.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  return dedupeById(next);
 }
 
 export default function ActivityTimelineClient({
@@ -30,7 +38,12 @@ export default function ActivityTimelineClient({
   initialTimeline: ActivityItem[];
   locale: string;
 }) {
-  const [activities, setActivities] = useState<ActivityItem[]>(initialTimeline);
+  const [activities, setActivities] = useState<ActivityItem[]>(() => dedupeById(initialTimeline));
+
+  // Strict Mode에서 effect가 두 번 돌더라도 서버 데이터는 항상 교체 기반으로 유지합니다.
+  useEffect(() => {
+    setActivities(dedupeById(initialTimeline));
+  }, [initialTimeline]);
 
   useEffect(() => {
     const cached = window.localStorage.getItem("rephyt:latest-activity");

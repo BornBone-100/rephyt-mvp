@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -28,8 +27,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`}
       >
-        {/* 나이스페이 결제 라이브러리 (PG SDK — 결제창 연동용) */}
-        <Script src="https://pg-sdk.nicepay.co.kr/v1/latest/js/nicepay.js" strategy="beforeInteractive" />
         {/* [lang] 세그먼트 레이아웃에서 main + 푸터 처리 */}
         {children}
       </body>

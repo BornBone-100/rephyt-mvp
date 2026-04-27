@@ -45,7 +45,7 @@ export const ReportSelectionModal = ({ isOpen, onClose, onSelect }: ReportSelect
 
       let query = (supabase as any)
         .from("cdss_guardrail_logs")
-        .select("id, diagnosis_area, overall_score, created_at, clinical_reasoning, author_id, patient_id")
+        .select("id, evaluation_area, diagnosis_area, overall_score, created_at, clinical_reasoning, author_id, patient_id")
         .or(`author_id.eq.${user.id},author_id.is.null`)
         .order("created_at", { ascending: false });
 
@@ -58,7 +58,8 @@ export const ReportSelectionModal = ({ isOpen, onClose, onSelect }: ReportSelect
 
       const clinicalReports = (data || []).filter(
         (report: any) => {
-          const area = (report as any).diagnosis_area?.toLowerCase() || "";
+          const area = ((report as any).evaluation_area ?? (report as any).diagnosis_area ?? "")
+            .toLowerCase();
           const isClinicalArea = clinicalAreas.some((clinical) => area.includes(clinical.toLowerCase()));
           const isNotCommunity = !area.includes("community") && !area.includes("post");
           const hasScore = report.overall_score !== null && report.overall_score !== undefined;
@@ -105,7 +106,9 @@ export const ReportSelectionModal = ({ isOpen, onClose, onSelect }: ReportSelect
                   <FileText size={18} />
                 </div>
                 <div className="flex-1">
-                  <div className="font-semibold text-slate-800">{report.diagnosis_area || "미지정 부위"}</div>
+                  <div className="font-semibold text-slate-800">
+                    {report.evaluation_area || report.diagnosis_area || "미지정 부위"}
+                  </div>
                   <div className="text-xs text-slate-500">
                     {new Date(report.created_at).toLocaleDateString()} · 점수: {report.overall_score}점
                   </div>
