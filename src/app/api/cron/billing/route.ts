@@ -1,11 +1,23 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 // 마스터키로 DB 연결
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+function getNicepayEdiDate(): string {
+  const now = new Date();
+  const yyyy = String(now.getFullYear());
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mi = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}${hh}${mi}${ss}`;
+}
 
 // 스케줄러는 GET 요청으로 실행됩니다.
 export async function GET(request: Request) {
@@ -31,21 +43,35 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: '오늘 결제할 대상자가 없습니다.' });
     }
 
-    const clientId = process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID;
+    const mid = process.env.NEXT_PUBLIC_NICEPAY_MID || process.env.NEXT_PUBLIC_NICEPAY_CLIENT_ID || 'nictest00m';
     const secretKey = process.env.NICEPAY_MERCHANT_KEY;
-    const credentials = Buffer.from(`${clientId}:${secretKey}`).toString('base64');
+    const credentials = Buffer.from(`${mid}:${secretKey}`).toString('base64');
+
+    if (!secretKey) {
+      return NextResponse.json({ success: false, message: 'NICEPAY_MERCHANT_KEY가 없습니다.' }, { status: 500 });
+    }
 
     // 4. 대상자 한 명씩 순회하며 결제 요청
     for (const user of users) {
-      const payResponse = await fetch(`https://api.nicepay.co.kr/v1/subscribe/${user.billing_key}/payments`, {
+      const amt = '5900';
+      const moid = `rephyt_auto_${Date.now()}`;
+      const ediDate = getNicepayEdiDate();
+      const signData = crypto
+        .createHash('sha256')
+        .update(`${ediDate}${mid}${moid}${secretKey}`)
+        .digest('hex');
+
+      const payResponse = await fetch('https://api.nicepay.co.kr/v1/bill/pay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${credentials}` },
         body: JSON.stringify({
-          amount: 5900,
-          orderId: `rephyt_auto_${Date.now()}`,
-          goodsName: "Re:PhyT Pro 정기구독 자동결제",
-          cardQuota: 0,
-          useShopInterest: false
+          BID: user.billing_key,
+          Amt: amt,
+          MID: mid,
+          EdiDate: ediDate,
+          Moid: moid,
+          SignData: signData,
+          GoodsName: 'RePhyTProSubscription',
         }),
       });
 

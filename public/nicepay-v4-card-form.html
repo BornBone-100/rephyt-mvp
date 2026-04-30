@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Re:PhyT 프리미엄 정기구독</title>
+  <style>
+    .card-form { max-width: 400px; margin: 50px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; font-family: sans-serif; }
+    .input-group { margin-bottom: 15px; }
+    .input-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+    .input-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    .row { display: flex; gap: 10px; }
+    .row .input-group { flex: 1; }
+    .submit-btn { width: 100%; padding: 15px; background-color: #1a1a1a; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    .submit-btn:hover { background-color: #333; }
+  </style>
+</head>
+<body>
+
+  <div class="card-form">
+    <h2>카드 등록 (정기구독)</h2>
+    <form id="billingForm">
+
+      <div class="input-group">
+        <label>카드 번호</label>
+        <input type="text" id="cardNo" placeholder="하이픈(-) 없이 숫자만 입력" maxlength="16" required>
+      </div>
+
+      <div class="row">
+        <div class="input-group">
+          <label>유효기간 (년)</label>
+          <input type="text" id="expYear" placeholder="YY (예: 28)" maxlength="2" required>
+        </div>
+        <div class="input-group">
+          <label>유효기간 (월)</label>
+          <input type="text" id="expMonth" placeholder="MM (예: 09)" maxlength="2" required>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label>생년월일 (또는 사업자번호)</label>
+        <input type="text" id="idNo" placeholder="YYMMDD (6자리) 또는 사업자번호 (10자리)" maxlength="10" required>
+      </div>
+
+      <div class="input-group">
+        <label>카드 비밀번호 (앞 2자리)</label>
+        <input type="password" id="cardPw" placeholder="**" maxlength="2" required>
+      </div>
+
+      <button type="button" class="submit-btn" onclick="submitBilling()">등록하고 구독 시작하기</button>
+    </form>
+  </div>
+
+  <script>
+    async function submitBilling() {
+      const payload = {
+        cardNo: document.getElementById('cardNo').value,
+        expYear: document.getElementById('expYear').value,
+        expMonth: document.getElementById('expMonth').value,
+        idNo: document.getElementById('idNo').value,
+        cardPw: document.getElementById('cardPw').value,
+        orderId: 'bill_' + new Date().getTime()
+      };
+
+      try {
+        const response = await fetch('/api/payments/nicepay/issue-billing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert('정기구독 카드 등록이 완료되었습니다!');
+          window.location.href = '/dashboard';
+        } else {
+          alert('등록 실패: ' + result.message);
+        }
+      } catch (error) {
+        console.error("서버 에러:", error);
+        alert('서버와 통신 중 문제가 발생했습니다.');
+      }
+    }
+  </script>
+
+</body>
+</html>

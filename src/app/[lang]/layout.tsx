@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Script from "next/script";
 import { notFound } from "next/navigation";
 import { SonnerToaster } from "@/components/SonnerToaster";
 import PushProvider from "@/components/providers/PushProvider";
@@ -24,11 +23,6 @@ export default async function LangLayout({
   return (
     <PushProvider>
       <>
-        <Script
-          src="https://pay.nicepay.co.kr/v1/js/"
-          strategy="afterInteractive"
-          id="nicepay-modern-sdk"
-        />
         <SonnerToaster />
         <main className="flex-grow">{children}</main>
 

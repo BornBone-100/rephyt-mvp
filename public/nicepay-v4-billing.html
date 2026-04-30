@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Re:PhyT 정기구독 카드 등록 (V4)</title>
+
+  <script src="https://pay.nicepay.co.kr/v1/js/"></script>
+
+  <style>
+    .pay-btn {
+      padding: 15px 30px;
+      background-color: #2563eb;
+      color: white;
+      font-weight: bold;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <button class="pay-btn" onclick="requestV4Billing()">정기구독 카드 등록하기</button>
+
+  <script>
+    function requestV4Billing() {
+      AUTHNICE.requestPay({
+        clientId: 'R2_50afd2cf35c840f4b835cf478eec7282',
+        method: 'card',
+        orderId: 'bill_' + new Date().getTime(),
+        amount: 1004,
+        goodsName: 'Re:PhyT 정기구독',
+        returnUrl: window.location.origin + '/api/payments/nicepay/bill-callback',
+
+        subscribe: true,
+
+        fnError: function (result) {
+          alert('결제창 호출 에러: [' + result.errorCode + '] ' + result.errorMsg);
+        }
+      });
+    }
+  </script>
+
+</body>
+</html>

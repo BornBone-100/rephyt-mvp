@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Re:PhyT - 프리미엄 정기구독</title>
+  <style>
+    /* 전체 화면 스타일 (깔끔한 B2B 스타트업 느낌) */
+    body {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background-color: #f9fafb;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .payment-wrapper {
+      background-color: #ffffff;
+      width: 100%;
+      max-width: 420px;
+      padding: 40px 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      box-sizing: border-box;
+    }
+    .payment-wrapper h2 {
+      text-align: center;
+      color: #111827;
+      margin-top: 0;
+      margin-bottom: 30px;
+      font-size: 24px;
+    }
+    .form-group {
+      margin-bottom: 18px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #4b5563;
+      margin-bottom: 8px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 15px;
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: #2563eb;
+    }
+    .row {
+      display: flex;
+      gap: 15px;
+    }
+    .row .form-group {
+      flex: 1;
+    }
+    .submit-btn {
+      width: 100%;
+      padding: 16px;
+      background-color: #111827;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: background-color 0.2s;
+    }
+    .submit-btn:hover {
+      background-color: #374151;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="payment-wrapper">
+    <h2>Re:PhyT 구독 카드 등록</h2>
+    <form id="billingForm">
+
+      <div class="form-group">
+        <label for="cardNo">카드 번호</label>
+        <input type="text" id="cardNo" placeholder="0000-0000-0000-0000" maxlength="19" required>
+      </div>
+
+      <div class="row">
+        <div class="form-group">
+          <label for="expYear">유효기간 (년)</label>
+          <input type="text" id="expYear" placeholder="YY (예: 28)" maxlength="2" required>
+        </div>
+        <div class="form-group">
+          <label for="expMonth">유효기간 (월)</label>
+          <input type="text" id="expMonth" placeholder="MM (예: 09)" maxlength="2" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="idNo">생년월일 (또는 사업자번호)</label>
+        <input type="text" id="idNo" placeholder="YYMMDD (6자리) 또는 사업자번호" maxlength="10" required>
+      </div>
+
+      <div class="form-group">
+        <label for="cardPw">카드 비밀번호 (앞 2자리)</label>
+        <input type="password" id="cardPw" placeholder="**" maxlength="2" required>
+      </div>
+
+      <button type="button" class="submit-btn" onclick="submitToBackend()">구독 시작하기</button>
+
+    </form>
+  </div>
+
+  <script>
+    async function submitToBackend() {
+      const btn = document.querySelector('.submit-btn');
+      btn.innerText = "처리 중...";
+      btn.disabled = true;
+
+      const payload = {
+        cardNo: document.getElementById('cardNo').value.replace(/[^0-9]/g, ''),
+        expYear: document.getElementById('expYear').value,
+        expMonth: document.getElementById('expMonth').value,
+        idNo: document.getElementById('idNo').value,
+        cardPw: document.getElementById('cardPw').value,
+      };
+
+      try {
+        const response = await fetch('/api/billing-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success === true) {
+          alert('정기구독 카드 등록이 완료되었습니다!');
+          window.location.href = '/success.html';
+        } else {
+          alert('등록 실패: ' + (result.message || '정보를 다시 확인해주세요.'));
+          btn.innerText = "구독 시작하기";
+          btn.disabled = false;
+        }
+      } catch (error) {
+        console.error("서버 에러:", error);
+        alert('서버 통신 중 에러가 발생했습니다.');
+        btn.innerText = "구독 시작하기";
+        btn.disabled = false;
+      }
+    }
+  </script>
+
+</body>
+</html>

@@ -29,11 +29,27 @@ export async function POST(req: Request) {
     const codeHash = hashSignupOtp(code);
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000).toISOString();
 
-    const { error: insertError } = await supabase.from("signup_sms_challenges").insert({
-      phone_e164: phoneE164,
-      code_hash: codeHash,
-      expires_at: expiresAt,
-    } as never);
+    // 스키마 차이를 흡수하기 위해 phone_number 우선으로 시도하고,
+    // 컬럼이 없을 경우 기존 phone_e164 방식으로 폴백합니다.
+    let insertError: { message?: string } | null = null;
+    {
+      const result = await supabase.from("signup_sms_challenges").insert({
+        phone_number: phoneE164,
+        phone_e164: phoneE164,
+        code_hash: codeHash,
+        expires_at: expiresAt,
+      } as never);
+      insertError = result.error;
+    }
+
+    if (insertError?.message?.includes("phone_number")) {
+      const fallback = await supabase.from("signup_sms_challenges").insert({
+        phone_e164: phoneE164,
+        code_hash: codeHash,
+        expires_at: expiresAt,
+      } as never);
+      insertError = fallback.error;
+    }
 
     if (insertError) {
       console.error("[send-signup-sms] insert:", insertError);

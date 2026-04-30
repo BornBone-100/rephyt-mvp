@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Re:PhyT 결제 준비</title>
+    <script src="https://pay.nicepay.co.kr/v1/js/"></script>
+    <style>
+        body { background-color: #f4f4f5; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; color: #52525b; margin: 0; }
+        .loader { text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="loader">
+        <h2 style="color: #172554;">안전한 결제창을 불러오는 중입니다...</h2>
+        <p>잠시만 기다려주세요.</p>
+    </div>
+
+    <script>
+        // 화면이 로드되자마자 즉시 나이스페이 엔진 가동
+        window.onload = function() {
+            AUTHNICE.requestPay({
+                clientId: "R2_50afd2cf35c840f4b835cf478eec7282", // 대표님의 완벽한 진짜 키
+                method: "card",
+                orderId: "bill_" + Date.now(),
+                amount: 1004,
+                goodsName: "Re:PhyT 정기구독 빌링키 발급",
+                returnUrl: window.location.origin + "/api/payments/nicepay/bill-callback",
+                fnError: function (result) {
+                    alert("결제 에러: " + (result.errorMsg || '알 수 없는 오류'));
+                    window.history.back(); // 에러 시 원래 가격표 페이지로 자동 복귀
+                }
+            });
+        };
+    </script>
+</body>
+</html>
