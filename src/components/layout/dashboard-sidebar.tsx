@@ -7,6 +7,7 @@ type SidebarLabels = {
   core: string;
   patients: string;
   newSoap: string;
+  aiPreScreening: string;
   insights: string;
   analytics: string;
   library: string;
@@ -48,6 +49,15 @@ export function DashboardSidebar({ base, labels }: Props) {
             <span className="flex items-center gap-2 text-slate-900">
               <span className="text-lg">🧑‍⚕️</span>
               {labels.patients}
+            </span>
+          </Link>
+          <Link href={`${base}/dashboard/ai-screening`} prefetch={true} className={linkClass(`${base}/dashboard/ai-screening`)}>
+            <span className="flex items-center gap-2 text-slate-900">
+              <span className="text-lg">🧠</span>
+              {labels.aiPreScreening}
+            </span>
+            <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-600">
+              New
             </span>
           </Link>
           <Link href={`${base}/dashboard/soap/new`} prefetch={true} className={linkClass(`${base}/dashboard/soap/new`)}>

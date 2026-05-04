@@ -23,6 +23,7 @@ export default async function DashboardSectionLayout({
           core: "CORE",
           patients: dict.dashboard.patientList,
           newSoap: dict.dashboard.newChart,
+          aiPreScreening: locale === "en" ? "AI Pre-Screening" : "AI 사전 스크리닝",
           insights: "INSIGHTS",
           analytics: locale === "en" ? "Clinical Analytics" : "임상 분석 통계",
           library: locale === "en" ? "Clinical Library" : "임상 자료실",
