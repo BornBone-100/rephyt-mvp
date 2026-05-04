@@ -55,8 +55,36 @@ function LoginForm({ dict }: Props) {
   const a = dict.auth;
   const router = useRouter();
   const params = useParams();
-  const lang = params.lang as string;
-  const supabase = useMemo(() => createClient(), []);
+  const lang = typeof params.lang === "string" ? params.lang : "ko";
+
+  /** 환경 변수 누락 시 createClient()가 예외를 던져 전체 화면이 하얗게 멈추는 것을 방지 */
+  const supabaseInit = useMemo(() => {
+    try {
+      return { ok: true as const, client: createClient() };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { ok: false as const, message };
+    }
+  }, []);
+
+  if (!supabaseInit.ok) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4">
+        <div className="max-w-md rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center shadow-sm">
+          <h1 className="text-lg font-bold text-amber-900">Supabase 설정 필요</h1>
+          <p className="mt-3 text-sm text-amber-800">{supabaseInit.message}</p>
+          <p className="mt-4 text-left text-xs leading-relaxed text-amber-900/80">
+            프로젝트 루트의 <code className="rounded bg-white px-1 py-0.5">.env.local</code> 에 다음 값을 추가한 뒤 개발
+            서버를 재시작하세요.
+            <span className="mt-2 block font-mono text-[11px]">NEXT_PUBLIC_SUPABASE_URL</span>
+            <span className="mt-1 block font-mono text-[11px]">NEXT_PUBLIC_SUPABASE_ANON_KEY</span>
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  const supabase = supabaseInit.client;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
