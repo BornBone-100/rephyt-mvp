@@ -1,6 +1,14 @@
+import path from "path";
+import { fileURLToPath } from "url";
 import type { NextConfig } from "next";
 
+/** 상위 폴더에 다른 package-lock.json이 있을 때 Turbopack이 잘못된 루트를 잡아 /ko/... 라우트가 404가 되는 문제 방지 */
+const turbopackRoot = path.dirname(fileURLToPath(import.meta.url));
+
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: turbopackRoot,
+  },
   async headers() {
     return [
       {
