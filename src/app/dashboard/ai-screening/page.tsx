@@ -13,7 +13,6 @@ import {
   Eye,
   EyeOff,
   SlidersHorizontal,
-  Image as ImageIcon,
 } from "lucide-react";
 
 /** 부위 코드 — AI/백엔드에서 내려주는 region 코드와 1:1 매핑 가능 */
@@ -125,17 +124,14 @@ type ActiveAnalysis = {
   clinicalReportBullets: string[];
 };
 
-function detectBodyPartFromFileName(name: string): BodyPartKey {
-  const lower = name.toLowerCase();
-  if (lower.includes("shoulder") || lower.includes("어깨")) return "SHOULDER";
-  if (lower.includes("knee") || lower.includes("무릎")) return "KNEE";
-  if (lower.includes("neck") || lower.includes("cervical") || lower.includes("경추")) return "CERVICAL";
-  return "LUMBAR";
-}
-
-function buildActiveAnalysis(partKey: BodyPartKey): ActiveAnalysis {
+function buildActiveAnalysis(
+  partKey: BodyPartKey,
+  options?: { confidenceMin?: number; confidenceMax?: number },
+): ActiveAnalysis {
   const base = BODY_KNOWLEDGE_BASE[partKey];
-  const confidence = Math.round(Math.random() * 7 + 92);
+  const min = options?.confidenceMin ?? 92;
+  const max = options?.confidenceMax ?? 99;
+  const confidence = Math.round(Math.random() * (max - min) + min);
   const correlation = (92 + Math.random() * 6).toFixed(1);
 
   const evidenceList: EvidenceMetric[] = base.metrics.map((m) => ({
@@ -159,13 +155,28 @@ function buildActiveAnalysis(partKey: BodyPartKey): ActiveAnalysis {
   };
 }
 
+/** 가상 AI 히트맵·타깃 박스 중심 좌표 (부위별 시뮬레이션) */
+function heatmapFocusPosition(key: BodyPartKey): { top: string; left: string } {
+  switch (key) {
+    case "SHOULDER":
+      return { top: "40%", left: "45%" };
+    case "KNEE":
+      return { top: "72%", left: "50%" };
+    case "CERVICAL":
+      return { top: "24%", left: "50%" };
+    case "LUMBAR":
+    default:
+      return { top: "65%", left: "50%" };
+  }
+}
+
 export default function PreAssessmentScreening() {
   const [step, setStep] = useState(1);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [activeAnalysis, setActiveAnalysis] = useState<ActiveAnalysis | null>(null);
 
   const [showHeatmap, setShowHeatmap] = useState(true);
-  const [heatmapOpacity, setHeatmapOpacity] = useState(70);
+  const [heatmapOpacity, setHeatmapOpacity] = useState(75);
   const previewUrl = useMemo(() => (selectedFile ? URL.createObjectURL(selectedFile) : ""), [selectedFile]);
 
   useEffect(() => {
@@ -190,16 +201,18 @@ export default function PreAssessmentScreening() {
     setActiveAnalysis(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      // TODO: 백엔드에서 region 코드·계측값을 내려주면 partKey·evidence를 그 값으로 대체
+      // 실제 비전 API 연동 시 예시 (파일명 미사용, 바이너리만 전송):
+      // const formData = new FormData();
+      // formData.append("file", selectedFile); // 또는 "image" 등 API 스펙에 맞게
       // const response = await fetch("/api/ai-screening/analyze", { method: "POST", body: formData });
       // const realData = await response.json();
+      // setActiveAnalysis(buildActiveAnalysis(realData.region as BodyPartKey, { ... }));
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      const partKey = detectBodyPartFromFileName(selectedFile.name);
-      setActiveAnalysis(buildActiveAnalysis(partKey));
+      /** 가상 AI 판독: 파일명을 보지 않고 업로드 후 시뮬레이션으로 부위·지표를 생성 (실연동 시 이 블록 제거) */
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const possibleParts: BodyPartKey[] = ["SHOULDER", "LUMBAR", "KNEE", "CERVICAL"];
+      const aiDetectedPart = possibleParts[Math.floor(Math.random() * possibleParts.length)];
+      setActiveAnalysis(buildActiveAnalysis(aiDetectedPart, { confidenceMin: 95, confidenceMax: 99 }));
       setStep(3);
     } catch {
       alert("AI 분석 중 서버 오류가 발생했습니다.");
@@ -230,7 +243,9 @@ export default function PreAssessmentScreening() {
           Re:PhyT AI - 사전 스크리닝 (Global Body-Part Engine)
         </h1>
         <p className="text-sm text-slate-500 mt-2">
-          부위 코드에 따라 영상·지표·Care Guide 문구가 동적으로 전환됩니다. 본 화면은 의사의 진단을 대체할 수 없는 보조 도구입니다.
+          부위 코드에 따라 영상·지표·Care Guide 문구가 동적으로 전환됩니다. 현재는{" "}
+          <strong className="text-slate-700">가상 AI 판독(시뮬레이션)</strong> 모드입니다. 본 화면은 의사의 진단을 대체할 수
+          없는 보조 도구입니다.
         </p>
       </div>
 
@@ -290,95 +305,116 @@ export default function PreAssessmentScreening() {
       {step === 2 && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-16 max-w-3xl mx-auto text-center animate-in fade-in duration-300">
           <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mx-auto mb-6" />
-          <h2 className="text-xl font-bold text-slate-800">해부학적 구조물 트래킹 및 계측 중</h2>
-          <p className="text-sm text-slate-500 mt-2">영상 기반으로 부위 코드를 추정하고 정량 지표를 산출합니다.</p>
+          <h2 className="text-xl font-bold text-slate-800">가상 AI 판독 — 영상 분석 시뮬레이션</h2>
+          <p className="text-sm text-slate-500 mt-2">
+            파일명이 아닌 업로드 데이터를 기준으로 부위·지표를 산출하는 흐름을 연습합니다. 실서버 연동 시 이 단계가 API
+            응답으로 대체됩니다.
+          </p>
         </div>
       )}
 
       {step === 3 && analysis && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-5 flex flex-col">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-indigo-500" />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+            <div className="flex flex-col space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-7">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h2 className="flex items-center gap-2 text-lg font-bold text-slate-800">
+                  <Activity className="h-5 w-5 text-indigo-500" />
                   AI 분석 히트맵 (Grad-CAM)
                 </h2>
-                <span className="bg-rose-100 text-rose-800 text-xs px-2.5 py-1 rounded font-bold flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5" /> 스크리닝 일치도 {analysis.confidence}%
+                <span className="flex items-center gap-1 rounded bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800">
+                  <AlertCircle className="h-3.5 w-3.5" /> 스크리닝 일치도 {analysis.confidence}%
                 </span>
               </div>
 
-              <div className="relative bg-slate-900 rounded-xl h-72 flex items-center justify-center overflow-hidden border border-slate-800 shadow-inner">
-                <div className="absolute top-3 left-3 z-30 rounded-lg border border-white/10 bg-black/50 px-3 py-2 backdrop-blur-md">
-                  <p className="text-[10px] font-bold uppercase tracking-tight text-indigo-300">Detected Region</p>
-                  <p className="text-sm font-bold text-white">{analysis.partName}</p>
-                </div>
+              <div className="space-y-4">
+                <div className="relative flex h-[500px] items-center justify-center overflow-hidden rounded-3xl border border-slate-800 bg-black shadow-2xl">
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="업로드된 영상"
+                      className="h-full w-full object-contain opacity-80"
+                    />
+                  ) : (
+                    <div className="font-bold italic text-slate-500">No Scan Data</div>
+                  )}
 
-                {previewUrl ? (
-                  <div
-                    className="absolute inset-0 bg-cover bg-center opacity-60"
-                    style={{ backgroundImage: `url(${previewUrl})` }}
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-600">
-                    <ImageIcon className="w-12 h-12 mb-2 opacity-50" />
-                    <span className="text-sm font-bold opacity-50">영상 미리보기</span>
-                  </div>
-                )}
+                  {showHeatmap && (
+                    <div
+                      className="pointer-events-none absolute z-10 transition-all duration-500 ease-in-out"
+                      style={{
+                        top: heatmapFocusPosition(analysis.key).top,
+                        left: heatmapFocusPosition(analysis.key).left,
+                        width: "180px",
+                        height: "180px",
+                        transform: "translate(-50%, -50%)",
+                        background: `radial-gradient(circle, rgba(225, 29, 72, ${heatmapOpacity / 100}) 0%, rgba(245, 158, 11, ${heatmapOpacity / 150}) 40%, transparent 70%)`,
+                        mixBlendMode: "screen",
+                      }}
+                    />
+                  )}
 
-                {showHeatmap && (
-                  <div
-                    className="pointer-events-none absolute inset-0 z-10 mix-blend-screen transition-opacity duration-200"
-                    style={{
-                      opacity: heatmapOpacity / 100,
-                      background:
-                        "radial-gradient(circle at 50% 55%, rgba(225, 29, 72, 0.85) 0%, rgba(245, 158, 11, 0.45) 18%, rgba(0,0,0,0) 42%)",
-                    }}
-                  />
-                )}
-
-                {showHeatmap && (
-                  <div className="absolute top-[58%] left-1/2 z-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-rose-500 shadow-[0_0_15px_rgba(225,29,72,0.5)]">
-                    <div className="absolute -top-6 left-1/2 w-max -translate-x-1/2 rounded bg-rose-500 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap text-white shadow-sm">
-                      {analysis.mainFinding}
+                  {showHeatmap && (
+                    <div
+                      className="absolute z-20 rounded-lg border-2 border-dashed border-rose-500 shadow-[0_0_15px_rgba(225,29,72,0.5)] transition-all duration-500"
+                      style={{
+                        top: heatmapFocusPosition(analysis.key).top,
+                        left: heatmapFocusPosition(analysis.key).left,
+                        width: "100px",
+                        height: "80px",
+                        transform: "translate(-50%, -50%)",
+                      }}
+                    >
+                      <div className="absolute -top-7 left-0 flex items-center gap-1 rounded bg-rose-500 px-2 py-0.5 text-[10px] font-black text-white shadow-lg">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
+                        <span className="max-w-[220px] truncate">SCREENING: {analysis.mainFinding}</span>
+                      </div>
                     </div>
+                  )}
+
+                  <div className="absolute left-6 top-6 z-30 rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl backdrop-blur-md">
+                    <p className="mb-1 text-[10px] font-black uppercase tracking-tighter text-indigo-400 underline decoration-indigo-500/50 underline-offset-4">
+                      AI Clinical Filter
+                    </p>
+                    <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                      <Activity className="h-4 w-4 text-indigo-400" />
+                      {analysis.partName}
+                    </h2>
+                    <p className="mt-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-200/90">가상 AI 판독</p>
                   </div>
-                )}
-
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-5xl font-black text-white/10">
-                  {analysis.key} SCAN
                 </div>
-              </div>
 
-              <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
-                <button
-                  type="button"
-                  onClick={() => setShowHeatmap(!showHeatmap)}
-                  className={`flex w-full shrink-0 items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-bold transition sm:w-32 ${
-                    showHeatmap
-                      ? "border-indigo-200 bg-indigo-100 text-indigo-700"
-                      : "border-slate-300 bg-white text-slate-600"
-                  }`}
-                >
-                  {showHeatmap ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                  히트맵 {showHeatmap ? "ON" : "OFF"}
-                </button>
-                <div className="flex flex-1 items-center gap-3 border-slate-300 sm:border-l sm:pl-4">
-                  <SlidersHorizontal className="hidden h-4 w-4 shrink-0 text-slate-400 sm:block" />
-                  <span className="hidden text-xs font-bold text-slate-600 sm:inline sm:w-12">투명도</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={heatmapOpacity}
-                    onChange={(e) => setHeatmapOpacity(Number(e.target.value))}
-                    disabled={!showHeatmap}
-                    className={`h-1.5 w-full flex-1 appearance-none rounded-lg bg-slate-200 accent-indigo-600 ${
-                      !showHeatmap && "cursor-not-allowed opacity-50 grayscale"
+                <div className="flex flex-col items-stretch gap-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowHeatmap(!showHeatmap)}
+                    className={`flex items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-black shadow-sm transition-all ${
+                      showHeatmap
+                        ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                     }`}
-                  />
-                  <span className="w-10 shrink-0 text-right text-xs font-bold text-slate-600">{heatmapOpacity}%</span>
+                  >
+                    {showHeatmap ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    AI 히트맵 {showHeatmap ? "활성화" : "비활성화"}
+                  </button>
+                  <div className="flex flex-1 items-center gap-4 border-slate-100 sm:border-l sm:pl-6">
+                    <SlidersHorizontal className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="w-12 shrink-0 text-xs font-bold text-slate-500">투명도</span>
+                    <input
+                      type="range"
+                      min={10}
+                      max={100}
+                      value={Math.max(10, heatmapOpacity)}
+                      onChange={(e) => setHeatmapOpacity(Number(e.target.value))}
+                      disabled={!showHeatmap}
+                      className={`h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-100 accent-indigo-600 ${
+                        !showHeatmap && "cursor-not-allowed opacity-50 grayscale"
+                      }`}
+                    />
+                    <span className="w-8 shrink-0 text-right text-xs font-black text-indigo-600">
+                      {Math.max(10, heatmapOpacity)}%
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -413,7 +449,7 @@ export default function PreAssessmentScreening() {
               </div>
             </div>
 
-            <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-5">
               <div className="space-y-5">
                 <div className="border-b border-slate-100 pb-3">
                   <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
