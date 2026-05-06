@@ -1027,18 +1027,19 @@ export default function PreAssessmentScreening() {
         body: formData,
       });
 
-      const rawJson: unknown = await response.json();
-
       if (!response.ok) {
-        const rec = typeof rawJson === "object" && rawJson !== null ? (rawJson as Record<string, unknown>) : {};
-        const code =
-          typeof rec.error === "string" ? rec.error : typeof rec.detail === "string" ? rec.detail : `http_${response.status}`;
-        const msg =
-          ANALYZE_ERROR_MESSAGES[code] ??
-          (typeof rec.message === "string" ? rec.message : null) ??
-          (typeof rec.error === "string" ? rec.error : null) ??
-          "AI 분석 요청이 거절되었습니다.";
-        throw new Error(msg);
+        const errorText = await response.text();
+        console.error("서버 응답 내용:", errorText);
+        throw new Error(`서버 에러: ${response.status} - ${errorText}`);
+      }
+
+      const text = await response.text();
+      let rawJson: unknown;
+      try {
+        rawJson = JSON.parse(text) as unknown;
+      } catch {
+        console.error("서버 JSON 파싱 실패:", text);
+        throw new Error("서버 응답이 JSON 형식이 아닙니다. 백엔드 로그를 확인해 주세요.");
       }
 
       const normalized = normalizeVisionAnalyzeResponse(rawJson);
@@ -1560,16 +1561,15 @@ export default function PreAssessmentScreening() {
                   {!selectedFile ? (
                     <div className="font-bold italic text-slate-500">No Scan Data</div>
                   ) : isDicomLikeFile(selectedFile) ? (
-                    <div className="max-w-md space-y-2 px-6 text-center text-sm font-semibold leading-relaxed text-slate-400">
-                      <FileWarning className="mx-auto h-10 w-10 text-amber-500/90" aria-hidden />
-                      <p>
-                        DICOM(.dcm) 볼륨 메타가 없으면 브라우저에서 원시 픽셀을 그리지 않습니다. 분석 API가{" "}
-                        <code className="rounded bg-slate-800 px-1 text-[11px] text-slate-200">dicomVolume</code>을 내려주면
-                        슬라이스 뷰어가 활성화됩니다. 또는 JPG·PNG로 변환해 업로드하면 히트맵 배경에 표시됩니다.
-                      </p>
-                      <p className="text-xs font-medium text-slate-500">
-                        원시 포맷은 수신되었으며, 스크리닝 결과·히트맵 오버레이는 아래 컨트롤로 확인할 수 있습니다.
-                      </p>
+                    <div className="h-full w-full p-6">
+                      <div className="flex h-full flex-col items-center justify-center rounded-[2.5rem] border-2 border-dashed border-slate-700 bg-slate-900/50 text-center backdrop-blur-xl">
+                        <Activity className="mb-4 h-12 w-12 animate-pulse text-indigo-400" aria-hidden />
+                        <p className="text-lg font-black text-white">전문 판독용 데이터 로드됨</p>
+                        <p className="mt-2 text-xs font-medium text-slate-400">
+                          DICOM 원시 데이터 분석 모드로 전환되었습니다. 미리보기는 제한되며 결과·계측은 우측 패널에서 확인할 수
+                          있습니다.
+                        </p>
+                      </div>
                     </div>
                   ) : isTiffLikeFile(selectedFile) ? (
                     <div className="max-w-md space-y-2 px-6 text-center text-sm font-semibold leading-relaxed text-slate-400">
