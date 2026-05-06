@@ -650,13 +650,6 @@ const AUDIT_LOOP_URL =
     ? process.env.NEXT_PUBLIC_AI_AUDIT_LOOP_URL.trim()
     : "http://localhost:8000/api/admin/audit-and-loop";
 
-const SERVERLESS_PAYLOAD_SOFT_LIMIT = 4 * 1024 * 1024; // 4MB
-const AI_SCREENING_UPLOAD_BUCKET =
-  typeof process.env.NEXT_PUBLIC_AI_SCREENING_UPLOAD_BUCKET === "string" &&
-  process.env.NEXT_PUBLIC_AI_SCREENING_UPLOAD_BUCKET.trim() !== ""
-    ? process.env.NEXT_PUBLIC_AI_SCREENING_UPLOAD_BUCKET.trim()
-    : "ai-screening-uploads";
-
 function parseBodyPartKey(raw: unknown, fallback: BodyPartKey): BodyPartKey {
   const s = typeof raw === "string" ? raw.trim().toUpperCase() : "";
   if (s && (SCREENING_PART_ORDER as readonly string[]).includes(s)) return s as BodyPartKey;
@@ -944,6 +937,26 @@ export default function PreAssessmentScreening() {
     }
   }
 
+  const uploadToStorage = async (file: File): Promise<string> => {
+    if (!selectedPatient?.id) {
+      throw new Error("환자 선택 정보가 없어 업로드를 진행할 수 없습니다.");
+    }
+    const fileExt = file.name.split(".").pop() || "bin";
+    const fileName = `${Math.random()}.${fileExt}`;
+    const filePath = `${selectedPatient.id}/${fileName}`;
+
+    const { error } = await supabase.storage.from("ai-screening-uploads").upload(filePath, file);
+    if (error) {
+      console.error("Storage 업로드 실패:", error.message);
+      throw error;
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("ai-screening-uploads").getPublicUrl(filePath);
+    return publicUrl;
+  };
+
   const fetchLinkedPatients = useCallback(async () => {
     setPatientsLoading(true);
     setPatientsFetchError(null);
@@ -1068,36 +1081,17 @@ export default function PreAssessmentScreening() {
         metadata: { patient_id: selectedPatient.id, body_part: targetPart, file_name: selectedFile.name },
       });
 
-      const formData = new FormData();
-      formData.append("bodyPartHint", targetPart);
-      formData.append("patientId", selectedPatient.id);
-      let uploadedImageUrl: string | null = null;
-
-      // Vercel Serverless payload 제한(약 4.5MB) 회피:
-      // 큰 파일은 Supabase Storage에 먼저 업로드하고 URL만 서버로 전달합니다.
-      if (selectedFile.size > SERVERLESS_PAYLOAD_SOFT_LIMIT) {
-        const ext = selectedFile.name.includes(".") ? selectedFile.name.split(".").pop() : "bin";
-        const objectPath = `${selectedPatient.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-        const uploadRes = await supabase.storage.from(AI_SCREENING_UPLOAD_BUCKET).upload(objectPath, selectedFile, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-        if (uploadRes.error) {
-          throw new Error(
-            `대용량 파일 업로드에 실패했습니다. Storage 버킷(${AI_SCREENING_UPLOAD_BUCKET})과 권한을 확인해 주세요. (${uploadRes.error.message})`,
-          );
-        }
-        const publicUrlRes = supabase.storage.from(AI_SCREENING_UPLOAD_BUCKET).getPublicUrl(objectPath);
-        uploadedImageUrl = publicUrlRes.data.publicUrl;
-        formData.append("imageUrl", uploadedImageUrl);
-        formData.append("imageName", selectedFile.name);
-      } else {
-        formData.append("image", selectedFile);
-      }
+      const fileUrl = await uploadToStorage(selectedFile);
 
       const response = await fetch(VISION_ANALYZE_URL, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: fileUrl,
+          imageName: selectedFile.name,
+          bodyPartHint: targetPart,
+          patientId: selectedPatient.id,
+        }),
       });
 
       if (!response.ok) {

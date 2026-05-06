@@ -60,14 +60,24 @@ function resolveVisionUpstream(): string | undefined {
 export async function POST(req: NextRequest) {
   try {
     const contentType = req.headers.get("content-type") || "";
-    if (!contentType.includes("multipart/form-data")) {
-      return NextResponse.json({ error: "multipart_required" }, { status: 415 });
+    const isMultipart = contentType.includes("multipart/form-data");
+    const isJson = contentType.includes("application/json");
+    if (!isMultipart && !isJson) {
+      return NextResponse.json({ error: "multipart_or_json_required" }, { status: 415 });
     }
 
-    const formData = await req.formData();
-    const image = formData.get("image");
-    const imageUrl = String(formData.get("imageUrl") || "").trim();
-    const imageName = String(formData.get("imageName") || "").trim();
+    const formData = isMultipart ? await req.formData() : null;
+    const jsonBody = isJson ? ((await req.json()) as Record<string, unknown>) : null;
+
+    const image = formData ? formData.get("image") : null;
+    const imageUrl = formData
+      ? String(formData.get("imageUrl") || "").trim()
+      : String(jsonBody?.imageUrl ?? "").trim();
+    const imageName = formData
+      ? String(formData.get("imageName") || "").trim()
+      : String(jsonBody?.imageName ?? "").trim();
+    const hintRaw = formData ? formData.get("bodyPartHint") : jsonBody?.bodyPartHint;
+    const patientIdRaw = formData ? formData.get("patientId") : jsonBody?.patientId;
 
     if (!image && !imageUrl) {
       return NextResponse.json({ error: "image_required" }, { status: 400 });
@@ -91,8 +101,15 @@ export async function POST(req: NextRequest) {
     const upstream = resolveVisionUpstream();
     if (upstream) {
       const forward = new FormData();
-      for (const [key, value] of formData.entries()) {
-        forward.append(key, value);
+      if (formData) {
+        for (const [key, value] of formData.entries()) {
+          forward.append(key, value);
+        }
+      } else {
+        if (imageUrl) forward.append("imageUrl", imageUrl);
+        if (imageName) forward.append("imageName", imageName);
+        if (hintRaw != null) forward.append("bodyPartHint", String(hintRaw));
+        if (patientIdRaw != null) forward.append("patientId", String(patientIdRaw));
       }
       try {
         const upstreamRes = await fetch(upstream, { method: "POST", body: forward });
@@ -114,7 +131,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const hint = String(formData.get("bodyPartHint") || "LUMBAR");
+    const hint = String(hintRaw || "LUMBAR");
     const part = isAllowedBodyPart(hint) ? hint : "LUMBAR";
 
     /** 실제 비전 모델 미연결 시: 파이프라인·UI 검증용 스텁 (부위 힌트 반영) */
