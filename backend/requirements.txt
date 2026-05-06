@@ -1,0 +1,11 @@
+# AI 분석 API (FastAPI + 의료 영상 스택)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.9
+torch>=2.2.0
+torchvision>=0.17.0
+opencv-python>=4.9.0
+pydicom>=2.4.0
+numpy>=1.26.0
+Pillow>=10.0.0
+supabase>=2.15.0

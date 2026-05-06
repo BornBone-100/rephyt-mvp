@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { generateSixDigitOtp, hashSignupOtp, normalizeKrMobileToE164 } from "@/lib/auth/signup-sms";
+import { normalizeKrMobileToE164 } from "@/lib/auth/kr-mobile";
+import { generateSixDigitOtp, hashSignupOtp } from "@/lib/auth/signup-sms";
 import { sendSmsViaTwilio } from "@/lib/sms/twilio-send";
 
 function getAdmin() {

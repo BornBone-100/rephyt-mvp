@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 // 대표님이 제안하신 전역 클라이언트 임포트
 import { createClient } from "@/utils/supabase/client";
 
@@ -21,38 +21,6 @@ export default function BillingPage() {
   const supabase = createClient(); // 전역 설정된 클라이언트 사용
   const [isLoading, setIsLoading] = useState(false);
   const [debugData, setDebugData] = useState<DebugData | null>(null);
-  const [sessionInfo, setSessionInfo] = useState({
-    status: "Checking...",
-    email: "None",
-    token: "None",
-  });
-
-  // 1. 실시간 세션 감시 (전역 키 체계와 완벽 동기화)
-  useEffect(() => {
-    const syncSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
-        setSessionInfo({
-          status: "✅ Logged In",
-          email: session.user.email || "Found",
-          token: "✅ Found",
-        });
-      } else {
-        setSessionInfo({ status: "❌ Not Logged In", email: "None", token: "❌ Missing" });
-      }
-    };
-
-    void syncSession();
-    // 상태 변경 감지
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void syncSession();
-    });
-    return () => subscription.unsubscribe();
-  }, [supabase]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -195,14 +163,6 @@ export default function BillingPage() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* [통합 디버그 박스] */}
-      <div style={{ position: "fixed", bottom: "20px", right: "20px", padding: "15px", backgroundColor: "#0f172a", border: "1px solid #3b82f6", borderRadius: "12px", fontSize: "11px", color: "#94a3b8", zIndex: 10000 }}>
-        <div style={{ color: "#3b82f6", fontWeight: "bold", marginBottom: "8px" }}>UNIFIED SESSION CHECK</div>
-        <p>• Status: <span style={{ color: sessionInfo.status.includes("✅") ? "#4ade80" : "#f87171" }}>{sessionInfo.status}</span></p>
-        <p>• User: {sessionInfo.email}</p>
-        <p>• Token: {sessionInfo.token}</p>
       </div>
     </div>
   );

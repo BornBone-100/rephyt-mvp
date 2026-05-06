@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import type { getDictionary } from "@/dictionaries/getDictionary";
-import { digitsOnly } from "@/lib/auth/signup-sms";
+import { digitsOnly } from "@/lib/auth/kr-mobile";
 import {
   clearPendingProfileBootstrap,
   writePendingProfileBootstrap,

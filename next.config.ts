@@ -47,7 +47,9 @@ const nextConfig: NextConfig = {
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.nicepay.co.kr",
               "connect-src 'self' https://*.supabase.co https://*.nicepay.co.kr wss://*.supabase.co",
               "frame-src https://*.nicepay.co.kr",
-              "img-src 'self' data: https:",
+              // 로컬 업로드 미리보기(URL.createObjectURL → blob:) 허용
+              "img-src 'self' data: https: blob:",
+              "media-src 'self' blob: https:",
               "style-src 'self' 'unsafe-inline'",
               "font-src 'self' data:",
             ].join("; "),

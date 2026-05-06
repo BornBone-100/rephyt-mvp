@@ -165,6 +165,7 @@ export type Database = {
           adl_limitations: string | null;
           assessment: string | null;
           plan: string | null;
+          ai_analysis_data: Json | null;
 
           joint: string | null;
           pain_scale: number | null;
@@ -192,6 +193,7 @@ export type Database = {
           adl_limitations?: string | null;
           assessment?: string | null;
           plan?: string | null;
+          ai_analysis_data?: Json | null;
 
           joint?: string | null;
           pain_scale?: number | null;

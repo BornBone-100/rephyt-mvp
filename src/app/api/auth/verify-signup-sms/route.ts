@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { hashSignupOtp, normalizeKrMobileToE164 } from "@/lib/auth/signup-sms";
+import { normalizeKrMobileToE164 } from "@/lib/auth/kr-mobile";
+import { hashSignupOtp } from "@/lib/auth/signup-sms";
 
 function getAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
