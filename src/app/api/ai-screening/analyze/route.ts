@@ -49,7 +49,8 @@ function resolveVisionUpstream(): string | undefined {
 
 /**
  * POST multipart/form-data
- * - image: File (필수)
+ * - image: File (권장)
+ * - imageUrl: 업로드된 원격 URL (대용량 파일 우회 시)
  * - bodyPartHint: 스크리닝 부위 힌트 (선택, 스텁·폴백에 사용)
  * - patientId: 차트 귀속용 (선택, 현재 스텁은 미사용)
  *
@@ -65,19 +66,24 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData();
     const image = formData.get("image");
+    const imageUrl = String(formData.get("imageUrl") || "").trim();
+    const imageName = String(formData.get("imageName") || "").trim();
 
-    if (!image || typeof image === "string") {
+    if (!image && !imageUrl) {
       return NextResponse.json({ error: "image_required" }, { status: 400 });
     }
 
-    const file = image as File;
-    if (file.size <= 0 || file.size > MAX_BYTES) {
-      return NextResponse.json({ error: "image_size_invalid" }, { status: 400 });
-    }
+    let file: File | null = null;
+    if (image && typeof image !== "string") {
+      file = image as File;
+      if (file.size <= 0 || file.size > MAX_BYTES) {
+        return NextResponse.json({ error: "image_size_invalid" }, { status: 400 });
+      }
 
-    const mime = (file.type || "").toLowerCase();
-    if (!ALLOWED_MIME.has(mime)) {
-      return NextResponse.json({ error: "image_type_not_supported" }, { status: 400 });
+      const mime = (file.type || "").toLowerCase();
+      if (!ALLOWED_MIME.has(mime)) {
+        return NextResponse.json({ error: "image_type_not_supported" }, { status: 400 });
+      }
     }
 
     let devUpstreamFallback = false;
@@ -134,7 +140,8 @@ export async function POST(req: NextRequest) {
       radiometricSnake.pixel_spacing = 0.14;
     }
 
-    const isDcm = file.name.toLowerCase().endsWith(".dcm");
+    const nameForType = (file?.name ?? imageName ?? "").toLowerCase();
+    const isDcm = nameForType.endsWith(".dcm");
     const baseCoord = stubCoords[part] ?? { x: 50, y: 50 };
     const dicomVolume = isDcm
       ? {

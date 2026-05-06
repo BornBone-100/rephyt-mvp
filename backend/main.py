@@ -6,6 +6,7 @@ import io
 import os
 import uuid
 from datetime import datetime, timezone
+from urllib.request import urlopen
 from typing import Any, Optional
 
 import cv2
@@ -178,12 +179,25 @@ def root() -> dict[str, str]:
 
 @app.post("/api/ai-screening/analyze")
 async def analyze_image(
-    image: UploadFile = File(...),
+    image: Optional[UploadFile] = File(default=None),
+    imageUrl: Optional[str] = Form(default=None),
+    imageName: Optional[str] = Form(default=None),
     patientId: Optional[str] = Form(default=None),
 ) -> dict[str, Any]:
-    contents = await image.read()
+    contents: bytes
+    filename = (image.filename if image else None) or imageName or ""
+    if image is not None:
+        contents = await image.read()
+    elif imageUrl and imageUrl.strip():
+        try:
+            with urlopen(imageUrl.strip(), timeout=10) as resp:  # nosec B310 (trusted storage URL expected)
+                contents = resp.read()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"imageUrl fetch failed: {e}")
+    else:
+        raise HTTPException(status_code=400, detail="image or imageUrl is required")
 
-    is_dicom = (image.filename or "").lower().endswith(".dcm")
+    is_dicom = filename.lower().endswith(".dcm")
     if is_dicom:
         # DICOM: Pixel Spacing 기반 mm 계측을 우선 사용
         ps = get_pixel_spacing(contents)

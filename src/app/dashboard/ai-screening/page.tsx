@@ -650,6 +650,13 @@ const AUDIT_LOOP_URL =
     ? process.env.NEXT_PUBLIC_AI_AUDIT_LOOP_URL.trim()
     : "http://localhost:8000/api/admin/audit-and-loop";
 
+const SERVERLESS_PAYLOAD_SOFT_LIMIT = 4 * 1024 * 1024; // 4MB
+const AI_SCREENING_UPLOAD_BUCKET =
+  typeof process.env.NEXT_PUBLIC_AI_SCREENING_UPLOAD_BUCKET === "string" &&
+  process.env.NEXT_PUBLIC_AI_SCREENING_UPLOAD_BUCKET.trim() !== ""
+    ? process.env.NEXT_PUBLIC_AI_SCREENING_UPLOAD_BUCKET.trim()
+    : "ai-screening-uploads";
+
 function parseBodyPartKey(raw: unknown, fallback: BodyPartKey): BodyPartKey {
   const s = typeof raw === "string" ? raw.trim().toUpperCase() : "";
   if (s && (SCREENING_PART_ORDER as readonly string[]).includes(s)) return s as BodyPartKey;
@@ -878,6 +885,7 @@ function isHeicOrHeifFile(file: File): boolean {
 
 export default function PreAssessmentScreening() {
   const [step, setStep] = useState(1);
+  const [userId, setUserId] = useState<string | null>(null);
   const [targetPart, setTargetPart] = useState<BodyPartKey>("LUMBAR");
   const [linkedPatients, setLinkedPatients] = useState<LinkedPatient[]>([]);
   const [patientsLoading, setPatientsLoading] = useState(true);
@@ -899,6 +907,42 @@ export default function PreAssessmentScreening() {
   const [dicomWindowPreset, setDicomWindowPreset] = useState<DicomWindowPresetKey>("LUMBAR_SOFT");
 
   const supabase = useMemo(() => createClient(), []);
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth
+      .getUser()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setUserId(data.user?.id ?? null);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setUserId(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
+
+  async function logPatientActivity(input: {
+    patientId: string;
+    activityType: string;
+    title: string;
+    description: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    if (!userId) return;
+    try {
+      await fetch("/api/patient-activities/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, ...input }),
+      });
+    } catch (e) {
+      console.error("patient activity log failed:", e);
+    }
+  }
 
   const fetchLinkedPatients = useCallback(async () => {
     setPatientsLoading(true);
@@ -1016,11 +1060,40 @@ export default function PreAssessmentScreening() {
 
       setStep(2);
       setActiveAnalysis(null);
+      void logPatientActivity({
+        patientId: selectedPatient.id,
+        activityType: "AI_SCREENING_ANALYSIS_STARTED",
+        title: `${targetPart} 임상 데이터 분석 시작`,
+        description: `${selectedPatient.name} 환자 영상 기준 스크리닝 처리를 시작했습니다.`,
+        metadata: { patient_id: selectedPatient.id, body_part: targetPart, file_name: selectedFile.name },
+      });
 
       const formData = new FormData();
-      formData.append("image", selectedFile);
       formData.append("bodyPartHint", targetPart);
       formData.append("patientId", selectedPatient.id);
+      let uploadedImageUrl: string | null = null;
+
+      // Vercel Serverless payload 제한(약 4.5MB) 회피:
+      // 큰 파일은 Supabase Storage에 먼저 업로드하고 URL만 서버로 전달합니다.
+      if (selectedFile.size > SERVERLESS_PAYLOAD_SOFT_LIMIT) {
+        const ext = selectedFile.name.includes(".") ? selectedFile.name.split(".").pop() : "bin";
+        const objectPath = `${selectedPatient.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+        const uploadRes = await supabase.storage.from(AI_SCREENING_UPLOAD_BUCKET).upload(objectPath, selectedFile, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+        if (uploadRes.error) {
+          throw new Error(
+            `대용량 파일 업로드에 실패했습니다. Storage 버킷(${AI_SCREENING_UPLOAD_BUCKET})과 권한을 확인해 주세요. (${uploadRes.error.message})`,
+          );
+        }
+        const publicUrlRes = supabase.storage.from(AI_SCREENING_UPLOAD_BUCKET).getPublicUrl(objectPath);
+        uploadedImageUrl = publicUrlRes.data.publicUrl;
+        formData.append("imageUrl", uploadedImageUrl);
+        formData.append("imageName", selectedFile.name);
+      } else {
+        formData.append("image", selectedFile);
+      }
 
       const response = await fetch(VISION_ANALYZE_URL, {
         method: "POST",
@@ -1051,6 +1124,13 @@ export default function PreAssessmentScreening() {
       const partKey = parseBodyPartKey(normalized.payload.part, targetPart);
       setActiveAnalysis(buildAnalysisFromVisionApi(partKey, selectedPatient, normalized.payload));
       setStep(3);
+      void logPatientActivity({
+        patientId: selectedPatient.id,
+        activityType: "AI_SCREENING_ANALYSIS_COMPLETED",
+        title: `${partKey} 임상 데이터 분석 및 가이드 생성 완료`,
+        description: `${partKey} 부위 스크리닝 결과가 생성되었습니다. (신뢰도 ${Math.round((normalized.payload.confidence ?? 0) * 10) / 10}%)`,
+        metadata: { patient_id: selectedPatient.id, body_part: partKey, confidence: normalized.payload.confidence ?? null },
+      });
     };
 
     try {
@@ -1140,6 +1220,18 @@ export default function PreAssessmentScreening() {
             originalAiOutput: activeAnalysis.mainFinding,
             finalTherapistDecision: finalDecision,
             metrics: auditMetrics,
+          });
+          void logPatientActivity({
+            patientId: selectedPatient.id,
+            activityType: "AI_SCREENING_LINK_CONFIRMED",
+            title: `${activeAnalysis.key} 스크리닝 연계 확정`,
+            description: `${selectedPatient.name} 환자 스크리닝 결과가 기록되었습니다. (피드백 ${feedbackType}, drift 검증값 ${modifiedVal}mm)`,
+            metadata: {
+              patient_id: selectedPatient.id,
+              body_part: activeAnalysis.key,
+              feedback_type: feedbackType,
+              verified_mm: modifiedVal,
+            },
           });
           alert(typeof rec.message === "string" ? rec.message : "SOAP 연계 완료");
         } catch (auditErr) {
