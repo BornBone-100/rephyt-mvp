@@ -864,6 +864,15 @@ function isTiffLikeFile(file: File): boolean {
   return n.endsWith(".tif") || n.endsWith(".tiff") || file.type === "image/tiff";
 }
 
+// [우선순위 1] 데이터셋 고도화: TIFF 미리보기 지원(플레이스홀더)
+const getPreviewUrl = async (file: File): Promise<string> => {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (extension === "tif" || extension === "tiff") {
+    return "/images/dicom-placeholder.svg";
+  }
+  return URL.createObjectURL(file);
+};
+
 /**
  * iPhone 사진 등: 확장자·MIME이 HEIC/HEIF 계열인지 (일부 기기는 `image/heif`만 오고 `image/heic`가 아님 →
  * 변환 분기를 놓치면 Chrome에서 raw 그대로 img에 넣었다가 onError → 검은 화면 + 안내 문구가 뜸)
@@ -990,17 +999,32 @@ export default function PreAssessmentScreening() {
   }, [fetchLinkedPatients]);
 
   useEffect(() => {
+    let mounted = true;
+    let objectUrlToRevoke: string | null = null;
+
     if (!selectedFile) {
       setPreviewUrl(null);
       return;
     }
-    if (isDicomLikeFile(selectedFile) || isTiffLikeFile(selectedFile)) {
+    if (isDicomLikeFile(selectedFile)) {
       setPreviewUrl(null);
       return;
     }
-    const url = URL.createObjectURL(selectedFile);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
+
+    void (async () => {
+      const url = await getPreviewUrl(selectedFile);
+      if (!mounted) {
+        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+        return;
+      }
+      setPreviewUrl(url);
+      objectUrlToRevoke = url.startsWith("blob:") ? url : null;
+    })();
+
+    return () => {
+      mounted = false;
+      if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
+    };
   }, [selectedFile]);
 
   useEffect(() => {
@@ -1656,17 +1680,6 @@ export default function PreAssessmentScreening() {
                           있습니다.
                         </p>
                       </div>
-                    </div>
-                  ) : isTiffLikeFile(selectedFile) ? (
-                    <div className="max-w-md space-y-2 px-6 text-center text-sm font-semibold leading-relaxed text-slate-400">
-                      <FileWarning className="mx-auto h-10 w-10 text-amber-500/90" aria-hidden />
-                      <p>
-                        TIFF(.tif/.tiff)는 이 브라우저에서 배경 이미지로 디코딩되지 않는 경우가 많습니다. JPG·PNG·WEBP로
-                        변환해 업로드해 보세요.
-                      </p>
-                      <p className="text-xs font-medium text-slate-500">
-                        원시 포맷은 수신되었으며, 스크리닝 결과·히트맵 오버레이는 아래 컨트롤로 확인할 수 있습니다.
-                      </p>
                     </div>
                   ) : !previewUrl ? (
                     <div className="max-w-md px-6 text-center text-sm font-semibold leading-relaxed text-slate-400">

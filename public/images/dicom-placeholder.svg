@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <radialGradient id="r" cx="50%" cy="40%" r="60%">
+      <stop offset="0" stop-color="#6366f1" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="800" rx="56" fill="url(#g)"/>
+  <rect width="1200" height="800" rx="56" fill="url(#r)"/>
+  <g fill="none" stroke="#334155" stroke-width="6" stroke-dasharray="14 14" opacity="0.9">
+    <rect x="56" y="56" width="1088" height="688" rx="44"/>
+  </g>
+  <g font-family="ui-sans-serif, system-ui, -apple-system" text-anchor="middle">
+    <text x="600" y="360" font-size="34" font-weight="800" fill="#e2e8f0">MEDICAL RAW DATA LOADED</text>
+    <text x="600" y="410" font-size="18" font-weight="600" fill="#94a3b8">
+      Preview is limited. Expert analysis mode is enabled.
+    </text>
+    <text x="600" y="455" font-size="14" font-weight="600" fill="#64748b">
+      (TIFF/DICOM placeholder)
+    </text>
+  </g>
+</svg>
