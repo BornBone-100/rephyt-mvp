@@ -5,7 +5,6 @@ import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import type { getDictionary } from "@/dictionaries/getDictionary";
 import { digitsOnly } from "@/lib/auth/kr-mobile";
-import KakaoSdkLoader from "@/components/auth/KakaoSdkLoader";
 import {
   clearPendingProfileBootstrap,
   writePendingProfileBootstrap,
@@ -468,7 +467,6 @@ function LoginForm({ dict }: Props) {
 
   return (
     <main className="min-h-screen bg-white">
-      <KakaoSdkLoader />
       <div className="mx-auto flex min-h-screen w-full max-w-md items-center px-6 py-12">
         <section className="w-full rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
           <div>
