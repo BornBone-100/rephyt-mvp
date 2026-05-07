@@ -33,6 +33,7 @@ import {
   normalizeVisionAnalyzeResponse,
   type VisionAnalyzeFlatPayload,
 } from "@/lib/ai-screening/vision-analyze-contract";
+import LockedFeatureCard from "@/components/dashboard/LockedFeatureCard";
 
 /** 부위 코드 — AI/백엔드에서 내려주는 region 코드와 1:1 매핑 가능 */
 type BodyPartKey =
@@ -1477,6 +1478,11 @@ export default function PreAssessmentScreening() {
                   {BODY_KNOWLEDGE_BASE[key].label}
                 </button>
               ))}
+            </div>
+
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="mb-3 text-xs font-black uppercase tracking-wide text-slate-500">고도화 예정 엔진</p>
+              <LockedFeatureCard />
             </div>
 
             <h3 className="border-t border-slate-100 pt-6 text-sm font-black uppercase text-indigo-600">
