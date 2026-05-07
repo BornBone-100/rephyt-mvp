@@ -46,6 +46,7 @@ export default function ActivityTimelineClient({
   }, [initialTimeline]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const cached = window.localStorage.getItem("rephyt:latest-activity");
     if (cached) {
       try {

@@ -57,7 +57,7 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || typeof window === "undefined") return;
     const stored = localStorage.getItem(`rephyt:library:favorites:${userId}`);
     if (!stored) return;
     try {
@@ -71,7 +71,7 @@ export default function ClinicalLibraryClient({ lang, userId, items }: Props) {
   }, [userId]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || typeof window === "undefined") return;
     localStorage.setItem(`rephyt:library:favorites:${userId}`, JSON.stringify(favorites));
   }, [favorites, userId]);
 

@@ -33,7 +33,6 @@ import {
   normalizeVisionAnalyzeResponse,
   type VisionAnalyzeFlatPayload,
 } from "@/lib/ai-screening/vision-analyze-contract";
-import heic2any from "heic2any";
 
 /** 부위 코드 — AI/백엔드에서 내려주는 region 코드와 1:1 매핑 가능 */
 type BodyPartKey =
@@ -1050,6 +1049,7 @@ export default function PreAssessmentScreening() {
       if (isHeicOrHeifFile(originalFile)) {
         setIsConverting(true);
         try {
+          const heic2any = (await import("heic2any")).default;
           const converted = await heic2any({
             blob: originalFile,
             toType: "image/jpeg",
