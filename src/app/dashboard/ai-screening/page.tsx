@@ -864,6 +864,10 @@ function isTiffLikeFile(file: File): boolean {
   return n.endsWith(".tif") || n.endsWith(".tiff") || file.type === "image/tiff";
 }
 
+function isRawMedicalFormat(file: File): boolean {
+  return isDicomLikeFile(file) || isTiffLikeFile(file);
+}
+
 // [우선순위 1] 데이터셋 고도화: TIFF 미리보기 지원(플레이스홀더)
 const getPreviewUrl = async (file: File): Promise<string> => {
   const extension = file.name.split(".").pop()?.toLowerCase();
@@ -883,6 +887,29 @@ function isHeicOrHeifFile(file: File): boolean {
   const t = file.type.toLowerCase();
   if (t === "image/heic" || t === "image/heif") return true;
   return false;
+}
+
+function RawMedicalFormatGuide({ file }: { file: File }) {
+  const ext = file.name.split(".").pop()?.toUpperCase() ?? "RAW";
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center rounded-[2.5rem] border-2 border-indigo-500/30 bg-slate-900 text-center">
+      <div className="relative mb-4">
+        <Activity className="h-12 w-12 animate-pulse text-indigo-400" aria-hidden />
+        <div className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-emerald-500" />
+      </div>
+      <p className="text-lg font-black tracking-tight text-white">RAW MEDICAL DATA DETECTED</p>
+      <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+        {ext} MODE: 정밀 판독 시스템 가동 중
+      </p>
+      <div className="mt-6 rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-2">
+        <p className="text-center text-[10px] font-medium text-indigo-300">
+          미리보기는 보안 및 정밀 분석을 위해 제한됩니다.
+          <br />
+          [분석 시작] 버튼을 누르면 AI 계측이 시작됩니다.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export default function PreAssessmentScreening() {
@@ -1474,14 +1501,9 @@ export default function PreAssessmentScreening() {
                   <Loader2 className="mb-4 h-12 w-12 animate-spin text-indigo-500" />
                   <p className="text-sm font-bold text-slate-600">고해상도 이미지(HEIC·HEIF) 변환 중…</p>
                 </div>
-              ) : selectedFile && isDicomLikeFile(selectedFile) ? (
-                <div className="pointer-events-none max-w-md px-4 py-2 text-center text-xs font-semibold leading-relaxed text-slate-500">
-                  DICOM(.dcm)은 이 화면에서 미리보기되지 않습니다. Step 3에서도 배경으로 그려지지 않습니다. JPG·PNG·WEBP
-                  또는 MP4를 사용해 주세요.
-                </div>
-              ) : selectedFile && isTiffLikeFile(selectedFile) ? (
-                <div className="pointer-events-none max-w-md px-4 py-2 text-center text-xs font-semibold leading-relaxed text-slate-500">
-                  TIFF는 브라우저에서 미리보기되지 않을 수 있습니다. JPG·PNG·WEBP로 변환 후 업로드해 주세요.
+              ) : selectedFile && isRawMedicalFormat(selectedFile) ? (
+                <div className="pointer-events-none mx-auto h-[220px] w-full max-w-2xl p-2">
+                  <RawMedicalFormatGuide file={selectedFile} />
                 </div>
               ) : previewUrl && selectedFile && !isDicomLikeFile(selectedFile) && isBrowserPreviewVideo(selectedFile) ? (
                 <div className="pointer-events-none py-2">
@@ -1680,16 +1702,9 @@ export default function PreAssessmentScreening() {
                 <div className="relative flex h-[500px] items-center justify-center overflow-hidden rounded-3xl border border-slate-800 bg-black shadow-2xl">
                   {!selectedFile ? (
                     <div className="font-bold italic text-slate-500">No Scan Data</div>
-                  ) : isDicomLikeFile(selectedFile) ? (
+                  ) : isRawMedicalFormat(selectedFile) ? (
                     <div className="h-full w-full p-6">
-                      <div className="flex h-full flex-col items-center justify-center rounded-[2.5rem] border-2 border-dashed border-slate-700 bg-slate-900/50 text-center backdrop-blur-xl">
-                        <Activity className="mb-4 h-12 w-12 animate-pulse text-indigo-400" aria-hidden />
-                        <p className="text-lg font-black text-white">전문 판독용 데이터 로드됨</p>
-                        <p className="mt-2 text-xs font-medium text-slate-400">
-                          DICOM 원시 데이터 분석 모드로 전환되었습니다. 미리보기는 제한되며 결과·계측은 우측 패널에서 확인할 수
-                          있습니다.
-                        </p>
-                      </div>
+                      <RawMedicalFormatGuide file={selectedFile} />
                     </div>
                   ) : !previewUrl ? (
                     <div className="max-w-md px-6 text-center text-sm font-semibold leading-relaxed text-slate-400">

@@ -493,6 +493,62 @@ async def analyze_universal(
     }
 
 
+@app.post("/api/ai-screening/analyze-raw")
+async def analyze_raw(
+    file: UploadFile = File(...),
+    patientId: Optional[str] = Form(default=None),
+) -> dict[str, Any]:
+    """원시 포맷(DICOM/TIFF) 우선 분석: mm 계측 고정에 필요한 메타데이터를 명시적으로 반환."""
+    filename = (file.filename or "").lower()
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="empty file")
+
+    if filename.endswith(".dcm"):
+        spacing = get_pixel_spacing(contents)
+        spacing_val = float(spacing) if spacing is not None else 1.0
+        reliability = "CALIBRATED_MM" if spacing is not None else "FALLBACK_SCALE"
+        return {
+            "status": "success",
+            "patientId": patientId,
+            "mode": "EXPERT_DICOM",
+            "spacing_mm_per_px": round(spacing_val, 6),
+            "reliability": reliability,
+            "message": "DICOM Pixel Spacing 기반 물리 단위(mm) 계측 모드 준비 완료",
+            "disclaimer": "본 결과는 Clinical Screening & Differential Evaluation 보조 도구이며 의사 판단을 대체할 수 없습니다.",
+        }
+
+    if filename.endswith(".tif") or filename.endswith(".tiff"):
+        nparr = np.frombuffer(contents, dtype=np.uint8)
+        decoded = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+        if decoded is None:
+            raise HTTPException(status_code=400, detail="TIFF 디코딩에 실패했습니다.")
+        if decoded.dtype == np.uint16:
+            depth = "16-bit"
+        elif decoded.dtype == np.uint8:
+            depth = "8-bit"
+        else:
+            depth = str(decoded.dtype)
+
+        return {
+            "status": "success",
+            "patientId": patientId,
+            "mode": "EXPERT_TIFF",
+            "depth": depth,
+            "shape": list(decoded.shape),
+            "message": "TIFF 원시 신호 기반 정밀 스크리닝 계측 모드 준비 완료",
+            "disclaimer": "본 결과는 Clinical Screening & Differential Evaluation 보조 도구이며 의사 판단을 대체할 수 없습니다.",
+        }
+
+    return {
+        "status": "success",
+        "patientId": patientId,
+        "mode": "STANDARD_SCREENING",
+        "message": "표준 스크리닝 모드 준비 완료",
+        "disclaimer": "본 결과는 Clinical Screening & Differential Evaluation 보조 도구이며 의사 판단을 대체할 수 없습니다.",
+    }
+
+
 @app.post("/api/ai-screening/analyze-pro", response_model=AnalysisResult)
 async def analyze_pro(image: UploadFile = File(...)) -> AnalysisResult:
     # [핵심 로직] 영상 인식 및 분류 (실서비스에서는 ResNet/EfficientNet 등 대체)
