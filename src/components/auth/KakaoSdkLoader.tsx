@@ -18,9 +18,15 @@ export default function KakaoSdkLoader() {
       strategy="afterInteractive"
       onLoad={() => {
         const key = process.env.NEXT_PUBLIC_KAKAO_JS_KEY;
-        if (!key || typeof window === "undefined" || !window.Kakao) return;
+        console.log("카카오 키 확인:", key);
+        if (typeof window === "undefined" || !window.Kakao) return;
         if (!window.Kakao.isInitialized()) {
-          window.Kakao.init(key);
+          if (key) {
+            window.Kakao.init(key);
+            console.log("카카오 초기화 성공:", window.Kakao.isInitialized());
+          } else {
+            console.error("카카오 키가 없습니다! 환경변수를 확인하세요.");
+          }
         }
       }}
     />
