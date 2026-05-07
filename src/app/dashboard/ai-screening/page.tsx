@@ -1044,6 +1044,10 @@ export default function PreAssessmentScreening() {
     setFileError(null);
 
     const handleFileUpload = async (originalFile: File): Promise<File | null> => {
+      if (typeof window === "undefined") {
+        return null;
+      }
+
       let displayFile = originalFile;
 
       if (isHeicOrHeifFile(originalFile)) {
