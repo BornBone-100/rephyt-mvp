@@ -33,6 +33,7 @@ import {
   normalizeVisionAnalyzeResponse,
   type VisionAnalyzeFlatPayload,
 } from "@/lib/ai-screening/vision-analyze-contract";
+import heic2any from "heic2any";
 
 /** 부위 코드 — AI/백엔드에서 내려주는 region 코드와 1:1 매핑 가능 */
 type BodyPartKey =
@@ -1043,43 +1044,48 @@ export default function PreAssessmentScreening() {
 
     setFileError(null);
 
-    if (isHeicOrHeifFile(file)) {
-      setIsConverting(true);
-      try {
-        const heic2any = (await import("heic2any")).default;
-        const convertedBlob = await heic2any({
-          blob: file,
-          toType: "image/jpeg",
-          quality: 0.9,
-        });
+    const handleFileUpload = async (originalFile: File): Promise<File | null> => {
+      let displayFile = originalFile;
 
-        const convertedFile = new File(
-          [Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob],
-          file.name.replace(/\.[^/.]+$/, ".jpg"),
-          { type: "image/jpeg" },
-        );
-
-        setSelectedFile(convertedFile);
-      } catch (err) {
-        console.error("HEIC conversion error:", err);
-        setFileError("HEIC·HEIF 변환에 실패했습니다. JPG 또는 PNG로 저장한 뒤 다시 올려 주세요.");
-        setSelectedFile(null);
-        e.target.value = "";
-      } finally {
-        setIsConverting(false);
+      if (isHeicOrHeifFile(originalFile)) {
+        setIsConverting(true);
+        try {
+          const converted = await heic2any({
+            blob: originalFile,
+            toType: "image/jpeg",
+            quality: 0.8,
+          });
+          const convertedBlob = Array.isArray(converted) ? converted[0] : converted;
+          const baseName = originalFile.name.replace(/\.[^/.]+$/, "");
+          displayFile = new File([convertedBlob as Blob], `${baseName}.jpg`, { type: "image/jpeg" });
+        } catch (err) {
+          console.error("HEIC conversion error:", err);
+          setFileError("HEIC·HEIF 변환에 실패했습니다. JPG 또는 PNG로 저장한 뒤 다시 올려 주세요.");
+          return null;
+        } finally {
+          setIsConverting(false);
+        }
       }
+
+      return displayFile;
+    };
+
+    const displayFile = await handleFileUpload(file);
+    if (!displayFile) {
+      setSelectedFile(null);
+      e.target.value = "";
       return;
     }
 
-    if (isDicomLikeFile(file) || isTiffLikeFile(file)) {
-      setSelectedFile(file);
+    if (isDicomLikeFile(displayFile) || isTiffLikeFile(displayFile)) {
+      setSelectedFile(displayFile);
       setFileError(
         "의료용 원시 포맷(DICOM·TIFF 등)은 이 웹 뷰어에서 배경 미리보기를 제공하지 않습니다. 캡처·보내기한 JPG·PNG·WEBP를 권장합니다. 스크리닝 분석은 파일이 선택된 상태에서 계속 진행할 수 있습니다.",
       );
       return;
     }
 
-    setSelectedFile(file);
+    setSelectedFile(displayFile);
   };
 
   const handleStartAnalysis = async () => {
